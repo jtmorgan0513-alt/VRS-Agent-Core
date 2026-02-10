@@ -34,7 +34,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ### Seed Users
 - admin@vrs.com / admin123 (admin)
 - tech1@vrs.com / tech123 (technician, RAC-78234)
-- agent1@vrs.com / agent123 (vrs_agent)
+- agent1@vrs.com / agent123 (vrs_agent, specializations: refrigeration, laundry)
+- agent2@vrs.com / agent123 (vrs_agent, generalist - all divisions)
 
 ## Build Phases
 - Phase 1: Database schema + Express server + Auth routes [COMPLETE]

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User } from "@shared/schema";
+import { seedDatabase } from "./seed";
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -40,6 +41,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  await seedDatabase();
 
   app.post("/api/auth/register", async (req, res) => {
     try {
