@@ -1,18 +1,147 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, integer, timestamp, date, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// ============================================================================
+// USERS TABLE
+// ============================================================================
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  password: varchar("password", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  role: text("role").notNull(), // 'technician', 'vrs_agent', 'admin'
+  phone: varchar("phone", { length: 20 }),
+  racId: varchar("rac_id", { length: 50 }),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// ============================================================================
+// VRS AGENT SPECIALIZATIONS TABLE
+// ============================================================================
+export const vrsAgentSpecializations = pgTable(
+  "vrs_agent_specializations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    division: text("division").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac', 'generalist'
+  },
+  (table) => ({
+    uniqueUserDivision: unique().on(table.userId, table.division),
+  })
+);
+
+export const insertVrsAgentSpecializationSchema = createInsertSchema(
+  vrsAgentSpecializations
+).omit({
+  id: true,
+});
+
+export type InsertVrsAgentSpecialization = z.infer<
+  typeof insertVrsAgentSpecializationSchema
+>;
+export type VrsAgentSpecialization =
+  typeof vrsAgentSpecializations.$inferSelect;
+
+// ============================================================================
+// SUBMISSIONS TABLE
+// ============================================================================
+export const submissions = pgTable("submissions", {
+  id: serial("id").primaryKey(),
+  technicianId: integer("technician_id")
+    .notNull()
+    .references(() => users.id),
+  racId: varchar("rac_id", { length: 50 }).notNull(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  serviceOrder: varchar("service_order", { length: 50 }).notNull(),
+  applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac'
+  requestType: text("request_type").notNull(), // 'authorization', 'non_repairable_review'
+  warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'
+  warrantyProvider: varchar("warranty_provider", { length: 100 }),
+  issueDescription: text("issue_description").notNull(),
+  estimateAmount: text("estimate_amount"), // stored as text, parsed as decimal in application
+  photos: text("photos"), // JSON string of photo URLs array
+  videoUrl: varchar("video_url", { length: 500 }),
+  voiceNoteUrl: varchar("voice_note_url", { length: 500 }),
+  stage1Status: text("stage1_status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
+  stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
+  stage1ReviewedAt: timestamp("stage1_reviewed_at"),
+  stage1RejectionReason: text("stage1_rejection_reason"),
+  stage2Status: text("stage2_status").notNull().default("pending"), // 'pending', 'approved', 'not_applicable'
+  stage2ReviewedBy: integer("stage2_reviewed_by").references(() => users.id),
+  stage2ReviewedAt: timestamp("stage2_reviewed_at"),
+  authCode: varchar("auth_code", { length: 50 }),
+  rgcCode: varchar("rgc_code", { length: 50 }),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const insertSubmissionSchema = createInsertSchema(submissions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
+export type Submission = typeof submissions.$inferSelect;
+
+// ============================================================================
+// SMS NOTIFICATIONS TABLE
+// ============================================================================
+export const smsNotifications = pgTable("sms_notifications", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id")
+    .notNull()
+    .references(() => submissions.id),
+  recipientPhone: varchar("recipient_phone", { length: 20 }).notNull(),
+  messageType: text("message_type").notNull(), // 'stage1_approved', 'stage1_rejected', 'auth_code_sent'
+  messageBody: text("message_body").notNull(),
+  twilioSid: varchar("twilio_sid", { length: 100 }),
+  sentAt: timestamp("sent_at").default(sql`now()`),
+});
+
+export const insertSmsNotificationSchema = createInsertSchema(
+  smsNotifications
+).omit({
+  id: true,
+  sentAt: true,
+});
+
+export type InsertSmsNotification = z.infer<typeof insertSmsNotificationSchema>;
+export type SmsNotification = typeof smsNotifications.$inferSelect;
+
+// ============================================================================
+// DAILY RGC CODES TABLE
+// ============================================================================
+export const dailyRgcCodes = pgTable(
+  "daily_rgc_codes",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 50 }).notNull(),
+    validDate: date("valid_date").notNull().unique(),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").default(sql`now()`),
+  }
+);
+
+export const insertDailyRgcCodeSchema = createInsertSchema(dailyRgcCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDailyRgcCode = z.infer<typeof insertDailyRgcCodeSchema>;
+export type DailyRgcCode = typeof dailyRgcCodes.$inferSelect;
