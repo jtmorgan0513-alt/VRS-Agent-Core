@@ -178,9 +178,7 @@ export class DatabaseStorage implements IStorage {
     applianceType?: string;
     assignedTo?: number;
   }): Promise<Submission[]> {
-    let query = db.select().from(submissions);
-
-    const conditions = [];
+    const conditions: ReturnType<typeof eq>[] = [];
 
     if (filters?.technicianId !== undefined) {
       conditions.push(eq(submissions.technicianId, filters.technicianId));
@@ -202,11 +200,13 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(submissions.assignedTo, filters.assignedTo));
     }
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    return await query.orderBy(desc(submissions.createdAt));
+    return await db
+      .select()
+      .from(submissions)
+      .where(whereClause)
+      .orderBy(desc(submissions.createdAt));
   }
 
   async updateSubmission(
