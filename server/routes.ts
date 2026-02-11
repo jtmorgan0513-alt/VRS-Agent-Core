@@ -607,5 +607,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/analytics", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const analytics = await storage.getAnalytics();
+      return res.status(200).json(analytics);
+    } catch (error) {
+      console.error("Admin analytics error:", error);
+      return res.status(500).json({ error: "Failed to get analytics" });
+    }
+  });
+
   return httpServer;
 }

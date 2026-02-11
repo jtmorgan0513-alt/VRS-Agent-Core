@@ -47,9 +47,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Settings,
   Users,
@@ -61,7 +72,36 @@ import {
   UserPlus,
   Save,
   Shield,
+  FileText,
+  CheckCircle,
+  XCircle,
+  Clock,
+  TrendingUp,
+  Calendar,
+  CalendarDays,
+  CalendarRange,
 } from "lucide-react";
+
+interface AnalyticsData {
+  submissionsToday: number;
+  submissionsThisWeek: number;
+  submissionsThisMonth: number;
+  totalSubmissions: number;
+  approvedCount: number;
+  rejectedCount: number;
+  pendingCount: number;
+  avgTimeToStage1Ms: number | null;
+  avgTimeToAuthCodeMs: number | null;
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms === null || ms === 0) return "N/A";
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
 
 type SafeUser = Omit<User, "password">;
 
@@ -104,6 +144,7 @@ export default function AdminDashboard() {
   const [formRacId, setFormRacId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
+  const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: SafeUser[] }>({
     queryKey: ["/api/admin/users"],
@@ -117,6 +158,11 @@ export default function AdminDashboard() {
   }>({
     queryKey: ["/api/admin/users", selectedAgentId, "specializations"],
     enabled: !!selectedAgentId,
+  });
+
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics"],
+    enabled: activeView === "analytics",
   });
 
   useEffect(() => {
@@ -390,9 +436,13 @@ export default function AdminDashboard() {
                           <TableCell>
                             <Switch
                               checked={u.isActive}
-                              onCheckedChange={(checked) =>
-                                toggleStatusMutation.mutate({ id: u.id, isActive: checked })
-                              }
+                              onCheckedChange={(checked) => {
+                                if (!checked) {
+                                  setDeactivateConfirm({ id: u.id, name: u.name, isActive: false });
+                                } else {
+                                  toggleStatusMutation.mutate({ id: u.id, isActive: true });
+                                }
+                              }}
                               data-testid={`switch-status-${u.id}`}
                             />
                           </TableCell>
@@ -522,12 +572,168 @@ export default function AdminDashboard() {
             )}
 
             {activeView === "analytics" && (
-              <div className="flex items-center justify-center h-full min-h-[400px]" data-testid="text-analytics-placeholder">
-                <div className="text-center space-y-2">
-                  <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground" />
-                  <p className="text-lg font-medium text-muted-foreground">Coming Soon</p>
-                  <p className="text-sm text-muted-foreground">Analytics features are under development.</p>
-                </div>
+              <div className="p-4 space-y-4" data-testid="analytics-view">
+                {analyticsLoading ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className="h-24" />
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <Skeleton className="h-48" />
+                      <Skeleton className="h-48" />
+                    </div>
+                  </div>
+                ) : analyticsData ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Today</CardTitle>
+                          <Calendar className="w-4 h-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-2xl font-bold" data-testid="text-submissions-today">{analyticsData.submissionsToday}</p>
+                          <p className="text-xs text-muted-foreground">submissions</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">This Week</CardTitle>
+                          <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-2xl font-bold" data-testid="text-submissions-week">{analyticsData.submissionsThisWeek}</p>
+                          <p className="text-xs text-muted-foreground">submissions</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">This Month</CardTitle>
+                          <CalendarRange className="w-4 h-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-2xl font-bold" data-testid="text-submissions-month">{analyticsData.submissionsThisMonth}</p>
+                          <p className="text-xs text-muted-foreground">submissions</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
+                          <FileText className="w-4 h-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-2xl font-bold" data-testid="text-submissions-total">{analyticsData.totalSubmissions}</p>
+                          <p className="text-xs text-muted-foreground">all time</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <CardTitle className="text-base">Approval Rate</CardTitle>
+                            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                              <span className="text-sm">Approved</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold" data-testid="text-approved-count">{analyticsData.approvedCount}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {analyticsData.totalSubmissions > 0
+                                  ? Math.round((analyticsData.approvedCount / analyticsData.totalSubmissions) * 100)
+                                  : 0}%
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <span className="text-sm">Rejected</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold" data-testid="text-rejected-count">{analyticsData.rejectedCount}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {analyticsData.totalSubmissions > 0
+                                  ? Math.round((analyticsData.rejectedCount / analyticsData.totalSubmissions) * 100)
+                                  : 0}%
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                              <span className="text-sm">Pending</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold" data-testid="text-pending-count">{analyticsData.pendingCount}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {analyticsData.totalSubmissions > 0
+                                  ? Math.round((analyticsData.pendingCount / analyticsData.totalSubmissions) * 100)
+                                  : 0}%
+                              </Badge>
+                            </div>
+                          </div>
+                          {analyticsData.totalSubmissions > 0 && (
+                            <div className="mt-2">
+                              <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                                <div
+                                  className="bg-green-600 dark:bg-green-400"
+                                  style={{ width: `${(analyticsData.approvedCount / analyticsData.totalSubmissions) * 100}%` }}
+                                />
+                                <div
+                                  className="bg-red-600 dark:bg-red-400"
+                                  style={{ width: `${(analyticsData.rejectedCount / analyticsData.totalSubmissions) * 100}%` }}
+                                />
+                                <div
+                                  className="bg-yellow-600 dark:bg-yellow-400"
+                                  style={{ width: `${(analyticsData.pendingCount / analyticsData.totalSubmissions) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <CardTitle className="text-base">Processing Times</CardTitle>
+                            <Clock className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">Avg. Submission to Stage 1</p>
+                            <p className="text-xl font-bold" data-testid="text-avg-stage1-time">
+                              {formatDuration(analyticsData.avgTimeToStage1Ms)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">from submission to initial review</p>
+                          </div>
+                          <Separator />
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-1">Avg. Stage 1 to Auth Code</p>
+                            <p className="text-xl font-bold" data-testid="text-avg-authcode-time">
+                              {formatDuration(analyticsData.avgTimeToAuthCodeMs)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">from approval to auth code sent</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <p className="text-muted-foreground">No analytics data available.</p>
+                  </div>
+                )}
               </div>
             )}
           </ScrollArea>
@@ -645,6 +851,32 @@ export default function AdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deactivateConfirm} onOpenChange={(open) => !open && setDeactivateConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-deactivate-title">Deactivate User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to deactivate <strong>{deactivateConfirm?.name}</strong>? They will no longer be able to log in until reactivated.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-deactivate">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deactivateConfirm) {
+                  toggleStatusMutation.mutate({ id: deactivateConfirm.id, isActive: false });
+                  setDeactivateConfirm(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-deactivate"
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

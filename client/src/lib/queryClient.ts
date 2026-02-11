@@ -3,6 +3,11 @@ import { getToken } from "./auth";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem("vrs_token");
+      window.location.href = "/login";
+      return;
+    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }

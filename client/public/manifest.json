@@ -1,0 +1,13 @@
+{
+  "name": "VRS Submit",
+  "short_name": "VRS",
+  "description": "Sears Home Services Digital Authorization",
+  "theme_color": "#003366",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

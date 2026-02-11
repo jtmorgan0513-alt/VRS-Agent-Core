@@ -86,7 +86,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - Phase 3: Desktop Stage 1 queue + approval flow [COMPLETE]
 - Phase 4: Desktop Stage 2 queue + auth code flow + Twilio integration [COMPLETE]
 - Phase 5: Admin user management + division assignments [COMPLETE]
-- Phase 6: Polish, PWA manifest, responsive refinements
+- Phase 6: Polish, PWA manifest, responsive refinements [COMPLETE]
 
 ## Recent Changes
 - 2026-02-10: Phase 1 complete - Database schema, storage layer, JWT auth routes
@@ -94,3 +94,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-11: Phase 3 complete - VRS Agent desktop dashboard with sidebar navigation, split-panel queue/detail layout, Stage 1 approve/reject workflow, role-based routing
 - 2026-02-11: Phase 4 complete - Stage 2 auth code queue with batch processing banner, warranty provider counts, Twilio SMS service, SMS triggers on Stage 1 and Stage 2 actions
 - 2026-02-11: Phase 5 complete - Admin dashboard with user management table (CRUD, status toggle), division assignment page with checkbox grid, separate /admin route, isActive field on users, deactivated login check
+- 2026-02-11: Phase 6 complete - PWA manifest (VRS Submit, Sears blue #003366), install prompt banner, admin analytics (submission counts, approval rates, processing times), confirmation modals for destructive actions (reject, deactivate), session expiration handling (401 redirect to login), user-facing 404 page

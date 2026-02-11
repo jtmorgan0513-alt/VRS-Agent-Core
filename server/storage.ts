@@ -79,6 +79,18 @@ export interface IStorage {
   // RGC methods
   createDailyRgcCode(code: InsertDailyRgcCode): Promise<DailyRgcCode>;
   getDailyRgcCode(date: string): Promise<DailyRgcCode | undefined>;
+
+  getAnalytics(): Promise<{
+    submissionsToday: number;
+    submissionsThisWeek: number;
+    submissionsThisMonth: number;
+    totalSubmissions: number;
+    approvedCount: number;
+    rejectedCount: number;
+    pendingCount: number;
+    avgTimeToStage1Ms: number | null;
+    avgTimeToAuthCodeMs: number | null;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -394,6 +406,55 @@ export class DatabaseStorage implements IStorage {
       .from(dailyRgcCodes)
       .where(eq(dailyRgcCodes.validDate, date));
     return result[0];
+  }
+
+  async getAnalytics(): Promise<{
+    submissionsToday: number;
+    submissionsThisWeek: number;
+    submissionsThisMonth: number;
+    totalSubmissions: number;
+    approvedCount: number;
+    rejectedCount: number;
+    pendingCount: number;
+    avgTimeToStage1Ms: number | null;
+    avgTimeToAuthCodeMs: number | null;
+  }> {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const result = await db
+      .select({
+        submissionsToday: sql<number>`count(*) filter (where ${submissions.createdAt} >= ${startOfToday})`,
+        submissionsThisWeek: sql<number>`count(*) filter (where ${submissions.createdAt} >= ${sevenDaysAgo})`,
+        submissionsThisMonth: sql<number>`count(*) filter (where ${submissions.createdAt} >= ${thirtyDaysAgo})`,
+        totalSubmissions: sql<number>`count(*)`,
+        approvedCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'approved')`,
+        rejectedCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'rejected')`,
+        pendingCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'pending')`,
+        avgTimeToStage1Ms: sql<number | null>`avg(extract(epoch from (${submissions.stage1ReviewedAt} - ${submissions.createdAt})) * 1000) filter (where ${submissions.stage1ReviewedAt} is not null)`,
+        avgTimeToAuthCodeMs: sql<number | null>`avg(extract(epoch from (${submissions.stage2ReviewedAt} - ${submissions.stage1ReviewedAt})) * 1000) filter (where ${submissions.stage1ReviewedAt} is not null and ${submissions.stage2ReviewedAt} is not null)`,
+      })
+      .from(submissions);
+
+    const row = result[0];
+    return {
+      submissionsToday: Number(row.submissionsToday) || 0,
+      submissionsThisWeek: Number(row.submissionsThisWeek) || 0,
+      submissionsThisMonth: Number(row.submissionsThisMonth) || 0,
+      totalSubmissions: Number(row.totalSubmissions) || 0,
+      approvedCount: Number(row.approvedCount) || 0,
+      rejectedCount: Number(row.rejectedCount) || 0,
+      pendingCount: Number(row.pendingCount) || 0,
+      avgTimeToStage1Ms: row.avgTimeToStage1Ms !== null ? Number(row.avgTimeToStage1Ms) : null,
+      avgTimeToAuthCodeMs: row.avgTimeToAuthCodeMs !== null ? Number(row.avgTimeToAuthCodeMs) : null,
+    };
   }
 }
 

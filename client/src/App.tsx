@@ -13,6 +13,7 @@ import SubmissionDetailPage from "@/pages/submission-detail";
 import AgentDashboard from "@/pages/agent-dashboard";
 import AdminDashboard from "@/pages/admin-dashboard";
 import NotFound from "@/pages/not-found";
+import InstallPrompt from "@/components/install-prompt";
 
 function LoadingScreen() {
   return (
@@ -119,6 +120,7 @@ function App() {
         <AuthProvider>
           <Toaster />
           <Router />
+          <InstallPrompt />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

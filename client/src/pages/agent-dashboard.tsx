@@ -26,6 +26,16 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ClipboardCheck,
   ClipboardList,
   CheckCircle2,
@@ -111,6 +121,7 @@ export default function AgentDashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [authCode, setAuthCode] = useState("");
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
+  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -875,7 +886,7 @@ export default function AgentDashboard() {
                                   toast({ title: "Error", description: "Rejection reason is required", variant: "destructive" });
                                   return;
                                 }
-                                rejectMutation.mutate({ submissionId: selectedSubmission.id, reason: rejectionReason });
+                                setRejectConfirmOpen(true);
                               }}
                               disabled={rejectMutation.isPending || approveMutation.isPending}
                               data-testid="button-reject"
@@ -934,6 +945,32 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={rejectConfirmOpen} onOpenChange={setRejectConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-reject-confirm-title">Reject Submission</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to reject this submission? The technician will be notified via SMS.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-reject">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedSubmission) {
+                  rejectMutation.mutate({ submissionId: selectedSubmission.id, reason: rejectionReason });
+                }
+                setRejectConfirmOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-reject"
+            >
+              Reject & Notify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }
