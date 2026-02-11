@@ -31,23 +31,26 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - POST /api/auth/login - Authenticate and receive JWT
 - GET /api/auth/me - Get current user (protected)
 - POST /api/submissions - Create submission (technician only, auto-assigns to VRS agent)
-- GET /api/submissions - List submissions (filtered by role: technician sees own, agent sees assigned)
+- GET /api/submissions - List submissions (filtered by role, supports ?allQueue=true, ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled)
+- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 (vrs_agent only, body: {action, rejectionReason?})
+- GET /api/agent/stats - Agent queue count and completed today count
 - POST /api/admin/users - Admin create any user type
 
 ### Frontend Pages
-- `/login` - Login page (redirects to / if authenticated)
+- `/login` - Login page (redirects by role)
 - `/` - Technician home dashboard (stats, recent submissions)
 - `/submit` - New submission form (request type toggle, appliance type, warranty provider with B2B Coming Soon badges)
 - `/history` - Submission history list
 - `/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
+- `/agent` - VRS Agent dashboard (sidebar nav, split-panel queue/detail, approve/reject actions)
 
 ### Auth Flow
 - JWT tokens stored in localStorage
 - AuthContext provides user/token/login/logout
 - queryClient injects Authorization header via getToken()
-- ProtectedRoute redirects to /login if unauthenticated
-- Bottom navigation (Home, Submit, History) on all protected pages
+- Role-based routing: technicians -> /, agents/admins -> /agent
+- Bottom navigation (Home, Submit, History) on technician pages only
 
 ### Seed Users
 - admin@vrs.com / admin123 (admin)
@@ -64,11 +67,12 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `client/src/pages/tech-submit.tsx` - Submission form
 - `client/src/pages/tech-history.tsx` - Submission history
 - `client/src/pages/submission-detail.tsx` - Submission detail/status
+- `client/src/pages/agent-dashboard.tsx` - VRS Agent dashboard with Stage 1 queue
 
 ## Build Phases
 - Phase 1: Database schema + Express server + Auth routes [COMPLETE]
 - Phase 2: Mobile submission form + submission API + auto-assignment [COMPLETE]
-- Phase 3: Desktop Stage 1 queue + approval flow
+- Phase 3: Desktop Stage 1 queue + approval flow [COMPLETE]
 - Phase 4: Desktop Stage 2 queue + auth code flow + Twilio integration
 - Phase 5: Admin user management + division assignments
 - Phase 6: Polish, PWA manifest, responsive refinements
@@ -76,3 +80,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ## Recent Changes
 - 2026-02-10: Phase 1 complete - Database schema, storage layer, JWT auth routes
 - 2026-02-10: Phase 2 complete - Mobile submission form, submission API with auto-assignment, technician home/history/detail pages, JWT auth context
+- 2026-02-11: Phase 3 complete - VRS Agent desktop dashboard with sidebar navigation, split-panel queue/detail layout, Stage 1 approve/reject workflow, role-based routing

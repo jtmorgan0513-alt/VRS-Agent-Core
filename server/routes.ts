@@ -214,6 +214,7 @@ export async function registerRoutes(
       let filters: {
         technicianId?: number;
         stage1Status?: string;
+        stage2Status?: string;
         assignedTo?: number;
         applianceType?: string;
       } = {};
@@ -221,14 +222,26 @@ export async function registerRoutes(
       if (user.role === "technician") {
         filters.technicianId = user.id;
       } else if (user.role === "vrs_agent") {
-        filters.assignedTo = user.id;
+        if (req.query.allQueue !== "true") {
+          filters.assignedTo = user.id;
+        }
       }
 
       if (req.query.stage1Status) {
         filters.stage1Status = req.query.stage1Status as string;
       }
+      if (req.query.stage2Status) {
+        filters.stage2Status = req.query.stage2Status as string;
+      }
       if (req.query.applianceType) {
         filters.applianceType = req.query.applianceType as string;
+      }
+
+      const completedToday = req.query.completedToday === "true";
+
+      if (user.role === "vrs_agent" || user.role === "admin") {
+        const submissions = await storage.getSubmissionsWithTechnician(filters, completedToday);
+        return res.status(200).json({ submissions });
       }
 
       const submissions = await storage.getSubmissions(filters);
@@ -264,6 +277,85 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get submission error:", error);
       return res.status(500).json({ error: "Failed to get submission" });
+    }
+  });
+
+  // ========================================================================
+  // STAGE 1 REVIEW ROUTES
+  // ========================================================================
+
+  const stage1ActionSchema = z.object({
+    action: z.enum(["approve", "reject"]),
+    rejectionReason: z.string().optional(),
+  });
+
+  app.patch("/api/submissions/:id/stage1", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const parsed = stage1ActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.assignedTo !== authReq.user!.id) {
+        return res.status(403).json({ error: "Not assigned to you" });
+      }
+
+      if (submission.stage1Status !== "pending") {
+        return res.status(400).json({ error: "Submission already reviewed" });
+      }
+
+      const { action, rejectionReason } = parsed.data;
+
+      if (action === "reject" && !rejectionReason) {
+        return res.status(400).json({ error: "Rejection reason is required" });
+      }
+
+      const updateData: Record<string, unknown> = {
+        stage1Status: action === "approve" ? "approved" : "rejected",
+        stage1ReviewedBy: authReq.user!.id,
+        stage1ReviewedAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      if (action === "reject") {
+        updateData.stage1RejectionReason = rejectionReason;
+      }
+
+      const updated = await storage.updateSubmission(id, updateData as any);
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("Stage 1 review error:", error);
+      return res.status(500).json({ error: "Failed to process review" });
+    }
+  });
+
+  // ========================================================================
+  // AGENT STATS ROUTE
+  // ========================================================================
+
+  app.get("/api/agent/stats", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const userId = authReq.user!.id;
+
+      const queueCount = await storage.getAgentQueueCount(userId);
+      const completedToday = await storage.getCompletedTodayCount(userId);
+
+      return res.status(200).json({ queueCount, completedToday });
+    } catch (error) {
+      console.error("Agent stats error:", error);
+      return res.status(500).json({ error: "Failed to get agent stats" });
     }
   });
 

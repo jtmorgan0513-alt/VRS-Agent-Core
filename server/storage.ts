@@ -53,11 +53,19 @@ export interface IStorage {
     applianceType?: string;
     assignedTo?: number;
   }): Promise<Submission[]>;
+  getSubmissionsWithTechnician(filters?: {
+    technicianId?: number;
+    stage1Status?: string;
+    stage2Status?: string;
+    applianceType?: string;
+    assignedTo?: number;
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]>;
   updateSubmission(
     id: number,
     data: Partial<InsertSubmission>
   ): Promise<Submission | undefined>;
   getAgentQueueCount(agentId: number): Promise<number>;
+  getCompletedTodayCount(agentId: number): Promise<number>;
 
   // SMS methods
   createSmsNotification(
@@ -219,6 +227,80 @@ export class DatabaseStorage implements IStorage {
       .where(eq(submissions.id, id))
       .returning();
     return result[0];
+  }
+
+  async getSubmissionsWithTechnician(filters?: {
+    technicianId?: number;
+    stage1Status?: string;
+    stage2Status?: string;
+    applianceType?: string;
+    assignedTo?: number;
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]> {
+    const conditions: ReturnType<typeof eq>[] = [];
+
+    if (filters?.technicianId !== undefined) {
+      conditions.push(eq(submissions.technicianId, filters.technicianId));
+    }
+    if (filters?.stage1Status !== undefined) {
+      conditions.push(eq(submissions.stage1Status, filters.stage1Status));
+    }
+    if (filters?.stage2Status !== undefined) {
+      conditions.push(eq(submissions.stage2Status, filters.stage2Status));
+    }
+    if (filters?.applianceType !== undefined) {
+      conditions.push(eq(submissions.applianceType, filters.applianceType));
+    }
+    if (filters?.assignedTo !== undefined) {
+      conditions.push(eq(submissions.assignedTo, filters.assignedTo));
+    }
+    if (completedToday) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      conditions.push(
+        sql`${submissions.stage1ReviewedAt} >= ${today}` as any
+      );
+      conditions.push(
+        sql`(${submissions.stage1Status} = 'approved' OR ${submissions.stage1Status} = 'rejected')` as any
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const result = await db
+      .select({
+        submission: submissions,
+        technicianName: users.name,
+        technicianPhone: users.phone,
+      })
+      .from(submissions)
+      .innerJoin(users, eq(submissions.technicianId, users.id))
+      .where(whereClause)
+      .orderBy(desc(submissions.createdAt));
+
+    return result.map((r) => ({
+      ...r.submission,
+      technicianName: r.technicianName,
+      technicianPhone: r.technicianPhone,
+    }));
+  }
+
+  async getCompletedTodayCount(agentId: number): Promise<number> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.assignedTo, agentId),
+          or(
+            eq(submissions.stage1Status, "approved"),
+            eq(submissions.stage1Status, "rejected")
+          ),
+          sql`${submissions.stage1ReviewedAt} >= ${today}`
+        )
+      );
+    return result[0]?.count || 0;
   }
 
   async getAgentQueueCount(agentId: number): Promise<number> {
