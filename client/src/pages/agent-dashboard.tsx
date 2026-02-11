@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -36,6 +37,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   ClipboardCheck,
   ClipboardList,
@@ -62,6 +70,7 @@ import {
   Video,
   LifeBuoy,
   RotateCcw,
+  Key,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -127,6 +136,11 @@ export default function AgentDashboard() {
   const [authCode, setAuthCode] = useState("");
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
+  const [rgcModalOpen, setRgcModalOpen] = useState(false);
+  const [rgcInput, setRgcInput] = useState("");
+  const [rgcVerified, setRgcVerified] = useState(false);
+  const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
+  const [rgcMissing, setRgcMissing] = useState(false);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -156,6 +170,33 @@ export default function AgentDashboard() {
   const { data: statsData } = useQuery<{ queueCount: number; completedToday: number; stage2Count: number }>({
     queryKey: ["/api/agent/stats"],
   });
+
+  const { data: rgcStatus } = useQuery<{
+    needsEntry: boolean;
+    missingCode: boolean;
+    code: string | null;
+  }>({
+    queryKey: ["/api/agent/rgc-status"],
+  });
+
+  useEffect(() => {
+    if (rgcStatus) {
+      if (rgcStatus.needsEntry) {
+        setRgcModalOpen(true);
+        setRgcVerified(false);
+        setTodaysRgcCode(null);
+        setRgcMissing(false);
+      } else if (rgcStatus.missingCode) {
+        setRgcMissing(true);
+        setRgcVerified(false);
+        setTodaysRgcCode(null);
+      } else {
+        setRgcVerified(true);
+        setTodaysRgcCode(rgcStatus.code);
+        setRgcMissing(false);
+      }
+    }
+  }, [rgcStatus]);
 
   const warrantyCounstUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -241,6 +282,25 @@ export default function AgentDashboard() {
     },
   });
 
+  const verifyRgcMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await apiRequest("POST", "/api/agent/verify-rgc", { code });
+      return res.json();
+    },
+    onSuccess: (data: { success: boolean; code: string }) => {
+      setRgcModalOpen(false);
+      setRgcVerified(true);
+      setTodaysRgcCode(data.code);
+      setRgcMissing(false);
+      setRgcInput("");
+      toast({ title: "RGC Code Verified", description: `Today's code: ${data.code}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/rgc-status"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Verification Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const toggleCheckbox = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -276,6 +336,15 @@ export default function AgentDashboard() {
               <span className="font-semibold text-sm" data-testid="text-sidebar-title">VRS Agent</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1" data-testid="text-agent-name">{user?.name}</p>
+            {rgcVerified && todaysRgcCode && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-mono font-semibold" data-testid="text-todays-rgc">{todaysRgcCode}</span>
+              </div>
+            )}
+            {rgcMissing && (
+              <p className="text-xs text-destructive mt-2" data-testid="text-rgc-missing">Daily code not set</p>
+            )}
           </SidebarHeader>
 
           <SidebarContent>
@@ -404,6 +473,19 @@ export default function AgentDashboard() {
           </SidebarContent>
 
           <SidebarFooter className="p-4 space-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                setRgcInput("");
+                setRgcModalOpen(true);
+              }}
+              data-testid="button-update-rgc"
+            >
+              <Key className="w-4 h-4" />
+              <span>Update Code</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -730,6 +812,25 @@ export default function AgentDashboard() {
                           Twilio SMS
                         </span>
                       </div>
+
+                      {selectedSubmission.warrantyType === "sears_protect" && (
+                        <div className="mb-4 space-y-2">
+                          <Label className="text-xs text-muted-foreground">RGC Code</Label>
+                          {rgcMissing ? (
+                            <p className="text-sm text-destructive" data-testid="text-rgc-not-set">
+                              No RGC code has been set for today. Please contact an administrator.
+                            </p>
+                          ) : (
+                            <Input
+                              value={todaysRgcCode || ""}
+                              readOnly
+                              className="font-mono bg-muted"
+                              data-testid="input-rgc-readonly"
+                            />
+                          )}
+                        </div>
+                      )}
+
                       <p className="text-xs text-muted-foreground mb-3">Authorization Code from {getWarrantyLabel(selectedSubmission)}</p>
                       <div className="flex items-center gap-3">
                         <Input
@@ -741,7 +842,7 @@ export default function AgentDashboard() {
                         />
                         <Button
                           onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
-                          disabled={!authCode.trim() || stage2Mutation.isPending}
+                          disabled={!authCode.trim() || stage2Mutation.isPending || (selectedSubmission.warrantyType === "sears_protect" && (rgcMissing || !todaysRgcCode))}
                           data-testid="button-send-code"
                         >
                           <Send className="w-4 h-4" />
@@ -1006,6 +1107,41 @@ export default function AgentDashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={rgcModalOpen} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle data-testid="text-rgc-modal-title">Enter Today's RGC Code</DialogTitle>
+            <DialogDescription>
+              Enter the daily RGC code to access your dashboard. Contact your admin if you don't have the code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-mono font-semibold text-muted-foreground">RGC</span>
+              <Input
+                placeholder="12345"
+                value={rgcInput}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                  setRgcInput(val);
+                }}
+                maxLength={5}
+                className="font-mono"
+                data-testid="input-rgc-verify"
+              />
+            </div>
+            <Button
+              onClick={() => verifyRgcMutation.mutate(rgcInput)}
+              disabled={rgcInput.length !== 5 || verifyRgcMutation.isPending}
+              className="w-full"
+              data-testid="button-verify-rgc"
+            >
+              {verifyRgcMutation.isPending ? "Verifying..." : "Submit"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }

@@ -83,6 +83,7 @@ import {
   CalendarRange,
   LifeBuoy,
   RotateCcw,
+  Key,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -109,7 +110,7 @@ function formatDuration(ms: number | null): string {
 
 type SafeUser = Omit<User, "password">;
 
-type ActiveView = "users" | "divisions" | "analytics";
+type ActiveView = "users" | "divisions" | "rgc" | "analytics";
 
 const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"] as const;
 
@@ -150,6 +151,8 @@ export default function AdminDashboard() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
+  const [rgcDate, setRgcDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rgcDigits, setRgcDigits] = useState("");
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: SafeUser[] }>({
     queryKey: ["/api/admin/users"],
@@ -168,6 +171,15 @@ export default function AdminDashboard() {
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics"],
     enabled: activeView === "analytics",
+  });
+
+  const rgcQueryUrl = `/api/admin/rgc-code?date=${rgcDate}`;
+  const { data: currentRgc, isLoading: rgcLoading } = useQuery<{
+    rgcCode: { id: number; code: string; validDate: string; createdBy: number | null; createdAt: string } | null;
+    createdByName?: string;
+  }>({
+    queryKey: [rgcQueryUrl],
+    enabled: activeView === "rgc",
   });
 
   useEffect(() => {
@@ -237,6 +249,24 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({
         queryKey: ["/api/admin/users", selectedAgentId, "specializations"],
       });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const setRgcMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/rgc-code", {
+        code: rgcDigits,
+        date: rgcDate,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "RGC Code Set", description: `Code RGC${rgcDigits} set for ${rgcDate}` });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/admin/rgc-code") });
+      setRgcDigits("");
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -356,6 +386,16 @@ export default function AdminDashboard() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
+                      onClick={() => setActiveView("rgc")}
+                      data-active={activeView === "rgc"}
+                      data-testid="nav-rgc"
+                    >
+                      <Key className="w-4 h-4" />
+                      <span>RGC Codes</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
                       onClick={() => setActiveView("analytics")}
                       data-active={activeView === "analytics"}
                       data-testid="nav-analytics"
@@ -413,6 +453,7 @@ export default function AdminDashboard() {
               <h1 className="text-lg font-semibold" data-testid="text-page-title">
                 {activeView === "users" && "User Management"}
                 {activeView === "divisions" && "Division Assignments"}
+                {activeView === "rgc" && "Daily RGC Code"}
                 {activeView === "analytics" && "Analytics"}
               </h1>
             </div>
@@ -604,6 +645,81 @@ export default function AdminDashboard() {
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {activeView === "rgc" && (
+              <div className="p-4 space-y-6 max-w-2xl">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Key className="w-4 h-4" />
+                      Set Daily RGC Code
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="rgc-date">Date</Label>
+                      <Input
+                        id="rgc-date"
+                        type="date"
+                        value={rgcDate}
+                        onChange={(e) => setRgcDate(e.target.value)}
+                        data-testid="input-rgc-date"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="rgc-code">RGC Code</Label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono font-semibold text-muted-foreground">RGC</span>
+                        <Input
+                          id="rgc-code"
+                          placeholder="12345"
+                          value={rgcDigits}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                            setRgcDigits(val);
+                          }}
+                          maxLength={5}
+                          className="font-mono"
+                          data-testid="input-rgc-code"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Enter exactly 5 digits after "RGC" prefix</p>
+                    </div>
+                    <Button
+                      onClick={() => setRgcMutation.mutate()}
+                      disabled={rgcDigits.length !== 5 || setRgcMutation.isPending}
+                      data-testid="button-set-rgc"
+                    >
+                      {setRgcMutation.isPending ? "Setting..." : "Set Code"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Current Code for {rgcDate}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {rgcLoading ? (
+                      <Skeleton className="h-10 w-48" />
+                    ) : currentRgc?.rgcCode ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className="text-lg font-mono px-4 py-1" data-testid="text-current-rgc">
+                            {currentRgc.rgcCode.code}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground" data-testid="text-rgc-set-by">
+                          Set by {currentRgc.createdByName || "Unknown"} on {new Date(currentRgc.rgcCode.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground" data-testid="text-no-rgc">No code set for this date</p>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
 

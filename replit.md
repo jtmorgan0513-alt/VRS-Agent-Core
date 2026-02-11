@@ -34,9 +34,13 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/submissions - List submissions (filtered by role, supports ?allQueue=true, ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled)
 - PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent only, body: {action, rejectionReason?})
-- PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode})
+- PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode}), auto-populates rgcCode for sears_protect
 - GET /api/agent/stats - Agent queue count, stage2 count, completed today count
 - GET /api/agent/warranty-counts - Warranty provider counts for Stage 2 queue (supports ?allQueue=true)
+- GET /api/agent/rgc-status - Check if agent needs to enter today's RGC code
+- POST /api/agent/verify-rgc - Verify agent's RGC code entry (body: {code: "5digits"})
+- POST /api/admin/rgc-code - Set daily RGC code (admin only, body: {code: "5digits", date: "YYYY-MM-DD"})
+- GET /api/admin/rgc-code?date=YYYY-MM-DD - Get RGC code for specific date (admin only)
 - POST /api/uploads/request-url - Get presigned upload URL (technician only, JSON body: {name, size, contentType})
 - GET /objects/{*objectPath} - Serve uploaded files from cloud storage
 - GET /api/admin/users - List all users (admin only)

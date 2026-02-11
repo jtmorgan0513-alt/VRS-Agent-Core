@@ -444,15 +444,28 @@ export async function registerRoutes(
 
       const { authCode } = parsed.data;
 
+      const todayStr = new Date().toISOString().slice(0, 10);
+      let todayRgcCode = null as Awaited<ReturnType<typeof storage.getDailyRgcCode>> | null;
+      if (submission.warrantyType === "sears_protect") {
+        todayRgcCode = await storage.getDailyRgcCode(todayStr) || null;
+        if (!todayRgcCode) {
+          return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
+        }
+      }
+
+      const rgcCode = todayRgcCode?.code || null;
+
       const updated = await storage.updateSubmission(id, {
         authCode,
+        rgcCode,
         stage2Status: "approved",
         stage2ReviewedBy: authReq.user!.id,
         stage2ReviewedAt: new Date(),
         updatedAt: new Date(),
       } as any);
 
-      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode);
+      const rgcCodeForSms = submission.warrantyType === "sears_protect" ? (todayRgcCode?.code || null) : null;
+      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode, rgcCodeForSms);
       await sendSms(submission.id, submission.phone, "auth_code_sent", smsMessage);
 
       return res.status(200).json({ submission: updated });
@@ -475,6 +488,112 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Warranty counts error:", error);
       return res.status(500).json({ error: "Failed to get warranty counts" });
+    }
+  });
+
+  // ========================================================================
+  // ADMIN RGC CODE ROUTES
+  // ========================================================================
+
+  const rgcCodeSchema = z.object({
+    code: z.string().regex(/^\d{5}$/, "Must be exactly 5 digits"),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
+  });
+
+  app.post("/api/admin/rgc-code", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const parsed = rgcCodeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const fullCode = `RGC${parsed.data.code}`;
+      const result = await storage.upsertDailyRgcCode({
+        code: fullCode,
+        validDate: parsed.data.date,
+        createdBy: authReq.user!.id,
+      });
+
+      return res.status(200).json({ rgcCode: result });
+    } catch (error) {
+      console.error("Admin set RGC code error:", error);
+      return res.status(500).json({ error: "Failed to set RGC code" });
+    }
+  });
+
+  app.get("/api/admin/rgc-code", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+      const rgcCode = await storage.getDailyRgcCode(date);
+
+      if (rgcCode) {
+        const user = rgcCode.createdBy ? await storage.getUser(rgcCode.createdBy) : null;
+        return res.status(200).json({ rgcCode, createdByName: user?.name });
+      }
+
+      return res.status(200).json({ rgcCode: null });
+    } catch (error) {
+      console.error("Admin get RGC code error:", error);
+      return res.status(500).json({ error: "Failed to get RGC code" });
+    }
+  });
+
+  // ========================================================================
+  // AGENT RGC ROUTES
+  // ========================================================================
+
+  const verifyRgcSchema = z.object({
+    code: z.string().regex(/^\d{5}$/, "Must be exactly 5 digits"),
+  });
+
+  app.post("/api/agent/verify-rgc", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const parsed = verifyRgcSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const fullCode = "RGC" + parsed.data.code;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayCode = await storage.getDailyRgcCode(todayStr);
+
+      if (!todayCode) {
+        return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
+      }
+
+      if (todayCode.code !== fullCode) {
+        return res.status(400).json({ error: "Code does not match today's RGC. Please verify with your admin." });
+      }
+
+      await storage.updateUser(authReq.user!.id, { lastRgcCodeEntry: todayStr } as any);
+      return res.status(200).json({ success: true, code: todayCode.code });
+    } catch (error) {
+      console.error("Verify RGC error:", error);
+      return res.status(500).json({ error: "Failed to verify RGC code" });
+    }
+  });
+
+  app.get("/api/agent/rgc-status", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const user = await storage.getUser(authReq.user!.id);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayCode = await storage.getDailyRgcCode(todayStr);
+
+      if (!todayCode) {
+        return res.status(200).json({ needsEntry: false, missingCode: true, code: null });
+      }
+
+      if ((user as any)?.lastRgcCodeEntry !== todayStr) {
+        return res.status(200).json({ needsEntry: true, missingCode: false, code: null });
+      }
+
+      return res.status(200).json({ needsEntry: false, missingCode: false, code: todayCode.code });
+    } catch (error) {
+      console.error("RGC status error:", error);
+      return res.status(500).json({ error: "Failed to get RGC status" });
     }
   });
 

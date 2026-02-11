@@ -17,6 +17,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   firstLogin: boolean("first_login").notNull().default(true),
   lastSeenVersion: varchar("last_seen_version", { length: 50 }),
+  lastRgcCodeEntry: date("last_rgc_code_entry"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

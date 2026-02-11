@@ -79,6 +79,7 @@ export interface IStorage {
   // RGC methods
   createDailyRgcCode(code: InsertDailyRgcCode): Promise<DailyRgcCode>;
   getDailyRgcCode(date: string): Promise<DailyRgcCode | undefined>;
+  upsertDailyRgcCode(data: { code: string; validDate: string; createdBy: number | null }): Promise<DailyRgcCode>;
 
   getAnalytics(): Promise<{
     submissionsToday: number;
@@ -405,6 +406,18 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(dailyRgcCodes)
       .where(eq(dailyRgcCodes.validDate, date));
+    return result[0];
+  }
+
+  async upsertDailyRgcCode(data: { code: string; validDate: string; createdBy: number | null }): Promise<DailyRgcCode> {
+    const result = await db
+      .insert(dailyRgcCodes)
+      .values(data)
+      .onConflictDoUpdate({
+        target: dailyRgcCodes.validDate,
+        set: { code: data.code, createdBy: data.createdBy },
+      })
+      .returning();
     return result[0];
   }
 
