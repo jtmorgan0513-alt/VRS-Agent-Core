@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -59,7 +60,10 @@ import {
   Square,
   CheckSquare,
   Video,
+  LifeBuoy,
+  RotateCcw,
 } from "lucide-react";
+import HelpTooltip from "@/components/help-tooltip";
 
 type SubmissionWithTech = Submission & {
   technicianName: string;
@@ -113,6 +117,7 @@ function getWarrantyLabel(sub: SubmissionWithTech): string {
 export default function AgentDashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [activeView, setActiveView] = useState<"stage1" | "stage2" | "completed">("stage1");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [myAssignments, setMyAssignments] = useState(true);
@@ -398,7 +403,30 @@ export default function AgentDashboard() {
             )}
           </SidebarContent>
 
-          <SidebarFooter className="p-4">
+          <SidebarFooter className="p-4 space-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={() => navigate("/help")}
+              data-testid="nav-help"
+            >
+              <LifeBuoy className="w-4 h-4" />
+              <span>Help Center</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={async () => {
+                await apiRequest("PATCH", "/api/users/me", { firstLogin: true });
+                toast({ title: "Tutorial will show on next login" });
+              }}
+              data-testid="button-restart-tutorial"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Restart Tutorial</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -695,6 +723,7 @@ export default function AgentDashboard() {
                         <div className="flex items-center gap-2">
                           <Badge variant="default" className="text-xs">STAGE 2</Badge>
                           <span className="text-sm font-semibold">Enter Authorization Code</span>
+                          <HelpTooltip content="Enter the authorization code from the warranty provider. The technician will receive this code via SMS." />
                         </div>
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Send className="w-3 h-3" />
@@ -879,29 +908,35 @@ export default function AgentDashboard() {
                             />
                           </div>
                           <div className="flex items-center gap-3 flex-wrap">
-                            <Button
-                              variant="destructive"
-                              onClick={() => {
-                                if (!rejectionReason.trim()) {
-                                  toast({ title: "Error", description: "Rejection reason is required", variant: "destructive" });
-                                  return;
-                                }
-                                setRejectConfirmOpen(true);
-                              }}
-                              disabled={rejectMutation.isPending || approveMutation.isPending}
-                              data-testid="button-reject"
-                            >
-                              <ShieldX className="w-4 h-4 mr-1" />
-                              {rejectMutation.isPending ? "Rejecting..." : "Reject & Notify"}
-                            </Button>
-                            <Button
-                              onClick={() => approveMutation.mutate(selectedSubmission.id)}
-                              disabled={approveMutation.isPending || rejectMutation.isPending}
-                              data-testid="button-approve"
-                            >
-                              <ShieldCheck className="w-4 h-4 mr-1" />
-                              {approveMutation.isPending ? "Approving..." : "Approve & Notify"}
-                            </Button>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="destructive"
+                                onClick={() => {
+                                  if (!rejectionReason.trim()) {
+                                    toast({ title: "Error", description: "Rejection reason is required", variant: "destructive" });
+                                    return;
+                                  }
+                                  setRejectConfirmOpen(true);
+                                }}
+                                disabled={rejectMutation.isPending || approveMutation.isPending}
+                                data-testid="button-reject"
+                              >
+                                <ShieldX className="w-4 h-4 mr-1" />
+                                {rejectMutation.isPending ? "Rejecting..." : "Reject & Notify"}
+                              </Button>
+                              <HelpTooltip content="Returns the submission to the technician with your rejection reason. They will receive SMS notification." />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                onClick={() => approveMutation.mutate(selectedSubmission.id)}
+                                disabled={approveMutation.isPending || rejectMutation.isPending}
+                                data-testid="button-approve"
+                              >
+                                <ShieldCheck className="w-4 h-4 mr-1" />
+                                {approveMutation.isPending ? "Approving..." : "Approve & Notify"}
+                              </Button>
+                              <HelpTooltip content="Confirms you have enough info to proceed. Tech will receive SMS and can leave the job site." />
+                            </div>
                           </div>
                         </CardContent>
                       </Card>

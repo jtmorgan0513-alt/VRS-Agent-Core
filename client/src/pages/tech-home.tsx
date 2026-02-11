@@ -5,11 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
+import { FileText, Clock, CheckCircle, XCircle, LogOut, RotateCcw } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
 
 export default function TechHomePage() {
   const { user, logout } = useAuth();
+  const { toast } = useToast();
 
   const { data, isLoading } = useQuery<{ submissions: Submission[] }>({
     queryKey: ["/api/submissions"],
@@ -32,15 +35,29 @@ export default function TechHomePage() {
               </h1>
               <p className="text-sm opacity-80">{user?.racId || "Technician"}</p>
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="text-primary-foreground no-default-hover-elevate no-default-active-elevate"
-              onClick={logout}
-              data-testid="button-logout"
-            >
-              <LogOut className="w-5 h-5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-primary-foreground no-default-hover-elevate no-default-active-elevate"
+                onClick={async () => {
+                  await apiRequest("PATCH", "/api/users/me", { firstLogin: true });
+                  toast({ title: "Tutorial will show on next login" });
+                }}
+                data-testid="button-restart-tutorial"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-primary-foreground no-default-hover-elevate no-default-active-elevate"
+                onClick={logout}
+                data-testid="button-logout"
+              >
+                <LogOut className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Camera, Send, Lock, Video, X } from "lucide-react";
+import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
   { value: "refrigeration", label: "Refrigerator" },
@@ -220,7 +221,10 @@ export default function TechSubmitPage() {
               name="requestType"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Request Type</FormLabel>
+                  <div className="flex items-center gap-1.5">
+                    <FormLabel>Request Type</FormLabel>
+                    <HelpTooltip content="Choose 'Authorization' for repairs over your limit, or 'Non-Repairable' if the unit can't be fixed" />
+                  </div>
                   <FormControl>
                     <Tabs value={field.value} onValueChange={field.onChange}>
                       <TabsList className="w-full">
@@ -309,7 +313,10 @@ export default function TechSubmitPage() {
                 />
 
                 <div>
-                  <label className="text-sm font-medium">Warranty Provider *</label>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Warranty Provider *</label>
+                    <HelpTooltip content="Select Sears Protect. B2B providers coming soon." />
+                  </div>
                   <div className="mt-2 space-y-2">
                     {WARRANTY_PROVIDERS.map((provider) => (
                       <div
@@ -391,7 +398,10 @@ export default function TechSubmitPage() {
 
             <Card>
               <CardContent className="p-4 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Required Photos</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Required Photos</p>
+                  <HelpTooltip content="Upload clear photos of the appliance issue, model/serial tags, and any relevant documentation." />
+                </div>
                 <div className="border-2 border-dashed rounded-md p-6 text-center">
                   <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">Tap to add photos</p>

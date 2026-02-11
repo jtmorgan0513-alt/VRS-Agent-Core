@@ -44,6 +44,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - PATCH /api/admin/users/:id - Update user details (admin only, supports name, email, password, role, phone, racId, isActive)
 - GET /api/admin/users/:id/specializations - Get agent divisions (admin only)
 - PATCH /api/admin/users/:id/specializations - Set agent divisions (admin only, body: {divisions: string[]})
+- PATCH /api/users/me - Self-update firstLogin, lastSeenVersion (authenticated)
 
 ### Frontend Pages
 - `/login` - Login page (redirects by role)
@@ -52,14 +53,23 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `/history` - Submission history list
 - `/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
 - `/agent` - VRS Agent dashboard (sidebar nav, split-panel queue/detail, approve/reject actions)
-- `/admin` - Admin dashboard (sidebar nav, user management table, division assignments, analytics placeholder)
+- `/admin` - Admin dashboard (sidebar nav, user management table, division assignments, analytics)
+- `/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
+
+### Onboarding & Help System
+- First-login wizard: role-based step-by-step modal (5 slides tech, 5 agent, 4 admin)
+- What's New modal: shown when app version changes (VITE_APP_VERSION env var)
+- Contextual help tooltips: "?" icons next to key UI elements with explanations
+- Help Center: comprehensive tabbed page with accordion Q&A, search filter
+- Restart Tutorial: available in sidebar footer (agent/admin) and tech home header
+- User fields: firstLogin (boolean, default true), lastSeenVersion (varchar)
 
 ### Auth Flow
 - JWT tokens stored in localStorage
-- AuthContext provides user/token/login/logout
+- AuthContext provides user/token/login/logout/refreshUser
 - queryClient injects Authorization header via getToken()
 - Role-based routing: technicians -> /, agents -> /agent, admins -> /admin
-- Bottom navigation (Home, Submit, History) on technician pages only
+- Bottom navigation (Home, Submit, History, Help) on technician pages only
 - Deactivated users (isActive=false) get 403 on login
 
 ### Seed Users

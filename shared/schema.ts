@@ -15,6 +15,8 @@ export const users = pgTable("users", {
   phone: varchar("phone", { length: 20 }),
   racId: varchar("rac_id", { length: 50 }),
   isActive: boolean("is_active").notNull().default(true),
+  firstLogin: boolean("first_login").notNull().default(true),
+  lastSeenVersion: varchar("last_seen_version", { length: 50 }),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

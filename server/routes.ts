@@ -130,6 +130,35 @@ export async function registerRoutes(
     }
   });
 
+  const updateMeSchema = z.object({
+    firstLogin: z.boolean().optional(),
+    lastSeenVersion: z.string().optional(),
+  });
+
+  app.patch("/api/users/me", authenticateToken, async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      if (!authReq.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const parsed = updateMeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const updated = await storage.updateUser(authReq.user.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.status(200).json({ user: sanitizeUser(updated) });
+    } catch (error) {
+      console.error("Update me error:", error);
+      return res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
   // ========================================================================
   // SUBMISSION ROUTES
   // ========================================================================

@@ -1,11 +1,12 @@
 import { useLocation, Link } from "wouter";
-import { Home, FileText, Clock } from "lucide-react";
+import { Home, FileText, Clock, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { path: "/", label: "Home", icon: Home },
   { path: "/submit", label: "Submit", icon: FileText },
   { path: "/history", label: "History", icon: Clock },
+  { path: "/help", label: "Help", icon: HelpCircle },
 ];
 
 export default function BottomNav() {

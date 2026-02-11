@@ -1,5 +1,5 @@
 import { Switch, Route, Redirect } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,6 +14,9 @@ import AgentDashboard from "@/pages/agent-dashboard";
 import AdminDashboard from "@/pages/admin-dashboard";
 import NotFound from "@/pages/not-found";
 import InstallPrompt from "@/components/install-prompt";
+import OnboardingWizard from "@/components/onboarding-wizard";
+import WhatsNewModal from "@/components/whats-new-modal";
+import HelpCenterPage from "@/pages/help-center";
 
 function LoadingScreen() {
   return (
@@ -76,6 +79,64 @@ function AuthRoute() {
   return <LoginPage />;
 }
 
+function HelpRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Redirect to="/login" />;
+
+  if (user.role === "technician") {
+    return (
+      <>
+        <HelpCenterPage />
+        <BottomNav />
+      </>
+    );
+  }
+
+  return <HelpCenterPage />;
+}
+
+function OnboardingManager() {
+  const { user, refreshUser } = useAuth();
+
+  if (!user) return null;
+
+  const appVersion = import.meta.env.VITE_APP_VERSION || "1.0.0";
+  const showOnboarding = user.firstLogin === true;
+  const showWhatsNew = !showOnboarding && user.lastSeenVersion !== appVersion;
+
+  const handleWizardComplete = async () => {
+    await apiRequest("PATCH", "/api/users/me", {
+      firstLogin: false,
+      lastSeenVersion: appVersion,
+    });
+    await refreshUser();
+  };
+
+  const handleWhatsNewDismiss = async () => {
+    await apiRequest("PATCH", "/api/users/me", {
+      lastSeenVersion: appVersion,
+    });
+    await refreshUser();
+  };
+
+  return (
+    <div data-testid="onboarding-manager">
+      <OnboardingWizard
+        role={user.role as "technician" | "vrs_agent" | "admin"}
+        open={showOnboarding}
+        onComplete={handleWizardComplete}
+      />
+      <WhatsNewModal
+        open={showWhatsNew}
+        onDismiss={handleWhatsNewDismiss}
+        version={appVersion}
+      />
+    </div>
+  );
+}
+
 function HomeRedirect() {
   const { user, isLoading } = useAuth();
 
@@ -108,6 +169,7 @@ function Router() {
       <Route path="/submissions/:id">
         {() => <TechRoute component={SubmissionDetailPage} />}
       </Route>
+      <Route path="/help" component={HelpRoute} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -120,6 +182,7 @@ function App() {
         <AuthProvider>
           <Toaster />
           <Router />
+          <OnboardingManager />
           <InstallPrompt />
         </AuthProvider>
       </TooltipProvider>

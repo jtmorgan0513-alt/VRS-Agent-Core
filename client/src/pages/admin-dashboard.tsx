@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -80,7 +81,10 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  LifeBuoy,
+  RotateCcw,
 } from "lucide-react";
+import HelpTooltip from "@/components/help-tooltip";
 
 interface AnalyticsData {
   submissionsToday: number;
@@ -133,6 +137,7 @@ const ROLE_LABELS: Record<string, string> = {
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [activeView, setActiveView] = useState<ActiveView>("users");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
@@ -364,7 +369,30 @@ export default function AdminDashboard() {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="p-4">
+          <SidebarFooter className="p-4 space-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={() => navigate("/help")}
+              data-testid="nav-help"
+            >
+              <LifeBuoy className="w-4 h-4" />
+              <span>Help Center</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={async () => {
+                await apiRequest("PATCH", "/api/users/me", { firstLogin: true });
+                toast({ title: "Tutorial will show on next login" });
+              }}
+              data-testid="button-restart-tutorial"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Restart Tutorial</span>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -414,7 +442,12 @@ export default function AdminDashboard() {
                         <TableHead>Role</TableHead>
                         <TableHead>Phone</TableHead>
                         <TableHead>RAC ID</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>
+                          <div className="flex items-center gap-1.5">
+                            Status
+                            <HelpTooltip content="Deactivated users cannot log in. Their pending submissions remain in the queue." />
+                          </div>
+                        </TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -502,7 +535,10 @@ export default function AdminDashboard() {
                       <Card>
                         <CardHeader>
                           <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <CardTitle className="text-base">Division Assignments</CardTitle>
+                            <div className="flex items-center gap-1.5">
+                              <CardTitle className="text-base">Division Assignments</CardTitle>
+                              <HelpTooltip content="Agents receive submissions matching their assigned divisions. Generalist agents receive all types." />
+                            </div>
                             {isGeneralist && (
                               <Badge variant="secondary" data-testid="badge-generalist">
                                 <Shield className="w-3 h-3 mr-1" />
