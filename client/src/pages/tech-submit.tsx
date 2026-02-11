@@ -49,7 +49,7 @@ const WARRANTY_PROVIDERS = [
 ];
 
 const submissionFormSchema = z.object({
-  serviceOrder: z.string().min(1, "Service order number is required"),
+  serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
   phone: z.string().min(7, "Valid phone number is required"),
   applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"], {
     required_error: "Select an appliance type",
@@ -281,8 +281,24 @@ export default function TechSubmitPage() {
                     <FormItem>
                       <FormLabel>Service Order # *</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. 4521789" {...field} data-testid="input-service-order" />
+                        <Input
+                          placeholder="8175-12345678"
+                          value={field.value}
+                          onChange={(e) => {
+                            let val = e.target.value.replace(/[^\d-]/g, '');
+                            const digits = val.replace(/-/g, '');
+                            if (digits.length <= 4) {
+                              val = digits;
+                            } else {
+                              val = digits.slice(0, 4) + '-' + digits.slice(4, 12);
+                            }
+                            field.onChange(val);
+                          }}
+                          maxLength={13}
+                          data-testid="input-service-order"
+                        />
                       </FormControl>
+                      <p className="text-xs text-muted-foreground">Format: District-ServiceOrder (e.g., 8175-12345678)</p>
                       <FormMessage />
                     </FormItem>
                   )}

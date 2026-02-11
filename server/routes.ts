@@ -164,7 +164,7 @@ export async function registerRoutes(
   // ========================================================================
 
   const createSubmissionSchema = z.object({
-    serviceOrder: z.string().min(1, "Service order is required"),
+    serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
     applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"]),
     requestType: z.enum(["authorization", "non_repairable_review"]),
     warrantyType: z.enum(["sears_protect", "b2b"]).default("sears_protect"),
@@ -215,6 +215,7 @@ export async function registerRoutes(
         racId: user.racId || "",
         phone: parsed.data.phone,
         serviceOrder: parsed.data.serviceOrder,
+        districtCode: parsed.data.serviceOrder.split("-")[0],
         applianceType: parsed.data.applianceType,
         requestType: parsed.data.requestType,
         warrantyType: parsed.data.warrantyType,
@@ -277,12 +278,32 @@ export async function registerRoutes(
       const completedToday = req.query.completedToday === "true";
 
       if (user.role === "vrs_agent" || user.role === "admin") {
-        const submissions = await storage.getSubmissionsWithTechnician(filters, completedToday);
-        return res.status(200).json({ submissions });
+        let result = await storage.getSubmissionsWithTechnician(filters, completedToday);
+
+        const search = req.query.search as string | undefined;
+        if (search && result.length > 0) {
+          const searchTerm = search.toLowerCase();
+          result = result.filter(sub => 
+            sub.serviceOrder.toLowerCase().includes(searchTerm) ||
+            sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm)
+          );
+        }
+
+        return res.status(200).json({ submissions: result });
       }
 
-      const submissions = await storage.getSubmissions(filters);
-      return res.status(200).json({ submissions });
+      let techResult = await storage.getSubmissions(filters);
+
+      const techSearch = req.query.search as string | undefined;
+      if (techSearch && techResult.length > 0) {
+        const searchTerm = techSearch.toLowerCase();
+        techResult = techResult.filter(sub => 
+          sub.serviceOrder.toLowerCase().includes(searchTerm) ||
+          sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm)
+        );
+      }
+
+      return res.status(200).json({ submissions: techResult });
     } catch (error) {
       console.error("Get submissions error:", error);
       return res.status(500).json({ error: "Failed to get submissions" });

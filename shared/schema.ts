@@ -70,7 +70,8 @@ export const submissions = pgTable("submissions", {
     .references(() => users.id),
   racId: varchar("rac_id", { length: 50 }).notNull(),
   phone: varchar("phone", { length: 20 }).notNull(),
-  serviceOrder: varchar("service_order", { length: 50 }).notNull(),
+  serviceOrder: varchar("service_order", { length: 13 }).notNull(),
+  districtCode: varchar("district_code", { length: 4 }),
   applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac'
   requestType: text("request_type").notNull(), // 'authorization', 'non_repairable_review'
   warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'

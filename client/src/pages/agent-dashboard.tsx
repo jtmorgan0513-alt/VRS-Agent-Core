@@ -141,6 +141,7 @@ export default function AgentDashboard() {
   const [rgcVerified, setRgcVerified] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
   const [rgcMissing, setRgcMissing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -158,8 +159,11 @@ export default function AgentDashboard() {
     if (divisionFilter) {
       params.set("applianceType", divisionFilter);
     }
+    if (searchQuery.trim()) {
+      params.set("search", searchQuery.trim());
+    }
     return params.toString();
-  }, [activeView, myAssignments, divisionFilter]);
+  }, [activeView, myAssignments, divisionFilter, searchQuery]);
 
   const submissionsUrl = queryParams ? `/api/submissions?${queryParams}` : "/api/submissions";
 
@@ -590,6 +594,15 @@ export default function AgentDashboard() {
                     ))}
                   </div>
                 )}
+              </div>
+              <div className="px-3 pb-2">
+                <Input
+                  placeholder="Search by service order..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="text-sm"
+                  data-testid="input-search-submissions"
+                />
               </div>
               <ScrollArea className="flex-1">
                 {isLoading ? (
