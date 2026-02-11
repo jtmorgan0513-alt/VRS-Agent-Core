@@ -29,7 +29,7 @@ export function registerObjectStorageRoutes(app: Express): void {
     }
   });
 
-  app.get("/objects/:objectPath(*)", async (req, res) => {
+  app.get("/objects/{*objectPath}", async (req, res) => {
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       await objectStorageService.downloadObject(objectFile, res);

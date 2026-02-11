@@ -37,7 +37,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode})
 - GET /api/agent/stats - Agent queue count, stage2 count, completed today count
 - GET /api/agent/warranty-counts - Warranty provider counts for Stage 2 queue (supports ?allQueue=true)
-- POST /api/upload/video - Upload video file (multipart/form-data, field: video, max 50MB, MP4/MOV/WebM)
+- POST /api/uploads/request-url - Get presigned upload URL (technician only, JSON body: {name, size, contentType})
+- GET /objects/:objectPath - Serve uploaded files from cloud storage
 - POST /api/admin/users - Admin create any user type
 
 ### Frontend Pages
