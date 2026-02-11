@@ -1,13 +1,45 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User } from "@shared/schema";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
+
+const UPLOADS_DIR = path.resolve(process.cwd(), "uploads/videos");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+const videoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `video-${uniqueSuffix}${ext}`);
+  },
+});
+
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+
+const videoUpload = multer({
+  storage: videoStorage,
+  limits: { fileSize: MAX_VIDEO_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_VIDEO_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only MP4, MOV, and WebM videos are allowed."));
+    }
+  },
+});
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -44,6 +76,29 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   await seedDatabase();
+
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+
+  app.post("/api/upload/video", authenticateToken, requireRole("technician"), (req, res, next) => {
+    videoUpload.single("video")(req, res, (err: any) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "Video file exceeds 50MB limit" });
+        }
+        return res.status(400).json({ error: err.message });
+      }
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  }, (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No video file uploaded" });
+    }
+    const videoUrl = `/uploads/videos/${req.file.filename}`;
+    return res.status(200).json({ videoUrl });
+  });
 
   app.post("/api/auth/register", async (req, res) => {
     try {

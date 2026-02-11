@@ -48,6 +48,7 @@ import {
   PhoneCall,
   Square,
   CheckSquare,
+  Video,
 } from "lucide-react";
 
 type SubmissionWithTech = Submission & {
@@ -639,6 +640,25 @@ export default function AgentDashboard() {
                       </div>
                     </div>
 
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                        <Video className="w-3.5 h-3.5" />
+                        Video
+                      </p>
+                      {selectedSubmission.videoUrl ? (
+                        <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video-stage2">
+                          <video
+                            src={selectedSubmission.videoUrl}
+                            controls
+                            className="w-full max-h-[300px]"
+                            data-testid="video-player-stage2"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground" data-testid="text-no-video-stage2">No video attached</p>
+                      )}
+                    </div>
+
                     {batchSameProvider.length > 0 && (
                       <div data-testid="card-batch-mode">
                         <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Batch Mode Active</p>
@@ -794,7 +814,7 @@ export default function AgentDashboard() {
                           Photos & Media
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="space-y-4">
                         {selectedSubmission.photos ? (
                           <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
                             {JSON.parse(selectedSubmission.photos).map((url: string, i: number) => (
@@ -806,6 +826,25 @@ export default function AgentDashboard() {
                         ) : (
                           <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
                         )}
+                        <Separator />
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                            <Video className="w-3.5 h-3.5" />
+                            Video
+                          </p>
+                          {selectedSubmission.videoUrl ? (
+                            <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video">
+                              <video
+                                src={selectedSubmission.videoUrl}
+                                controls
+                                className="w-full max-h-[300px]"
+                                data-testid="video-player"
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground" data-testid="text-no-video">No video attached</p>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
 

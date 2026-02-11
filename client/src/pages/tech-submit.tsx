@@ -1,16 +1,18 @@
+import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth } from "@/lib/auth";
+import { useAuth, getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Form,
   FormControl,
@@ -27,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Camera, Send, Lock } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Upload } from "lucide-react";
 
 const APPLIANCE_TYPES = [
   { value: "refrigeration", label: "Refrigerator" },
@@ -64,6 +66,85 @@ export default function TechSubmitPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  function handleVideoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVideoError(null);
+
+    if (file.size > 50 * 1024 * 1024) {
+      setVideoError("Video file exceeds 50MB limit");
+      if (videoInputRef.current) videoInputRef.current.value = "";
+      return;
+    }
+
+    const videoEl = document.createElement("video");
+    videoEl.preload = "metadata";
+    videoEl.onloadedmetadata = () => {
+      URL.revokeObjectURL(videoEl.src);
+      if (videoEl.duration > 30) {
+        setVideoError("Video must be 30 seconds or less");
+        if (videoInputRef.current) videoInputRef.current.value = "";
+        return;
+      }
+      uploadVideo(file);
+    };
+    videoEl.onerror = () => {
+      URL.revokeObjectURL(videoEl.src);
+      setVideoError("Could not read video file. Please try a different format.");
+      if (videoInputRef.current) videoInputRef.current.value = "";
+    };
+    videoEl.src = URL.createObjectURL(file);
+  }
+
+  function uploadVideo(file: File) {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("video", file);
+
+    const xhr = new XMLHttpRequest();
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      setIsUploading(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const response = JSON.parse(xhr.responseText);
+        setVideoUrl(response.videoUrl);
+      } else {
+        toast({ title: "Upload Failed", description: "Failed to upload video", variant: "destructive" });
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      setIsUploading(false);
+      toast({ title: "Upload Failed", description: "Network error during upload", variant: "destructive" });
+    });
+
+    xhr.open("POST", "/api/upload/video");
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+    xhr.send(formData);
+  }
+
+  function removeVideo() {
+    setVideoUrl(null);
+    setUploadProgress(0);
+    setVideoError(null);
+    if (videoInputRef.current) videoInputRef.current.value = "";
+  }
 
   const form = useForm<SubmissionFormData>({
     resolver: zodResolver(submissionFormSchema),
@@ -81,7 +162,9 @@ export default function TechSubmitPage() {
 
   const mutation = useMutation({
     mutationFn: async (data: SubmissionFormData) => {
-      const res = await apiRequest("POST", "/api/submissions", data);
+      const payload: Record<string, unknown> = { ...data };
+      if (videoUrl) payload.videoUrl = videoUrl;
+      const res = await apiRequest("POST", "/api/submissions", payload);
       return await res.json();
     },
     onSuccess: (data) => {
@@ -294,6 +377,63 @@ export default function TechSubmitPage() {
                   <p className="text-sm text-muted-foreground">Tap to add photos</p>
                   <p className="text-xs text-muted-foreground mt-1">Model/serial plate, error codes, damage</p>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Video Upload</p>
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/webm"
+                  className="hidden"
+                  onChange={handleVideoSelect}
+                  data-testid="input-video-file"
+                />
+                {!videoUrl && !isUploading && (
+                  <label
+                    className="border-2 border-dashed rounded-md p-6 text-center block cursor-pointer"
+                    data-testid="button-add-video"
+                    onClick={() => videoInputRef.current?.click()}
+                  >
+                    <Video className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Tap to add video</p>
+                    <p className="text-xs text-muted-foreground mt-1">Max 50MB file size</p>
+                  </label>
+                )}
+                {videoError && (
+                  <p className="text-sm text-destructive" data-testid="text-video-error">{videoError}</p>
+                )}
+                {isUploading && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Progress value={uploadProgress} className="flex-1" data-testid="progress-video-upload" />
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">{uploadProgress}%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">Uploading video...</p>
+                  </div>
+                )}
+                {videoUrl && !isUploading && (
+                  <div className="relative">
+                    <video
+                      src={videoUrl}
+                      controls
+                      className="w-full rounded-md"
+                      data-testid="video-preview"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="destructive"
+                      className="absolute top-2 right-2"
+                      onClick={removeVideo}
+                      data-testid="button-remove-video"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

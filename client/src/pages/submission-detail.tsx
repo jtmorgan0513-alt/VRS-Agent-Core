@@ -12,6 +12,7 @@ import {
   Copy,
   ArrowLeft,
   ExternalLink,
+  Video,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -203,6 +204,25 @@ export default function SubmissionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {sub.videoUrl && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Video className="w-3.5 h-3.5" />
+                Video Attachment
+              </p>
+              <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video-detail">
+                <video
+                  src={sub.videoUrl}
+                  controls
+                  className="w-full max-h-[250px]"
+                  data-testid="video-player-detail"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {stage1Status === "rejected" && (
           <div className="space-y-2">
