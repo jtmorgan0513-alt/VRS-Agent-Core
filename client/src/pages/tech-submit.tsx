@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Camera, Send, Lock, Video, X, Upload } from "lucide-react";
+import { Camera, Send, Lock, Video, X } from "lucide-react";
 
 const APPLIANCE_TYPES = [
   { value: "refrigeration", label: "Refrigerator" },
@@ -102,41 +102,61 @@ export default function TechSubmitPage() {
     videoEl.src = URL.createObjectURL(file);
   }
 
-  function uploadVideo(file: File) {
+  async function uploadVideo(file: File) {
     const token = getToken();
-    const formData = new FormData();
-    formData.append("video", file);
-
-    const xhr = new XMLHttpRequest();
     setIsUploading(true);
     setUploadProgress(0);
 
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+    try {
+      setUploadProgress(10);
+      const urlRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          name: file.name,
+          size: file.size,
+          contentType: file.type,
+        }),
+      });
+
+      if (!urlRes.ok) {
+        throw new Error("Failed to get upload URL");
       }
-    });
 
-    xhr.addEventListener("load", () => {
+      const { uploadURL, objectPath } = await urlRes.json();
+
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          setUploadProgress(10 + Math.round((e.loaded / e.total) * 90));
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        setIsUploading(false);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setVideoUrl(objectPath);
+        } else {
+          toast({ title: "Upload Failed", description: "Failed to upload video to storage", variant: "destructive" });
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        setIsUploading(false);
+        toast({ title: "Upload Failed", description: "Network error during upload", variant: "destructive" });
+      });
+
+      xhr.open("PUT", uploadURL);
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.send(file);
+    } catch (err) {
       setIsUploading(false);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const response = JSON.parse(xhr.responseText);
-        setVideoUrl(response.videoUrl);
-      } else {
-        toast({ title: "Upload Failed", description: "Failed to upload video", variant: "destructive" });
-      }
-    });
-
-    xhr.addEventListener("error", () => {
-      setIsUploading(false);
-      toast({ title: "Upload Failed", description: "Network error during upload", variant: "destructive" });
-    });
-
-    xhr.open("POST", "/api/upload/video");
-    if (token) {
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      toast({ title: "Upload Failed", description: "Failed to initiate upload", variant: "destructive" });
     }
-    xhr.send(formData);
   }
 
   function removeVideo() {
