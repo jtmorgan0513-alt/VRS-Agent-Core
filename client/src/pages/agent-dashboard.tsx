@@ -1121,8 +1121,8 @@ export default function AgentDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={rgcModalOpen} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+      <Dialog open={rgcModalOpen} onOpenChange={(open) => { if (!open) setRgcModalOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle data-testid="text-rgc-modal-title">Enter Today's RGC Code</DialogTitle>
             <DialogDescription>
