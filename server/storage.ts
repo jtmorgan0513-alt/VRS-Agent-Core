@@ -67,6 +67,9 @@ export interface IStorage {
   getAgentQueueCount(agentId: number): Promise<number>;
   getCompletedTodayCount(agentId: number): Promise<number>;
 
+  getStage2QueueCount(agentId: number): Promise<number>;
+  getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]>;
+
   // SMS methods
   createSmsNotification(
     notification: InsertSmsNotification
@@ -321,6 +324,44 @@ export class DatabaseStorage implements IStorage {
       );
 
     return result[0]?.count || 0;
+  }
+
+  async getStage2QueueCount(agentId: number): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.assignedTo, agentId),
+          eq(submissions.stage1Status, "approved"),
+          eq(submissions.stage2Status, "pending")
+        )
+      );
+    return result[0]?.count || 0;
+  }
+
+  async getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]> {
+    const conditions = [
+      eq(submissions.stage1Status, "approved"),
+      eq(submissions.stage2Status, "pending"),
+    ];
+    if (assignedTo !== undefined) {
+      conditions.push(eq(submissions.assignedTo, assignedTo));
+    }
+
+    const result = await db
+      .select({
+        warrantyProvider: sql<string>`COALESCE(${submissions.warrantyProvider}, ${submissions.warrantyType})`,
+        count: sql<number>`count(*)`,
+      })
+      .from(submissions)
+      .where(and(...conditions))
+      .groupBy(sql`COALESCE(${submissions.warrantyProvider}, ${submissions.warrantyType})`);
+
+    return result.map((r) => ({
+      warrantyProvider: r.warrantyProvider,
+      count: Number(r.count),
+    }));
   }
 
   // SMS methods

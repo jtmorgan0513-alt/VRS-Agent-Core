@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User } from "@shared/schema";
 import { seedDatabase } from "./seed";
+import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -333,6 +334,13 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateSubmission(id, updateData as any);
+
+      const smsMessage = action === "approve"
+        ? buildStage1ApprovedMessage(submission.serviceOrder)
+        : buildStage1RejectedMessage(submission.serviceOrder, rejectionReason || "");
+      const smsType = action === "approve" ? "stage1_approved" : "stage1_rejected";
+      await sendSms(submission.id, submission.phone, smsType, smsMessage);
+
       return res.status(200).json({ submission: updated });
     } catch (error) {
       console.error("Stage 1 review error:", error);
@@ -351,11 +359,86 @@ export async function registerRoutes(
 
       const queueCount = await storage.getAgentQueueCount(userId);
       const completedToday = await storage.getCompletedTodayCount(userId);
+      const stage2Count = await storage.getStage2QueueCount(userId);
 
-      return res.status(200).json({ queueCount, completedToday });
+      return res.status(200).json({ queueCount, completedToday, stage2Count });
     } catch (error) {
       console.error("Agent stats error:", error);
       return res.status(500).json({ error: "Failed to get agent stats" });
+    }
+  });
+
+  // ========================================================================
+  // STAGE 2 REVIEW ROUTES
+  // ========================================================================
+
+  const stage2ActionSchema = z.object({
+    authCode: z.string().min(1, "Authorization code is required"),
+  });
+
+  app.patch("/api/submissions/:id/stage2", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const parsed = stage2ActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.assignedTo !== authReq.user!.id) {
+        return res.status(403).json({ error: "Not assigned to you" });
+      }
+
+      if (submission.stage1Status !== "approved") {
+        return res.status(400).json({ error: "Submission not approved at Stage 1" });
+      }
+
+      if (submission.stage2Status !== "pending") {
+        return res.status(400).json({ error: "Stage 2 already processed" });
+      }
+
+      const { authCode } = parsed.data;
+
+      const updated = await storage.updateSubmission(id, {
+        authCode,
+        stage2Status: "approved",
+        stage2ReviewedBy: authReq.user!.id,
+        stage2ReviewedAt: new Date(),
+        updatedAt: new Date(),
+      } as any);
+
+      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode);
+      await sendSms(submission.id, submission.phone, "auth_code_sent", smsMessage);
+
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("Stage 2 review error:", error);
+      return res.status(500).json({ error: "Failed to process Stage 2 review" });
+    }
+  });
+
+  // ========================================================================
+  // WARRANTY PROVIDER COUNTS
+  // ========================================================================
+
+  app.get("/api/agent/warranty-counts", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const assignedTo = req.query.allQueue === "true" ? undefined : authReq.user!.id;
+      const counts = await storage.getWarrantyProviderCounts(assignedTo);
+      return res.status(200).json({ counts });
+    } catch (error) {
+      console.error("Warranty counts error:", error);
+      return res.status(500).json({ error: "Failed to get warranty counts" });
     }
   });
 

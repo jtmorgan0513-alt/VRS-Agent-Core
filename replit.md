@@ -33,8 +33,10 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - POST /api/submissions - Create submission (technician only, auto-assigns to VRS agent)
 - GET /api/submissions - List submissions (filtered by role, supports ?allQueue=true, ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled)
-- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 (vrs_agent only, body: {action, rejectionReason?})
-- GET /api/agent/stats - Agent queue count and completed today count
+- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent only, body: {action, rejectionReason?})
+- PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode})
+- GET /api/agent/stats - Agent queue count, stage2 count, completed today count
+- GET /api/agent/warranty-counts - Warranty provider counts for Stage 2 queue (supports ?allQueue=true)
 - POST /api/admin/users - Admin create any user type
 
 ### Frontend Pages
@@ -73,7 +75,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - Phase 1: Database schema + Express server + Auth routes [COMPLETE]
 - Phase 2: Mobile submission form + submission API + auto-assignment [COMPLETE]
 - Phase 3: Desktop Stage 1 queue + approval flow [COMPLETE]
-- Phase 4: Desktop Stage 2 queue + auth code flow + Twilio integration
+- Phase 4: Desktop Stage 2 queue + auth code flow + Twilio integration [COMPLETE]
 - Phase 5: Admin user management + division assignments
 - Phase 6: Polish, PWA manifest, responsive refinements
 
@@ -81,3 +83,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-10: Phase 1 complete - Database schema, storage layer, JWT auth routes
 - 2026-02-10: Phase 2 complete - Mobile submission form, submission API with auto-assignment, technician home/history/detail pages, JWT auth context
 - 2026-02-11: Phase 3 complete - VRS Agent desktop dashboard with sidebar navigation, split-panel queue/detail layout, Stage 1 approve/reject workflow, role-based routing
+- 2026-02-11: Phase 4 complete - Stage 2 auth code queue with batch processing banner, warranty provider counts, Twilio SMS service, SMS triggers on Stage 1 and Stage 2 actions
