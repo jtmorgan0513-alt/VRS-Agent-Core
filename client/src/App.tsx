@@ -11,6 +11,7 @@ import TechSubmitPage from "@/pages/tech-submit";
 import TechHistoryPage from "@/pages/tech-history";
 import SubmissionDetailPage from "@/pages/submission-detail";
 import AgentDashboard from "@/pages/agent-dashboard";
+import AdminDashboard from "@/pages/admin-dashboard";
 import NotFound from "@/pages/not-found";
 
 function LoadingScreen() {
@@ -30,6 +31,7 @@ function TechRoute({ component: Component }: { component: React.ComponentType })
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent" />;
+  if (user.role === "admin") return <Redirect to="/admin" />;
 
   return (
     <>
@@ -45,8 +47,20 @@ function AgentRoute() {
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
   if (user.role === "technician") return <Redirect to="/" />;
+  if (user.role === "admin") return <Redirect to="/admin" />;
 
   return <AgentDashboard />;
+}
+
+function AdminRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Redirect to="/login" />;
+  if (user.role === "technician") return <Redirect to="/" />;
+  if (user.role === "vrs_agent") return <Redirect to="/agent" />;
+
+  return <AdminDashboard />;
 }
 
 function AuthRoute() {
@@ -54,7 +68,8 @@ function AuthRoute() {
 
   if (isLoading) return null;
   if (user) {
-    if (user.role === "vrs_agent" || user.role === "admin") return <Redirect to="/agent" />;
+    if (user.role === "admin") return <Redirect to="/admin" />;
+    if (user.role === "vrs_agent") return <Redirect to="/agent" />;
     return <Redirect to="/" />;
   }
   return <LoginPage />;
@@ -65,7 +80,8 @@ function HomeRedirect() {
 
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
-  if (user.role === "vrs_agent" || user.role === "admin") return <Redirect to="/agent" />;
+  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "vrs_agent") return <Redirect to="/agent" />;
 
   return (
     <>
@@ -81,6 +97,7 @@ function Router() {
       <Route path="/login" component={AuthRoute} />
       <Route path="/" component={HomeRedirect} />
       <Route path="/agent" component={AgentRoute} />
+      <Route path="/admin" component={AdminRoute} />
       <Route path="/submit">
         {() => <TechRoute component={TechSubmitPage} />}
       </Route>

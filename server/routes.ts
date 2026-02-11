@@ -100,6 +100,10 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
+      if (!user.isActive) {
+        return res.status(403).json({ error: "Account is deactivated" });
+      }
+
       return res.status(200).json({ user: sanitizeUser(user), token: signToken(user) });
     } catch (error) {
       console.error("Login error:", error);
@@ -476,6 +480,130 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Admin create user error:", error);
       return res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.get("/api/admin/users", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      const sanitizedUsers = users.map(sanitizeUser);
+      return res.status(200).json({ users: sanitizedUsers });
+    } catch (error) {
+      console.error("Admin get users error:", error);
+      return res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  const updateUserSchema = z.object({
+    name: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    racId: z.string().optional(),
+    role: z.enum(["technician", "vrs_agent", "admin"]).optional(),
+    isActive: z.boolean().optional(),
+    password: z.string().min(6).optional(),
+  });
+
+  app.patch("/api/admin/users/:id", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const parsed = updateUserSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const user = await storage.getUser(id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const updateData: Record<string, unknown> = {};
+      
+      if (parsed.data.name !== undefined) {
+        updateData.name = parsed.data.name;
+      }
+      if (parsed.data.email !== undefined) {
+        updateData.email = parsed.data.email;
+      }
+      if (parsed.data.phone !== undefined) {
+        updateData.phone = parsed.data.phone;
+      }
+      if (parsed.data.racId !== undefined) {
+        updateData.racId = parsed.data.racId;
+      }
+      if (parsed.data.role !== undefined) {
+        updateData.role = parsed.data.role;
+      }
+      if (parsed.data.isActive !== undefined) {
+        updateData.isActive = parsed.data.isActive;
+      }
+      if (parsed.data.password !== undefined) {
+        const hashedPassword = await bcryptjs.hash(parsed.data.password, 10);
+        updateData.password = hashedPassword;
+      }
+
+      const updatedUser = await storage.updateUser(id, updateData as any);
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.status(200).json({ user: sanitizeUser(updatedUser) });
+    } catch (error) {
+      console.error("Admin update user error:", error);
+      return res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  app.get("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const user = await storage.getUser(id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const specializations = await storage.getSpecializations(id);
+      return res.status(200).json({ specializations });
+    } catch (error) {
+      console.error("Admin get specializations error:", error);
+      return res.status(500).json({ error: "Failed to get specializations" });
+    }
+  });
+
+  const setSpecializationsSchema = z.object({
+    divisions: z.array(z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"])),
+  });
+
+  app.patch("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const parsed = setSpecializationsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const user = await storage.getUser(id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      await storage.setSpecializations(id, parsed.data.divisions);
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Admin set specializations error:", error);
+      return res.status(500).json({ error: "Failed to set specializations" });
     }
   });
 
