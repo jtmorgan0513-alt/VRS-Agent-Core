@@ -71,6 +71,7 @@ export default function TechSubmitPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const soNumberRef = useRef<HTMLInputElement>(null);
   const [aiPreview, setAiPreview] = useState<string | null>(null);
   const [originalBeforeAi, setOriginalBeforeAi] = useState<string | null>(null);
   const [aiUsed, setAiUsed] = useState(false);
@@ -301,31 +302,48 @@ export default function TechSubmitPage() {
                 <FormField
                   control={form.control}
                   name="serviceOrder"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Service Order # *</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="8175-12345678"
-                          value={field.value}
-                          onChange={(e) => {
-                            let val = e.target.value.replace(/[^\d-]/g, '');
-                            const digits = val.replace(/-/g, '');
-                            if (digits.length <= 4) {
-                              val = digits;
-                            } else {
-                              val = digits.slice(0, 4) + '-' + digits.slice(4, 12);
-                            }
-                            field.onChange(val);
-                          }}
-                          maxLength={13}
-                          data-testid="input-service-order"
-                        />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">Format: District-ServiceOrder (e.g., 8175-12345678)</p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  render={({ field }) => {
+                    const parts = (field.value || "").split("-");
+                    const district = parts[0] || "";
+                    const soNumber = parts[1] || "";
+                    return (
+                      <FormItem>
+                        <FormLabel>Service Order *</FormLabel>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="8175"
+                            value={district}
+                            inputMode="numeric"
+                            maxLength={4}
+                            className="w-20 text-center"
+                            data-testid="input-district"
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                              field.onChange(val + "-" + soNumber);
+                              if (val.length === 4) {
+                                soNumberRef.current?.focus();
+                              }
+                            }}
+                          />
+                          <span className="text-lg font-medium text-muted-foreground">-</span>
+                          <Input
+                            ref={soNumberRef}
+                            placeholder="12345678"
+                            value={soNumber}
+                            inputMode="numeric"
+                            maxLength={8}
+                            className="flex-1"
+                            data-testid="input-service-order"
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, "").slice(0, 8);
+                              field.onChange(district + "-" + val);
+                            }}
+                          />
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
                 <FormField
                   control={form.control}
