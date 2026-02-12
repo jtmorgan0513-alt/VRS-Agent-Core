@@ -42,10 +42,9 @@ const APPLIANCE_TYPES = [
 ];
 
 const WARRANTY_PROVIDERS = [
-  { value: "sears_protect", label: "Sears Protect", available: true },
-  { value: "b2b_asurion", label: "Asurion", available: false },
-  { value: "b2b_allstate", label: "Allstate", available: false },
-  { value: "b2b_cinch", label: "Cinch", available: false },
+  { value: "sears_protect", label: "Sears Protect / Sears PA / Sears Home Warranty (Cinch)", available: true },
+  { value: "american_home_shield", label: "American Home Shield", available: false },
+  { value: "first_american", label: "First American", available: false },
 ];
 
 const submissionFormSchema = z.object({
@@ -55,7 +54,7 @@ const submissionFormSchema = z.object({
     required_error: "Select an appliance type",
   }),
   requestType: z.enum(["authorization", "non_repairable_review"]),
-  warrantyType: z.enum(["sears_protect", "b2b"]).default("sears_protect"),
+  warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters"),
   estimateAmount: z.string().optional(),

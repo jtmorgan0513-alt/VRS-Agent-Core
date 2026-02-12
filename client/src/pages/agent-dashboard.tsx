@@ -120,7 +120,7 @@ function getUrgencyLevel(createdAt: string | Date): "normal" | "warning" | "urge
 
 function getWarrantyLabel(sub: SubmissionWithTech): string {
   if (sub.warrantyProvider) return sub.warrantyProvider;
-  return sub.warrantyType === "sears_protect" ? "Sears Protect" : "B2B";
+  return sub.warrantyType === "sears_protect" ? "Sears Protect / Sears PA / Sears Home Warranty (Cinch)" : sub.warrantyType;
 }
 
 export default function AgentDashboard() {
@@ -920,7 +920,7 @@ export default function AgentDashboard() {
                           <div>
                             <p className="text-xs text-muted-foreground">Warranty</p>
                             <p className="text-sm font-medium" data-testid="text-detail-warranty">
-                              {selectedSubmission.warrantyType === "sears_protect" ? "Sears Protect" : "B2B"}
+                              {selectedSubmission.warrantyType === "sears_protect" ? "Sears Protect / Sears PA / Sears Home Warranty (Cinch)" : selectedSubmission.warrantyType}
                             </p>
                           </div>
                         </div>
