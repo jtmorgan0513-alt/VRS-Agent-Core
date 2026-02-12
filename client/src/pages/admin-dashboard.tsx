@@ -972,8 +972,8 @@ export default function AdminDashboard() {
                 <Input
                   id="user-racid"
                   value={formRacId}
-                  onChange={(e) => setFormRacId(e.target.value)}
-                  placeholder="RAC ID"
+                  onChange={(e) => setFormRacId(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                  placeholder="jmorga1"
                   data-testid="input-user-racid"
                 />
               </div>

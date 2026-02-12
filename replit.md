@@ -78,7 +78,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 
 ### Seed Users
 - admin@vrs.com / admin123 (admin)
-- tech1@vrs.com / tech123 (technician, RAC-78234)
+- tech1@vrs.com / tech123 (technician, tmorri1)
 - agent1@vrs.com / agent123 (vrs_agent, specializations: refrigeration, laundry)
 - agent2@vrs.com / agent123 (vrs_agent, generalist - all divisions)
 

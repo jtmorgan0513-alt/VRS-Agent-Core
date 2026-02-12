@@ -16,7 +16,7 @@ const SEED_USERS = [
     name: "Tyler Morrison",
     role: "technician",
     phone: "9105550147",
-    racId: "RAC-78234",
+    racId: "tmorri1",
   },
   {
     email: "agent1@vrs.com",

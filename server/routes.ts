@@ -18,7 +18,7 @@ const registerSchema = z.object({
   name: z.string().min(1),
   role: z.enum(["technician", "vrs_agent", "admin"]),
   phone: z.string().optional(),
-  racId: z.string().optional(),
+  racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
 });
 
 const loginSchema = z.object({
@@ -285,7 +285,8 @@ export async function registerRoutes(
           const searchTerm = search.toLowerCase();
           result = result.filter(sub => 
             sub.serviceOrder.toLowerCase().includes(searchTerm) ||
-            sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm)
+            sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm) ||
+            sub.racId.toLowerCase().includes(searchTerm)
           );
         }
 
@@ -299,7 +300,8 @@ export async function registerRoutes(
         const searchTerm = techSearch.toLowerCase();
         techResult = techResult.filter(sub => 
           sub.serviceOrder.toLowerCase().includes(searchTerm) ||
-          sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm)
+          sub.serviceOrder.replace(/^(\d{4})-/, '').includes(searchTerm) ||
+          sub.serviceOrder.toLowerCase().includes(searchTerm)
         );
       }
 
@@ -667,7 +669,7 @@ export async function registerRoutes(
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
     phone: z.string().optional(),
-    racId: z.string().optional(),
+    racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
     role: z.enum(["technician", "vrs_agent", "admin"]).optional(),
     isActive: z.boolean().optional(),
     password: z.string().min(6).optional(),
