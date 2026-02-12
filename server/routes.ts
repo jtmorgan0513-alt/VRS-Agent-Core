@@ -168,7 +168,7 @@ export async function registerRoutes(
     try {
       const authReq = req as AuthenticatedRequest;
       const schema = z.object({
-        description: z.string().min(30, "Description must be at least 30 characters").max(2000),
+        description: z.string().min(20, "Description must be at least 20 characters").max(2000),
         applianceType: z.string().min(1),
       });
       const parsed = schema.safeParse(req.body);

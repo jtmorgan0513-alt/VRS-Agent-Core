@@ -224,6 +224,10 @@ export default function TechSubmitPage() {
   }
 
   const watchedRequestType = form.watch("requestType");
+  const watchedDescription = form.watch("issueDescription");
+  const watchedApplianceType = form.watch("applianceType");
+  const descriptionLength = watchedDescription?.length || 0;
+  const aiButtonDisabled = descriptionLength < 20 || aiEnhanceMutation.isPending || !watchedApplianceType;
 
   return (
     <div className="min-h-screen pb-20">
@@ -417,17 +421,20 @@ export default function TechSubmitPage() {
                           {aiEdited ? "AI-enhanced (edited)" : "AI-enhanced"}
                         </p>
                       )}
+                      <p className="text-xs text-muted-foreground" data-testid="text-char-count">
+                        {descriptionLength}/20 minimum
+                      </p>
                       <div className="flex items-center gap-2 pt-1">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={
-                            (field.value?.length || 0) < 30 ||
-                            aiEnhanceMutation.isPending ||
-                            !form.watch("applianceType")
-                          }
+                          disabled={aiButtonDisabled}
                           onClick={() => {
+                            const desc = form.getValues("issueDescription");
+                            const appliance = form.getValues("applianceType");
+                            console.log("AI Enhance clicked - description length:", desc?.length, "applianceType:", appliance);
+                            if (!desc || desc.length < 20 || !appliance) return;
                             const seen = localStorage.getItem("ai_tooltip_seen");
                             if (!seen) {
                               localStorage.setItem("ai_tooltip_seen", "true");
@@ -437,8 +444,8 @@ export default function TechSubmitPage() {
                               });
                             }
                             aiEnhanceMutation.mutate({
-                              description: field.value,
-                              applianceType: form.watch("applianceType"),
+                              description: desc,
+                              applianceType: appliance,
                             });
                           }}
                           data-testid="button-ai-enhance"
