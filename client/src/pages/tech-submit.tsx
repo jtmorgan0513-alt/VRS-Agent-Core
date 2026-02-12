@@ -310,13 +310,15 @@ export default function TechSubmitPage() {
                       <FormItem>
                         <FormLabel>Service Order *</FormLabel>
                         <div className="flex items-center gap-2">
-                          <Input
-                            placeholder="8175"
-                            value={district}
-                            inputMode="numeric"
-                            maxLength={4}
-                            className="w-20 text-center"
-                            data-testid="input-district"
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">District</p>
+                            <Input
+                              placeholder="8175"
+                              value={district}
+                              inputMode="numeric"
+                              maxLength={4}
+                              className="w-20 text-center"
+                              data-testid="input-district"
                             onChange={(e) => {
                               const val = e.target.value.replace(/\D/g, "").slice(0, 4);
                               field.onChange(val + "-" + soNumber);
@@ -325,20 +327,23 @@ export default function TechSubmitPage() {
                               }
                             }}
                           />
-                          <span className="text-lg font-medium text-muted-foreground">-</span>
-                          <Input
-                            ref={soNumberRef}
-                            placeholder="12345678"
-                            value={soNumber}
-                            inputMode="numeric"
-                            maxLength={8}
-                            className="flex-1"
-                            data-testid="input-service-order"
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, "").slice(0, 8);
-                              field.onChange(district + "-" + val);
-                            }}
-                          />
+                          </div>
+                          <span className="text-lg font-medium text-muted-foreground mt-5">-</span>
+                          <div className="space-y-1 flex-1">
+                            <p className="text-xs text-muted-foreground">Service Order #</p>
+                            <Input
+                              ref={soNumberRef}
+                              placeholder="12345678"
+                              value={soNumber}
+                              inputMode="numeric"
+                              maxLength={8}
+                              data-testid="input-service-order"
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, "").slice(0, 8);
+                                field.onChange(district + "-" + val);
+                              }}
+                            />
+                          </div>
                         </div>
                         <FormMessage />
                       </FormItem>
