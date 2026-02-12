@@ -71,6 +71,7 @@ import {
   LifeBuoy,
   RotateCcw,
   Key,
+  Sparkles,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -142,6 +143,7 @@ export default function AgentDashboard() {
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
   const [rgcMissing, setRgcMissing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showOriginalDesc, setShowOriginalDesc] = useState(false);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -201,6 +203,10 @@ export default function AgentDashboard() {
       }
     }
   }, [rgcStatus]);
+
+  useEffect(() => {
+    setShowOriginalDesc(false);
+  }, [selectedId]);
 
   const warrantyCounstUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -687,6 +693,12 @@ export default function AgentDashboard() {
                                 Non-Repairable
                               </Badge>
                             )}
+                            {sub.aiEnhanced && (
+                              <Badge variant="secondary" className="text-xs gap-0.5">
+                                <Sparkles className="w-3 h-3" />
+                                AI
+                              </Badge>
+                            )}
                           </button>
                         </div>
                       );
@@ -953,10 +965,35 @@ export default function AgentDashboard() {
                           )}
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground mb-1">Issue Description</p>
-                          <p className="text-sm bg-muted/50 rounded-md p-3" data-testid="text-detail-issue">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-xs text-muted-foreground">Description</p>
+                            {selectedSubmission.aiEnhanced && (
+                              <Badge variant="secondary" className="text-xs gap-0.5">
+                                <Sparkles className="w-3 h-3" />
+                                AI-Enhanced
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap" data-testid="text-detail-description">
                             {selectedSubmission.issueDescription}
                           </p>
+                          {selectedSubmission.aiEnhanced && selectedSubmission.originalDescription && (
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                className="text-xs text-muted-foreground hover:underline"
+                                onClick={() => setShowOriginalDesc(!showOriginalDesc)}
+                                data-testid="button-toggle-original"
+                              >
+                                {showOriginalDesc ? "Hide original" : "View original"}
+                              </button>
+                              {showOriginalDesc && (
+                                <div className="mt-1.5 p-2.5 rounded-md bg-muted text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-original-description">
+                                  {selectedSubmission.originalDescription}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>

@@ -9,6 +9,7 @@ import { authenticateToken, requireRole, type AuthenticatedRequest } from "./mid
 import type { User } from "@shared/schema";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
+import { enhanceDescription, checkRateLimit } from "./services/openai";
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -160,6 +161,34 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // AI ENHANCEMENT ROUTES
+  // ========================================================================
+
+  app.post("/api/ai/enhance-description", authenticateToken, requireRole("technician"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const schema = z.object({
+        description: z.string().min(30, "Description must be at least 30 characters").max(2000),
+        applianceType: z.string().min(1),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      if (!checkRateLimit(authReq.user!.id)) {
+        return res.status(429).json({ error: "Rate limit exceeded. You can use AI enhancement 5 times per hour." });
+      }
+
+      const enhanced = await enhanceDescription(parsed.data.description, parsed.data.applianceType);
+      return res.status(200).json({ enhanced, original: parsed.data.description });
+    } catch (error: any) {
+      console.error("AI enhance error:", error);
+      return res.status(500).json({ error: "AI enhancement unavailable. You can still submit your original description." });
+    }
+  });
+
+  // ========================================================================
   // SUBMISSION ROUTES
   // ========================================================================
 
@@ -169,7 +198,9 @@ export async function registerRoutes(
     requestType: z.enum(["authorization", "non_repairable_review"]),
     warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
     warrantyProvider: z.string().optional(),
-    issueDescription: z.string().min(1, "Issue description is required"),
+    issueDescription: z.string().min(1, "Issue description is required").max(2000, "Description must be 2000 characters or less"),
+    originalDescription: z.string().optional(),
+    aiEnhanced: z.boolean().optional(),
     estimateAmount: z.string().optional(),
     photos: z.string().optional(),
     videoUrl: z.string().optional(),
@@ -221,6 +252,8 @@ export async function registerRoutes(
         warrantyType: parsed.data.warrantyType,
         warrantyProvider: parsed.data.warrantyProvider || null,
         issueDescription: parsed.data.issueDescription,
+        originalDescription: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? parsed.data.originalDescription : null,
+        aiEnhanced: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? true : false,
         estimateAmount: parsed.data.estimateAmount || null,
         photos: parsed.data.photos || null,
         videoUrl: parsed.data.videoUrl || null,

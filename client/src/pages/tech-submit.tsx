@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Camera, Send, Lock, Video, X } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -56,7 +56,7 @@ const submissionFormSchema = z.object({
   requestType: z.enum(["authorization", "non_repairable_review"]),
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
-  issueDescription: z.string().min(10, "Please provide at least 10 characters"),
+  issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
   estimateAmount: z.string().optional(),
 });
 
@@ -71,6 +71,10 @@ export default function TechSubmitPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const [aiPreview, setAiPreview] = useState<string | null>(null);
+  const [originalBeforeAi, setOriginalBeforeAi] = useState<string | null>(null);
+  const [aiUsed, setAiUsed] = useState(false);
+  const [aiEdited, setAiEdited] = useState(false);
 
   function handleVideoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -181,10 +185,8 @@ export default function TechSubmitPage() {
   });
 
   const mutation = useMutation({
-    mutationFn: async (data: SubmissionFormData) => {
-      const payload: Record<string, unknown> = { ...data };
-      if (videoUrl) payload.videoUrl = videoUrl;
-      const res = await apiRequest("POST", "/api/submissions", payload);
+    mutationFn: async (data: SubmissionFormData & { originalDescription?: string; aiEnhanced?: boolean }) => {
+      const res = await apiRequest("POST", "/api/submissions", data);
       return await res.json();
     },
     onSuccess: (data) => {
@@ -197,8 +199,28 @@ export default function TechSubmitPage() {
     },
   });
 
+  const aiEnhanceMutation = useMutation({
+    mutationFn: async (data: { description: string; applianceType: string }) => {
+      const res = await apiRequest("POST", "/api/ai/enhance-description", data);
+      return await res.json();
+    },
+    onSuccess: (data: { enhanced: string; original: string }) => {
+      setAiPreview(data.enhanced);
+      setOriginalBeforeAi(data.original);
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI Enhancement Unavailable", description: error.message, variant: "destructive" });
+    },
+  });
+
   function onSubmit(data: SubmissionFormData) {
-    mutation.mutate(data);
+    const payload: any = { ...data };
+    if (aiUsed && originalBeforeAi) {
+      payload.originalDescription = originalBeforeAi;
+      payload.aiEnhanced = true;
+    }
+    if (videoUrl) payload.videoUrl = videoUrl;
+    mutation.mutate(payload as any);
   }
 
   const watchedRequestType = form.watch("requestType");
@@ -379,10 +401,97 @@ export default function TechSubmitPage() {
                         <Textarea
                           placeholder="Describe the issue and required repair..."
                           className="min-h-[100px]"
+                          maxLength={2000}
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            if (aiUsed) setAiEdited(true);
+                          }}
                           data-testid="input-issue-description"
+                          disabled={aiEnhanceMutation.isPending}
                         />
                       </FormControl>
+                      {aiUsed && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          {aiEdited ? "AI-enhanced (edited)" : "AI-enhanced"}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            (field.value?.length || 0) < 30 ||
+                            aiEnhanceMutation.isPending ||
+                            !form.watch("applianceType")
+                          }
+                          onClick={() => {
+                            const seen = localStorage.getItem("ai_tooltip_seen");
+                            if (!seen) {
+                              localStorage.setItem("ai_tooltip_seen", "true");
+                              toast({
+                                title: "Experimental Feature",
+                                description: "This AI tool helps clarify your description without changing the meaning. Always review the result before submitting.",
+                              });
+                            }
+                            aiEnhanceMutation.mutate({
+                              description: field.value,
+                              applianceType: form.watch("applianceType"),
+                            });
+                          }}
+                          data-testid="button-ai-enhance"
+                        >
+                          {aiEnhanceMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              Improving...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                              Improve with AI
+                            </>
+                          )}
+                        </Button>
+                        <Badge variant="secondary" className="text-xs">Experimental</Badge>
+                      </div>
+                      {aiPreview && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">AI-Improved Version (review and edit as needed)</p>
+                          <div className="p-3 rounded-md border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-sm whitespace-pre-wrap" data-testid="text-ai-preview">
+                            {aiPreview}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                field.onChange(aiPreview);
+                                setAiUsed(true);
+                                setAiEdited(false);
+                                setAiPreview(null);
+                              }}
+                              data-testid="button-ai-use"
+                            >
+                              Use This
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setAiPreview(null);
+                                setOriginalBeforeAi(null);
+                              }}
+                              data-testid="button-ai-keep-original"
+                            >
+                              Keep Original
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

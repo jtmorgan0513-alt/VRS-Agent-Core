@@ -77,6 +77,8 @@ export const submissions = pgTable("submissions", {
   warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'
   warrantyProvider: varchar("warranty_provider", { length: 100 }),
   issueDescription: text("issue_description").notNull(),
+  originalDescription: text("original_description"),
+  aiEnhanced: boolean("ai_enhanced").notNull().default(false),
   estimateAmount: text("estimate_amount"), // stored as text, parsed as decimal in application
   photos: text("photos"), // JSON string of photo URLs array
   videoUrl: varchar("video_url", { length: 500 }),
