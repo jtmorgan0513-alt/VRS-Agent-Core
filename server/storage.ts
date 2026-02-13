@@ -59,6 +59,7 @@ export interface IStorage {
     stage2Status?: string;
     applianceType?: string;
     assignedTo?: number;
+    requestType?: string;
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]>;
   updateSubmission(
     id: number,
@@ -251,6 +252,7 @@ export class DatabaseStorage implements IStorage {
     stage2Status?: string;
     applianceType?: string;
     assignedTo?: number;
+    requestType?: string;
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]> {
     const conditions: ReturnType<typeof eq>[] = [];
 
@@ -268,6 +270,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.assignedTo !== undefined) {
       conditions.push(eq(submissions.assignedTo, filters.assignedTo));
+    }
+    if (filters?.requestType !== undefined) {
+      conditions.push(eq(submissions.requestType, filters.requestType));
     }
     if (completedToday) {
       const today = new Date();

@@ -132,6 +132,7 @@ export default function AgentDashboard() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [myAssignments, setMyAssignments] = useState(true);
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
+  const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [authCode, setAuthCode] = useState("");
@@ -161,11 +162,14 @@ export default function AgentDashboard() {
     if (divisionFilter) {
       params.set("applianceType", divisionFilter);
     }
+    if (requestTypeFilter) {
+      params.set("requestType", requestTypeFilter);
+    }
     if (searchQuery.trim()) {
       params.set("search", searchQuery.trim());
     }
     return params.toString();
-  }, [activeView, myAssignments, divisionFilter, searchQuery]);
+  }, [activeView, myAssignments, divisionFilter, requestTypeFilter, searchQuery]);
 
   const submissionsUrl = queryParams ? `/api/submissions?${queryParams}` : "/api/submissions";
 
@@ -443,6 +447,40 @@ export default function AgentDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            <SidebarGroup>
+              <SidebarGroupLabel>Request Type</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => setRequestTypeFilter(null)}
+                      data-active={requestTypeFilter === null}
+                      data-testid="filter-request-all"
+                    >
+                      <Filter className="w-4 h-4" />
+                      <span>All Types</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  {[
+                    { value: "authorization", label: "Authorization" },
+                    { value: "non_repairable_review", label: "Non-Repairable" },
+                    { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
+                  ].map((rt) => (
+                    <SidebarMenuItem key={rt.value}>
+                      <SidebarMenuButton
+                        onClick={() => setRequestTypeFilter(rt.value)}
+                        data-active={requestTypeFilter === rt.value}
+                        data-testid={`filter-request-${rt.value}`}
+                      >
+                        <ClipboardList className="w-4 h-4" />
+                        <span>{rt.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
             {activeView === "stage2" && warrantyCounts.length > 0 && (
               <>
                 <Separator className="my-2" />
@@ -688,9 +726,17 @@ export default function AgentDashboard() {
                                 Stage 1 approved {getTimeElapsed(sub.stage1ReviewedAt)} ago
                               </p>
                             )}
-                            {sub.requestType === "non_repairable_review" && (
-                              <Badge variant="secondary" className="mt-1 text-xs" data-testid={`badge-nr-${sub.id}`}>
-                                Non-Repairable
+                            {sub.requestType !== "authorization" && (
+                              <Badge
+                                variant="secondary"
+                                className={`mt-1 text-xs ${
+                                  sub.requestType === "non_repairable_review"
+                                    ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
+                                    : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                                }`}
+                                data-testid={`badge-request-type-${sub.id}`}
+                              >
+                                {sub.requestType === "non_repairable_review" ? "Non-Repairable" : "Infestation / Non-Accessible"}
                               </Badge>
                             )}
                             {sub.aiEnhanced && (
@@ -891,10 +937,21 @@ export default function AgentDashboard() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge
+                          className={
+                            selectedSubmission.requestType === "authorization"
+                              ? ""
+                              : selectedSubmission.requestType === "non_repairable_review"
+                              ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
+                              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                          }
                           variant={selectedSubmission.requestType === "authorization" ? "default" : "secondary"}
                           data-testid="badge-request-type"
                         >
-                          {selectedSubmission.requestType === "authorization" ? "Authorization" : "Non-Repairable Review"}
+                          {selectedSubmission.requestType === "authorization"
+                            ? "Authorization"
+                            : selectedSubmission.requestType === "non_repairable_review"
+                            ? "Non-Repairable Review"
+                            : "Infestation / Non-Accessible"}
                         </Badge>
                         {getUrgencyLevel(selectedSubmission.createdAt!) !== "normal" && (
                           <Badge variant="destructive" data-testid="badge-urgency">

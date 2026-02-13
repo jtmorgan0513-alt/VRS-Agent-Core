@@ -28,7 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Camera, Send, Lock, Video, X, Sparkles, Loader2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -53,7 +52,7 @@ const submissionFormSchema = z.object({
   applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"], {
     required_error: "Select an appliance type",
   }),
-  requestType: z.enum(["authorization", "non_repairable_review"]),
+  requestType: z.enum(["authorization", "non_repairable_review", "infestation_non_accessible"]),
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
@@ -248,20 +247,30 @@ export default function TechSubmitPage() {
                 <FormItem>
                   <div className="flex items-center gap-1.5">
                     <FormLabel>Request Type</FormLabel>
-                    <HelpTooltip content="Choose 'Authorization' for repairs over your limit, or 'Non-Repairable' if the unit can't be fixed" />
+                    <HelpTooltip content="Select the type of request for this service order" />
                   </div>
-                  <FormControl>
-                    <Tabs value={field.value} onValueChange={field.onChange}>
-                      <TabsList className="w-full">
-                        <TabsTrigger value="authorization" className="flex-1" data-testid="tab-authorization">
-                          Authorization
-                        </TabsTrigger>
-                        <TabsTrigger value="non_repairable_review" className="flex-1" data-testid="tab-non-repairable">
-                          Non-Repairable
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </FormControl>
+                  <div className="space-y-2">
+                    {[
+                      { value: "authorization", label: "Authorization", desc: "Request approval for repair costs" },
+                      { value: "non_repairable_review", label: "Non-Repairable", desc: "Unit cannot be repaired, needs replacement review" },
+                      { value: "infestation_non_accessible", label: "Infestation / Non-Accessible", desc: "Unable to service due to infestation or access limitations" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`w-full text-left p-3 rounded-md border transition-colors ${
+                          field.value === opt.value
+                            ? "border-primary bg-primary/5"
+                            : "hover-elevate"
+                        }`}
+                        onClick={() => field.onChange(opt.value)}
+                        data-testid={`tab-${opt.value.replace(/_/g, "-")}`}
+                      >
+                        <p className="text-sm font-medium">{opt.label}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </FormItem>
               )}
             />

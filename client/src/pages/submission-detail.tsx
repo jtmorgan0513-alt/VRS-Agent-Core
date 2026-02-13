@@ -177,7 +177,7 @@ export default function SubmissionDetailPage() {
           <CardContent className="p-4 space-y-3">
             <DetailRow label="Service Order" value={`#${sub.serviceOrder}`} testId="text-detail-so" />
             <DetailRow label="Appliance" value={sub.applianceType.charAt(0).toUpperCase() + sub.applianceType.slice(1)} testId="text-detail-appliance" />
-            <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : "Non-Repairable Review"} testId="text-detail-request-type" />
+            <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : sub.requestType === "non_repairable_review" ? "Non-Repairable Review" : "Infestation / Non-Accessible"} testId="text-detail-request-type" />
             <DetailRow label="Status" value={
               <StatusBadge
                 stage1={sub.stage1Status}

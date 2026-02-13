@@ -73,7 +73,7 @@ export const submissions = pgTable("submissions", {
   serviceOrder: varchar("service_order", { length: 13 }).notNull(),
   districtCode: varchar("district_code", { length: 4 }),
   applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac'
-  requestType: text("request_type").notNull(), // 'authorization', 'non_repairable_review'
+  requestType: text("request_type").notNull(), // 'authorization', 'non_repairable_review', 'infestation_non_accessible'
   warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'
   warrantyProvider: varchar("warranty_provider", { length: 100 }),
   issueDescription: text("issue_description").notNull(),
