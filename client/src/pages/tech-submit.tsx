@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2 } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -560,13 +560,46 @@ export default function TechSubmitPage() {
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-1.5">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Required Photos</p>
-                  <HelpTooltip content="Upload clear photos of the appliance issue, model/serial tags, and any relevant documentation." />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Required Photos {watchedRequestType === "infestation_non_accessible" && <span className="text-destructive">*</span>}
+                  </p>
+                  <HelpTooltip content={
+                    watchedRequestType === "infestation_non_accessible"
+                      ? "You must upload clear photos documenting the infestation or unsafe conditions. These are required for claim review."
+                      : "Upload clear photos of the appliance issue, model/serial tags, and any relevant documentation."
+                  } />
                 </div>
+                {watchedRequestType === "infestation_non_accessible" && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2" data-testid="infestation-photo-requirements">
+                    <p className="text-sm font-medium text-destructive">Photo evidence is required. Document the following:</p>
+                    <ul className="text-sm text-muted-foreground space-y-1.5 list-none">
+                      <li className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                        <span>Roaches, insects, or pest activity</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                        <span>Mouse or rodent droppings</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                        <span>Mold, biohazard, or unsanitary conditions</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                        <span>Blocked or unsafe access to the appliance</span>
+                      </li>
+                    </ul>
+                  </div>
+                )}
                 <div className="border-2 border-dashed rounded-md p-6 text-center">
                   <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">Tap to add photos</p>
-                  <p className="text-xs text-muted-foreground mt-1">Model/serial plate, error codes, damage</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {watchedRequestType === "infestation_non_accessible"
+                      ? "Infestation evidence, unsafe conditions, appliance area"
+                      : "Model/serial plate, error codes, damage"}
+                  </p>
                 </div>
               </CardContent>
             </Card>
