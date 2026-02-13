@@ -70,11 +70,98 @@ export default function TechSubmitPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const soNumberRef = useRef<HTMLInputElement>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadCount, setPhotoUploadCount] = useState({ done: 0, total: 0 });
   const [aiPreview, setAiPreview] = useState<string | null>(null);
   const [originalBeforeAi, setOriginalBeforeAi] = useState<string | null>(null);
   const [aiUsed, setAiUsed] = useState(false);
   const [aiEdited, setAiEdited] = useState(false);
+
+  async function uploadSinglePhoto(file: File): Promise<string | null> {
+    const token = getToken();
+    try {
+      const urlRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          name: file.name,
+          size: file.size,
+          contentType: file.type,
+        }),
+      });
+      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      const { uploadURL, objectPath } = await urlRes.json();
+
+      return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(objectPath);
+          } else {
+            resolve(null);
+          }
+        });
+        xhr.addEventListener("error", () => resolve(null));
+        xhr.open("PUT", uploadURL);
+        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.send(file);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const validFiles = Array.from(files).filter((f) => {
+      if (f.size > 20 * 1024 * 1024) return false;
+      if (!f.type.startsWith("image/")) return false;
+      return true;
+    });
+
+    if (validFiles.length === 0) {
+      toast({ title: "Invalid Files", description: "Please select image files under 20MB each.", variant: "destructive" });
+      if (photoInputRef.current) photoInputRef.current.value = "";
+      return;
+    }
+
+    const totalAllowed = 10 - photoUrls.length;
+    const filesToUpload = validFiles.slice(0, totalAllowed);
+
+    if (filesToUpload.length < validFiles.length) {
+      toast({ title: "Photo Limit", description: `Maximum 10 photos allowed. Only uploading ${filesToUpload.length} more.` });
+    }
+
+    setPhotoUploading(true);
+    setPhotoUploadCount({ done: 0, total: filesToUpload.length });
+
+    const newUrls: string[] = [];
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const url = await uploadSinglePhoto(filesToUpload[i]);
+      if (url) newUrls.push(url);
+      setPhotoUploadCount({ done: i + 1, total: filesToUpload.length });
+    }
+
+    setPhotoUrls((prev) => [...prev, ...newUrls]);
+    setPhotoUploading(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+
+    if (newUrls.length < filesToUpload.length) {
+      toast({ title: "Some Photos Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload.`, variant: "destructive" });
+    }
+  }
+
+  function removePhoto(index: number) {
+    setPhotoUrls((prev) => prev.filter((_, i) => i !== index));
+  }
 
   function handleVideoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -220,6 +307,7 @@ export default function TechSubmitPage() {
       payload.aiEnhanced = true;
     }
     if (videoUrl) payload.videoUrl = videoUrl;
+    if (photoUrls.length > 0) payload.photos = JSON.stringify(photoUrls);
     mutation.mutate(payload as any);
   }
 
@@ -592,15 +680,66 @@ export default function TechSubmitPage() {
                     </ul>
                   </div>
                 )}
-                <div className="border-2 border-dashed rounded-md p-6 text-center">
-                  <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Tap to add photos</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {watchedRequestType === "infestation_non_accessible"
-                      ? "Infestation evidence, unsafe conditions, appliance area"
-                      : "Model/serial plate, error codes, damage"}
-                  </p>
-                </div>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture={undefined}
+                  className="hidden"
+                  onChange={handlePhotoSelect}
+                  data-testid="input-photo-file"
+                />
+                {photoUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2" data-testid="photo-previews">
+                    {photoUrls.map((url, i) => (
+                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
+                        <img
+                          src={url}
+                          alt={`Photo ${i + 1}`}
+                          className="w-full h-full object-cover rounded-md"
+                          data-testid={`img-photo-preview-${i}`}
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          className="absolute -top-2 -right-2 h-6 w-6"
+                          onClick={() => removePhoto(i)}
+                          data-testid={`button-remove-photo-${i}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {photoUploading && (
+                  <div className="flex items-center justify-center gap-2 py-3" data-testid="photo-uploading">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm text-muted-foreground">
+                      Uploading {photoUploadCount.done}/{photoUploadCount.total} photos...
+                    </span>
+                  </div>
+                )}
+                {photoUrls.length < 10 && !photoUploading && (
+                  <div
+                    className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate"
+                    onClick={() => photoInputRef.current?.click()}
+                    data-testid="button-add-photos"
+                  >
+                    <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {photoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {watchedRequestType === "infestation_non_accessible"
+                        ? "Infestation evidence, unsafe conditions, appliance area"
+                        : "Model/serial plate, error codes, damage"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{photoUrls.length}/10 photos</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -665,11 +804,11 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || photoUploading || isUploading}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Submitting..." : "Submit for Review"}
+              {mutation.isPending ? "Submitting..." : photoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : "Submit for Review"}
             </Button>
           </form>
         </Form>

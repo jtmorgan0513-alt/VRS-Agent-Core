@@ -12,6 +12,7 @@ import {
   Copy,
   ArrowLeft,
   ExternalLink,
+  ImageIcon,
   Video,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -204,6 +205,28 @@ export default function SubmissionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {(() => {
+          let parsedPhotos: string[] = [];
+          try { parsedPhotos = sub.photos ? JSON.parse(sub.photos) : []; } catch { parsedPhotos = []; }
+          return parsedPhotos.length > 0 ? (
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Photos ({parsedPhotos.length})
+                </p>
+                <div className="grid grid-cols-3 gap-2" data-testid="media-photos-detail">
+                  {parsedPhotos.map((url: string, i: number) => (
+                    <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                      <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-photo-detail-${i}`} />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null;
+        })()}
 
         {sub.videoUrl && (
           <Card>

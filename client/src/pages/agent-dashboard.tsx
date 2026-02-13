@@ -1064,17 +1064,21 @@ export default function AgentDashboard() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        {selectedSubmission.photos ? (
-                          <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
-                            {JSON.parse(selectedSubmission.photos).map((url: string, i: number) => (
-                              <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
-                                <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
-                        )}
+                        {(() => {
+                          let parsedPhotos: string[] = [];
+                          try { parsedPhotos = selectedSubmission.photos ? JSON.parse(selectedSubmission.photos) : []; } catch { parsedPhotos = []; }
+                          return parsedPhotos.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
+                              {parsedPhotos.map((url: string, i: number) => (
+                                <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
+                          );
+                        })()}
                         <Separator />
                         <div>
                           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
