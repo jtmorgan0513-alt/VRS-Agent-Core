@@ -200,29 +200,68 @@ export default function SubmissionDetailPage() {
                 testId="text-detail-reviewed"
               />
             )}
-            {sub.estimateAmount && (
-              <DetailRow label="Estimate" value={`$${sub.estimateAmount}`} testId="text-detail-estimate" />
-            )}
           </CardContent>
         </Card>
 
         {(() => {
-          let parsedPhotos: string[] = [];
-          try { parsedPhotos = sub.photos ? JSON.parse(sub.photos) : []; } catch { parsedPhotos = []; }
-          return parsedPhotos.length > 0 ? (
+          let parsed: any = null;
+          try { parsed = sub.photos ? JSON.parse(sub.photos) : null; } catch { parsed = null; }
+          if (!parsed) return null;
+          
+          const isNewFormat = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+          const estimatePhotos: string[] = isNewFormat ? (parsed.estimate || []) : [];
+          const issuePhotos: string[] = isNewFormat ? (parsed.issue || []) : [];
+          const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
+          const hasAny = estimatePhotos.length > 0 || issuePhotos.length > 0 || legacyPhotos.length > 0;
+          
+          return hasAny ? (
             <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  Photos ({parsedPhotos.length})
-                </p>
-                <div className="grid grid-cols-3 gap-2" data-testid="media-photos-detail">
-                  {parsedPhotos.map((url: string, i: number) => (
-                    <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
-                      <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-photo-detail-${i}`} />
+              <CardContent className="p-4 space-y-4">
+                {estimatePhotos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      TechHub Estimate ({estimatePhotos.length})
+                    </p>
+                    <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-detail">
+                      {estimatePhotos.map((url: string, i: number) => (
+                        <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-detail-${i}`} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+                {issuePhotos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      Model/Serial & Issue Photos ({issuePhotos.length})
+                    </p>
+                    <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-detail">
+                      {issuePhotos.map((url: string, i: number) => (
+                        <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                          <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-detail-${i}`} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {legacyPhotos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      Photos ({legacyPhotos.length})
+                    </p>
+                    <div className="grid grid-cols-3 gap-2" data-testid="media-photos-detail">
+                      {legacyPhotos.map((url: string, i: number) => (
+                        <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                          <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-photo-detail-${i}`} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ) : null;

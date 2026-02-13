@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -56,7 +56,6 @@ const submissionFormSchema = z.object({
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
-  estimateAmount: z.string().optional(),
 });
 
 type SubmissionFormData = z.infer<typeof submissionFormSchema>;
@@ -70,11 +69,15 @@ export default function TechSubmitPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const estimatePhotoInputRef = useRef<HTMLInputElement>(null);
+  const issuePhotoInputRef = useRef<HTMLInputElement>(null);
   const soNumberRef = useRef<HTMLInputElement>(null);
-  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const [photoUploadCount, setPhotoUploadCount] = useState({ done: 0, total: 0 });
+  const [estimatePhotoUrls, setEstimatePhotoUrls] = useState<string[]>([]);
+  const [issuePhotoUrls, setIssuePhotoUrls] = useState<string[]>([]);
+  const [estimatePhotoUploading, setEstimatePhotoUploading] = useState(false);
+  const [issuePhotoUploading, setIssuePhotoUploading] = useState(false);
+  const [estimatePhotoUploadCount, setEstimatePhotoUploadCount] = useState({ done: 0, total: 0 });
+  const [issuePhotoUploadCount, setIssuePhotoUploadCount] = useState({ done: 0, total: 0 });
   const [aiPreview, setAiPreview] = useState<string | null>(null);
   const [originalBeforeAi, setOriginalBeforeAi] = useState<string | null>(null);
   const [aiUsed, setAiUsed] = useState(false);
@@ -117,50 +120,41 @@ export default function TechSubmitPage() {
     }
   }
 
-  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
+  async function handlePhotosSelect(
+    files: FileList | null,
+    currentUrls: string[],
+    setUrls: React.Dispatch<React.SetStateAction<string[]>>,
+    setUploading: React.Dispatch<React.SetStateAction<boolean>>,
+    setCount: React.Dispatch<React.SetStateAction<{ done: number; total: number }>>,
+    maxPhotos: number,
+    inputRef: React.RefObject<HTMLInputElement | null>,
+  ) {
     if (!files || files.length === 0) return;
-
-    const validFiles = Array.from(files).filter((f) => {
-      if (f.size > 20 * 1024 * 1024) return false;
-      if (!f.type.startsWith("image/")) return false;
-      return true;
-    });
-
+    const validFiles = Array.from(files).filter((f) => f.size <= 20 * 1024 * 1024 && f.type.startsWith("image/"));
     if (validFiles.length === 0) {
       toast({ title: "Invalid Files", description: "Please select image files under 20MB each.", variant: "destructive" });
-      if (photoInputRef.current) photoInputRef.current.value = "";
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
-
-    const totalAllowed = 10 - photoUrls.length;
+    const totalAllowed = maxPhotos - currentUrls.length;
     const filesToUpload = validFiles.slice(0, totalAllowed);
-
     if (filesToUpload.length < validFiles.length) {
-      toast({ title: "Photo Limit", description: `Maximum 10 photos allowed. Only uploading ${filesToUpload.length} more.` });
+      toast({ title: "Photo Limit", description: `Maximum ${maxPhotos} photos allowed. Only uploading ${filesToUpload.length} more.` });
     }
-
-    setPhotoUploading(true);
-    setPhotoUploadCount({ done: 0, total: filesToUpload.length });
-
+    setUploading(true);
+    setCount({ done: 0, total: filesToUpload.length });
     const newUrls: string[] = [];
     for (let i = 0; i < filesToUpload.length; i++) {
       const url = await uploadSinglePhoto(filesToUpload[i]);
       if (url) newUrls.push(url);
-      setPhotoUploadCount({ done: i + 1, total: filesToUpload.length });
+      setCount({ done: i + 1, total: filesToUpload.length });
     }
-
-    setPhotoUrls((prev) => [...prev, ...newUrls]);
-    setPhotoUploading(false);
-    if (photoInputRef.current) photoInputRef.current.value = "";
-
+    setUrls((prev) => [...prev, ...newUrls]);
+    setUploading(false);
+    if (inputRef.current) inputRef.current.value = "";
     if (newUrls.length < filesToUpload.length) {
       toast({ title: "Some Photos Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload.`, variant: "destructive" });
     }
-  }
-
-  function removePhoto(index: number) {
-    setPhotoUrls((prev) => prev.filter((_, i) => i !== index));
   }
 
   function handleVideoSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -267,7 +261,6 @@ export default function TechSubmitPage() {
       warrantyType: "sears_protect",
       warrantyProvider: "",
       issueDescription: "",
-      estimateAmount: "",
     },
   });
 
@@ -307,7 +300,10 @@ export default function TechSubmitPage() {
       payload.aiEnhanced = true;
     }
     if (videoUrl) payload.videoUrl = videoUrl;
-    if (photoUrls.length > 0) payload.photos = JSON.stringify(photoUrls);
+    const photosObj: any = {};
+    if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
+    if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;
+    if (Object.keys(photosObj).length > 0) payload.photos = JSON.stringify(photosObj);
     mutation.mutate(payload as any);
   }
 
@@ -622,34 +618,70 @@ export default function TechSubmitPage() {
                   )}
                 />
 
-                {watchedRequestType === "authorization" && (
-                  <FormField
-                    control={form.control}
-                    name="estimateAmount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Estimate Amount ($)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="text"
-                            placeholder="0.00"
-                            {...field}
-                            data-testid="input-estimate-amount"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
               </CardContent>
             </Card>
+
+            {watchedRequestType === "authorization" && (
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      TechHub Estimate Screenshot(s) <span className="text-destructive">*</span>
+                    </p>
+                    <HelpTooltip content="Upload photos of your TechHub estimate screen showing part numbers, costs, labor, tax, and total." />
+                  </div>
+                  <p className="text-sm text-muted-foreground">Upload photos of your TechHub estimate screen showing:</p>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-none">
+                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Part numbers visible</span></li>
+                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Part costs visible</span></li>
+                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Labor costs visible</span></li>
+                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Tax visible</span></li>
+                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Total visible</span></li>
+                  </ul>
+                  <input
+                    ref={estimatePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture={undefined}
+                    className="hidden"
+                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, setEstimatePhotoUploadCount, 5, estimatePhotoInputRef)}
+                    data-testid="input-estimate-photo-file"
+                  />
+                  {estimatePhotoUrls.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2" data-testid="estimate-photo-previews">
+                      {estimatePhotoUrls.map((url, i) => (
+                        <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
+                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-estimate-preview-${i}`} />
+                          <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-estimate-${i}`}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {estimatePhotoUploading && (
+                    <div className="flex items-center justify-center gap-2 py-3" data-testid="estimate-photo-uploading">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">Uploading {estimatePhotoUploadCount.done}/{estimatePhotoUploadCount.total} photos...</span>
+                    </div>
+                  )}
+                  {estimatePhotoUrls.length < 5 && !estimatePhotoUploading && (
+                    <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => estimatePhotoInputRef.current?.click()} data-testid="button-add-estimate-photos">
+                      <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">{estimatePhotoUrls.length === 0 ? "Tap to add estimate photos" : "Tap to add more estimate photos"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{estimatePhotoUrls.length}/5 photos</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Required Photos {watchedRequestType === "infestation_non_accessible" && <span className="text-destructive">*</span>}
+                    Model/Serial &amp; Issue Photos {watchedRequestType === "infestation_non_accessible" && <span className="text-destructive">*</span>}
                   </p>
                   <HelpTooltip content={
                     watchedRequestType === "infestation_non_accessible"
@@ -661,83 +693,51 @@ export default function TechSubmitPage() {
                   <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2" data-testid="infestation-photo-requirements">
                     <p className="text-sm font-medium text-destructive">Photo evidence is required. Document the following:</p>
                     <ul className="text-sm text-muted-foreground space-y-1.5 list-none">
-                      <li className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                        <span>Roaches, insects, or pest activity</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                        <span>Mouse or rodent droppings</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                        <span>Mold, biohazard, or unsanitary conditions</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                        <span>Blocked or unsafe access to the appliance</span>
-                      </li>
+                      <li className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" /><span>Roaches, insects, or pest activity</span></li>
+                      <li className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" /><span>Mouse or rodent droppings</span></li>
+                      <li className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" /><span>Mold, biohazard, or unsanitary conditions</span></li>
+                      <li className="flex items-start gap-2"><AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" /><span>Blocked or unsafe access to the appliance</span></li>
                     </ul>
                   </div>
                 )}
                 <input
-                  ref={photoInputRef}
+                  ref={issuePhotoInputRef}
                   type="file"
                   accept="image/*"
                   multiple
                   capture={undefined}
                   className="hidden"
-                  onChange={handlePhotoSelect}
-                  data-testid="input-photo-file"
+                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, setIssuePhotoUploadCount, 10, issuePhotoInputRef)}
+                  data-testid="input-issue-photo-file"
                 />
-                {photoUrls.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2" data-testid="photo-previews">
-                    {photoUrls.map((url, i) => (
+                {issuePhotoUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2" data-testid="issue-photo-previews">
+                    {issuePhotoUrls.map((url, i) => (
                       <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
-                        <img
-                          src={url}
-                          alt={`Photo ${i + 1}`}
-                          className="w-full h-full object-cover rounded-md"
-                          data-testid={`img-photo-preview-${i}`}
-                        />
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="destructive"
-                          className="absolute -top-2 -right-2 h-6 w-6"
-                          onClick={() => removePhoto(i)}
-                          data-testid={`button-remove-photo-${i}`}
-                        >
+                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-issue-preview-${i}`} />
+                        <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setIssuePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-issue-${i}`}>
                           <X className="w-3 h-3" />
                         </Button>
                       </div>
                     ))}
                   </div>
                 )}
-                {photoUploading && (
-                  <div className="flex items-center justify-center gap-2 py-3" data-testid="photo-uploading">
+                {issuePhotoUploading && (
+                  <div className="flex items-center justify-center gap-2 py-3" data-testid="issue-photo-uploading">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm text-muted-foreground">
-                      Uploading {photoUploadCount.done}/{photoUploadCount.total} photos...
-                    </span>
+                    <span className="text-sm text-muted-foreground">Uploading {issuePhotoUploadCount.done}/{issuePhotoUploadCount.total} photos...</span>
                   </div>
                 )}
-                {photoUrls.length < 10 && !photoUploading && (
-                  <div
-                    className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate"
-                    onClick={() => photoInputRef.current?.click()}
-                    data-testid="button-add-photos"
-                  >
+                {issuePhotoUrls.length < 10 && !issuePhotoUploading && (
+                  <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => issuePhotoInputRef.current?.click()} data-testid="button-add-issue-photos">
                     <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      {photoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{issuePhotoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {watchedRequestType === "infestation_non_accessible"
                         ? "Infestation evidence, unsafe conditions, appliance area"
-                        : "Model/serial plate, error codes, damage"}
+                        : "Model/serial plate, error codes, damage, defective parts"}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{photoUrls.length}/10 photos</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{issuePhotoUrls.length}/10 photos</p>
                   </div>
                 )}
               </CardContent>
@@ -800,15 +800,21 @@ export default function TechSubmitPage() {
               </CardContent>
             </Card>
 
+            {watchedRequestType === "authorization" && estimatePhotoUrls.length === 0 && !estimatePhotoUploading && (
+              <p className="text-sm text-destructive" data-testid="text-estimate-photo-error">
+                Please upload at least one photo of your TechHub estimate screen
+              </p>
+            )}
+
             <Button
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || photoUploading || isUploading}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Submitting..." : photoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : "Submit for Review"}
+              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : "Submit for Review"}
             </Button>
           </form>
         </Form>

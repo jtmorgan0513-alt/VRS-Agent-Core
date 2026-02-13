@@ -146,6 +146,7 @@ export default function AgentDashboard() {
   const [rgcMissing, setRgcMissing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
+  const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -822,14 +823,6 @@ export default function AgentDashboard() {
                             {getWarrantyLabel(selectedSubmission)}
                           </p>
                         </div>
-                        {selectedSubmission.estimateAmount && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Estimate Amount</p>
-                            <p className="text-sm font-medium" data-testid="text-detail-estimate">
-                              ${selectedSubmission.estimateAmount}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -1012,15 +1005,6 @@ export default function AgentDashboard() {
                               {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
                             </p>
                           </div>
-                          {selectedSubmission.estimateAmount && (
-                            <div>
-                              <p className="text-xs text-muted-foreground">Estimate Amount</p>
-                              <p className="text-sm font-medium flex items-center gap-1" data-testid="text-detail-estimate">
-                                <DollarSign className="w-3 h-3" />
-                                {selectedSubmission.estimateAmount}
-                              </p>
-                            </div>
-                          )}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 mb-1">
@@ -1065,18 +1049,66 @@ export default function AgentDashboard() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {(() => {
-                          let parsedPhotos: string[] = [];
-                          try { parsedPhotos = selectedSubmission.photos ? JSON.parse(selectedSubmission.photos) : []; } catch { parsedPhotos = []; }
-                          return parsedPhotos.length > 0 ? (
-                            <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
-                              {parsedPhotos.map((url: string, i: number) => (
-                                <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
-                                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                          let parsed: any = null;
+                          try { parsed = selectedSubmission.photos ? JSON.parse(selectedSubmission.photos) : null; } catch { parsed = null; }
+                          if (!parsed) return <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>;
+                          
+                          const isNewFormat = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+                          const estimatePhotos: string[] = isNewFormat ? (parsed.estimate || []) : [];
+                          const issuePhotos: string[] = isNewFormat ? (parsed.issue || []) : [];
+                          const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
+                          
+                          return (
+                            <div className="space-y-4">
+                              {estimatePhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    TechHub Estimate ({estimatePhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos">
+                                    {estimatePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-photo-${i}`} />
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              ))}
+                              )}
+                              {issuePhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    Model/Serial & Issue Photos ({issuePhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos">
+                                    {issuePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-photo-${i}`} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {legacyPhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    Photos ({legacyPhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
+                                    {legacyPhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {estimatePhotos.length === 0 && issuePhotos.length === 0 && legacyPhotos.length === 0 && (
+                                <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
+                              )}
                             </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
                           );
                         })()}
                         <Separator />
@@ -1252,6 +1284,13 @@ export default function AgentDashboard() {
               {verifyRgcMutation.isPending ? "Verifying..." : "Submit"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!enlargedPhoto} onOpenChange={() => setEnlargedPhoto(null)}>
+        <DialogContent className="max-w-3xl p-2">
+          {enlargedPhoto && (
+            <img src={enlargedPhoto} alt="Enlarged photo" className="w-full h-auto rounded-md" data-testid="img-enlarged-photo" />
+          )}
         </DialogContent>
       </Dialog>
     </SidebarProvider>
