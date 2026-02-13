@@ -9,6 +9,7 @@ import { FileText, Clock, CheckCircle, XCircle, LogOut, RotateCcw } from "lucide
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
+import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 
 export default function TechHomePage() {
   const { user, logout } = useAuth();
@@ -29,11 +30,14 @@ export default function TechHomePage() {
       <div className="bg-primary text-primary-foreground p-4 pb-6">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between gap-2 mb-3">
-            <div>
-              <h1 className="text-lg font-bold" data-testid="text-welcome">
-                Welcome, {user?.name?.split(" ")[0]}
-              </h1>
-              <p className="text-sm opacity-80">{user?.racId || "Technician"}</p>
+            <div className="flex items-center gap-3">
+              <img src={searsLogo} alt="Sears Home Services" className="h-8" data-testid="img-logo" />
+              <div>
+                <h1 className="text-lg font-bold" data-testid="text-welcome">
+                  Welcome, {user?.name?.split(" ")[0]}
+                </h1>
+                <p className="text-sm opacity-80">{user?.racId || "Technician"}</p>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <Button

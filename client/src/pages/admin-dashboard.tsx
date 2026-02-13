@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@shared/schema";
+import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
   SidebarProvider,
   Sidebar,
@@ -63,7 +64,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Settings,
   Users,
   GitBranch,
   BarChart3,
@@ -353,7 +353,7 @@ export default function AdminDashboard() {
         <Sidebar>
           <SidebarHeader className="p-4">
             <div className="flex items-center gap-2">
-              <Settings className="w-5 h-5 text-primary" />
+              <img src={searsLogo} alt="Sears Home Services" className="h-7" data-testid="img-logo" />
               <span className="font-semibold text-sm" data-testid="text-sidebar-title">Admin Panel</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1" data-testid="text-admin-name">{user?.name}</p>
