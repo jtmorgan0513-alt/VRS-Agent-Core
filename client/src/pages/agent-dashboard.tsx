@@ -73,6 +73,7 @@ import {
   RotateCcw,
   Key,
   Sparkles,
+  Mic,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -845,6 +846,18 @@ export default function AgentDashboard() {
                       )}
                     </div>
 
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                        <Mic className="w-3.5 h-3.5" />
+                        Voice Note
+                      </p>
+                      {selectedSubmission.voiceNoteUrl ? (
+                        <audio src={selectedSubmission.voiceNoteUrl} controls className="w-full" data-testid="audio-player-stage2" />
+                      ) : (
+                        <p className="text-sm text-muted-foreground" data-testid="text-no-voice-note-stage2">No voice note attached</p>
+                      )}
+                    </div>
+
                     {batchSameProvider.length > 0 && (
                       <div data-testid="card-batch-mode">
                         <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Batch Mode Active</p>
@@ -1128,6 +1141,18 @@ export default function AgentDashboard() {
                             </div>
                           ) : (
                             <p className="text-sm text-muted-foreground" data-testid="text-no-video">No video attached</p>
+                          )}
+                        </div>
+                        <Separator />
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5" />
+                            Voice Note
+                          </p>
+                          {selectedSubmission.voiceNoteUrl ? (
+                            <audio src={selectedSubmission.voiceNoteUrl} controls className="w-full" data-testid="audio-player-stage1" />
+                          ) : (
+                            <p className="text-sm text-muted-foreground" data-testid="text-no-voice-note">No voice note attached</p>
                           )}
                         </div>
                       </CardContent>

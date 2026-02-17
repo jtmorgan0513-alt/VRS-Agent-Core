@@ -14,6 +14,7 @@ import {
   ExternalLink,
   ImageIcon,
   Video,
+  Mic,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -282,6 +283,18 @@ export default function SubmissionDetailPage() {
                   data-testid="video-player-detail"
                 />
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {sub.voiceNoteUrl && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Mic className="w-3.5 h-3.5" />
+                Voice Note
+              </p>
+              <audio src={sub.voiceNoteUrl} controls className="w-full" data-testid="audio-player-detail" />
             </CardContent>
           </Card>
         )}

@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -82,6 +82,14 @@ export default function TechSubmitPage() {
   const [originalBeforeAi, setOriginalBeforeAi] = useState<string | null>(null);
   const [aiUsed, setAiUsed] = useState(false);
   const [aiEdited, setAiEdited] = useState(false);
+  const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
 
   async function uploadSinglePhoto(file: File): Promise<string | null> {
     const token = getToken();
@@ -251,6 +259,91 @@ export default function TechSubmitPage() {
     if (videoInputRef.current) videoInputRef.current.value = "";
   }
 
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      setRecordingDuration(0);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+        const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : 'm4a';
+        const file = new File([blob], `voice-note.${ext}`, { type: mediaRecorder.mimeType });
+        await uploadAudioFile(file);
+      };
+
+      mediaRecorder.start(1000);
+      setIsRecording(true);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration(prev => {
+          if (prev >= 120) {
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      toast({ title: "Microphone Access", description: "Please allow microphone access to record a voice note.", variant: "destructive" });
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  }
+
+  async function uploadAudioFile(file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File Too Large", description: "Audio file must be under 10MB.", variant: "destructive" });
+      return;
+    }
+    setAudioUploading(true);
+    const url = await uploadSinglePhoto(file);
+    setAudioUploading(false);
+    if (url) {
+      setVoiceNoteUrl(url);
+    } else {
+      toast({ title: "Upload Failed", description: "Failed to upload audio file.", variant: "destructive" });
+    }
+  }
+
+  function handleAudioFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("audio/")) {
+      toast({ title: "Invalid File", description: "Please select an audio file.", variant: "destructive" });
+      if (audioFileInputRef.current) audioFileInputRef.current.value = "";
+      return;
+    }
+    uploadAudioFile(file);
+    if (audioFileInputRef.current) audioFileInputRef.current.value = "";
+  }
+
+  function removeVoiceNote() {
+    setVoiceNoteUrl(null);
+    setRecordingDuration(0);
+  }
+
+  function formatDuration(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
   const form = useForm<SubmissionFormData>({
     resolver: zodResolver(submissionFormSchema),
     defaultValues: {
@@ -300,6 +393,7 @@ export default function TechSubmitPage() {
       payload.aiEnhanced = true;
     }
     if (videoUrl) payload.videoUrl = videoUrl;
+    if (voiceNoteUrl) payload.voiceNoteUrl = voiceNoteUrl;
     const photosObj: any = {};
     if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
     if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;
@@ -800,6 +894,82 @@ export default function TechSubmitPage() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Voice Note</p>
+                <input
+                  ref={audioFileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleAudioFileSelect}
+                  data-testid="input-audio-file"
+                />
+                {!voiceNoteUrl && !isRecording && !audioUploading && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={startRecording}
+                      data-testid="button-start-recording"
+                    >
+                      <Mic className="w-4 h-4 mr-2" />
+                      Record
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => audioFileInputRef.current?.click()}
+                      data-testid="button-upload-audio"
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Upload File
+                    </Button>
+                  </div>
+                )}
+                {isRecording && (
+                  <div className="flex items-center gap-3 p-3 rounded-md border border-destructive/30 bg-destructive/5" data-testid="recording-active">
+                    <div className="w-3 h-3 rounded-full bg-destructive animate-pulse" />
+                    <span className="text-sm font-medium flex-1">Recording... {formatDuration(recordingDuration)}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={stopRecording}
+                      data-testid="button-stop-recording"
+                    >
+                      <MicOff className="w-4 h-4 mr-1" />
+                      Stop
+                    </Button>
+                  </div>
+                )}
+                {audioUploading && (
+                  <div className="flex items-center justify-center gap-2 py-3" data-testid="audio-uploading">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm text-muted-foreground">Uploading audio...</span>
+                  </div>
+                )}
+                {voiceNoteUrl && !audioUploading && (
+                  <div className="space-y-2" data-testid="voice-note-preview">
+                    <audio src={voiceNoteUrl} controls className="w-full" data-testid="audio-player-preview" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={removeVoiceNote}
+                      data-testid="button-remove-voice-note"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Remove Voice Note
+                    </Button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Record up to 2 minutes or upload an audio file (max 10MB)</p>
+              </CardContent>
+            </Card>
+
             {watchedRequestType === "authorization" && estimatePhotoUrls.length === 0 && !estimatePhotoUploading && (
               <p className="text-sm text-destructive" data-testid="text-estimate-photo-error">
                 Please upload at least one photo of your TechHub estimate screen
@@ -810,11 +980,11 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || audioUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : "Submit for Review"}
+              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : audioUploading ? "Uploading Audio..." : "Submit for Review"}
             </Button>
           </form>
         </Form>
