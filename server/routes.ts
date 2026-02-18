@@ -954,6 +954,7 @@ export async function registerRoutes(
           name: tech.name,
           phone: tech.phone,
           district: tech.district,
+          state: tech.state,
           managerName: tech.managerName,
           techUnNo: tech.techUnNo,
           isActive: true,

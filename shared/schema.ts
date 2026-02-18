@@ -164,6 +164,7 @@ export const technicians = pgTable("technicians", {
   name: varchar("name", { length: 255 }),
   phone: varchar("phone", { length: 20 }),
   district: varchar("district", { length: 10 }),
+  state: varchar("state", { length: 2 }),
   managerName: varchar("manager_name", { length: 255 }),
   techUnNo: varchar("tech_un_no", { length: 50 }),
   isActive: boolean("is_active").notNull().default(true),

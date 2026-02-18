@@ -483,6 +483,7 @@ export class DatabaseStorage implements IStorage {
           name: data.name,
           phone: data.phone,
           district: data.district,
+          state: data.state,
           managerName: data.managerName,
           techUnNo: data.techUnNo,
           isActive: data.isActive,

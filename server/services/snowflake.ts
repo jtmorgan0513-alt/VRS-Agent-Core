@@ -7,6 +7,7 @@ interface SnowflakeTechRow {
   MGR_NM: string;
   TECH_UN_NO: string;
   DISTRICT_ID: string;
+  STATE: string;
 }
 
 export interface SyncedTechnician {
@@ -14,6 +15,7 @@ export interface SyncedTechnician {
   name: string;
   phone: string;
   district: string;
+  state: string;
   managerName: string;
   techUnNo: string;
 }
@@ -21,15 +23,15 @@ export interface SyncedTechnician {
 const TECH_SYNC_QUERY = `
 WITH filtered_techs AS (
   SELECT 
-    TECH_UN_NO,
-    TECH_AIM_ID,
-    LDAP_ID,
-    FIRST_NM,
-    LAST_NM,
+    TECH_UN_NO, 
+    TECH_AIM_ID, 
+    LDAP_ID, 
+    FIRST_NM, 
+    LAST_NM, 
     MBL_PH_NO,
-    DIST_UN_NO,
-    TECH_STS_CD,
-    ACTIVE_IND,
+    DIST_UN_NO, 
+    TECH_STS_CD, 
+    ACTIVE_IND, 
     MGR_NM
   FROM PRD_TPMS.HSTECH.COMTTU_TECH_UN
   WHERE MBL_PH_NO IS NOT NULL
@@ -42,6 +44,13 @@ primary_tech_assignment AS (
     t.*,
     ROW_NUMBER() OVER (PARTITION BY LDAP_ID ORDER BY TECH_UN_NO) AS primary_rank
   FROM filtered_techs t
+),
+tech_map_deduped AS (
+  SELECT 
+    UPPER(TRIM(TECH_ID)) AS tid,
+    UPPER(TRIM(STATE)) AS STATE,
+    ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(TECH_ID)) ORDER BY TECH_ID) AS rn
+  FROM PRD_TPMS.HSTECH.TECH_MAP
 )
 SELECT 
   p.LDAP_ID AS TECH_ID,
@@ -49,8 +58,11 @@ SELECT
   p.MBL_PH_NO AS PHONE_NUMBER,
   p.MGR_NM,
   p.TECH_UN_NO,
-  p.DIST_UN_NO AS DISTRICT_ID
+  p.DIST_UN_NO AS DISTRICT_ID,
+  tm.STATE
 FROM primary_tech_assignment p
+LEFT JOIN tech_map_deduped tm 
+  ON UPPER(TRIM(p.LDAP_ID)) = tm.tid AND tm.rn = 1
 WHERE p.primary_rank = 1
 ORDER BY p.LDAP_ID
 `;
@@ -110,6 +122,7 @@ export async function fetchTechniciansFromSnowflake(): Promise<SyncedTechnician[
       name: (row.TECH_NAME || "").trim(),
       phone: (row.PHONE_NUMBER || "").trim(),
       district: (row.DISTRICT_ID || "").trim(),
+      state: (row.STATE || "").trim(),
       managerName: (row.MGR_NM || "").trim(),
       techUnNo: (row.TECH_UN_NO || "").trim(),
     })).filter((t) => t.ldapId.length > 0);
