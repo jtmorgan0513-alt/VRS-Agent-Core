@@ -84,6 +84,8 @@ import {
   LifeBuoy,
   RotateCcw,
   Key,
+  Database,
+  Loader2,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -110,7 +112,7 @@ function formatDuration(ms: number | null): string {
 
 type SafeUser = Omit<User, "password">;
 
-type ActiveView = "users" | "divisions" | "rgc" | "analytics";
+type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians";
 
 const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"] as const;
 
@@ -134,6 +136,119 @@ const ROLE_LABELS: Record<string, string> = {
   vrs_agent: "VRS Agent",
   admin: "Admin",
 };
+
+function TechnicianSyncSection() {
+  const { toast } = useToast();
+  const [syncResult, setSyncResult] = useState<{
+    synced: number;
+    added: number;
+    updated: number;
+    deactivated: number;
+  } | null>(null);
+
+  const metricsQuery = useQuery({
+    queryKey: ["/api/admin/technician-metrics"],
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/sync-technicians");
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      setSyncResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/technician-metrics"] });
+      toast({ title: "Sync Complete", description: `${data.synced} technicians synced from Snowflake.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const metrics = metricsQuery.data as { activeCount: number; lastSyncedAt: string | null } | undefined;
+
+  return (
+    <div className="space-y-4 p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Snowflake Integration</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Active Technicians</p>
+              <p className="text-2xl font-bold" data-testid="text-tech-count">
+                {metricsQuery.isLoading ? "..." : metrics?.activeCount || 0}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Last Synced</p>
+              <p className="text-sm font-medium" data-testid="text-last-sync">
+                {metricsQuery.isLoading
+                  ? "..."
+                  : metrics?.lastSyncedAt
+                    ? new Date(metrics.lastSyncedAt).toLocaleString()
+                    : "Never"}
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            data-testid="button-sync-techs"
+          >
+            {syncMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Syncing from Snowflake...
+              </>
+            ) : (
+              <>
+                <Database className="w-4 h-4 mr-2" />
+                Sync Now
+              </>
+            )}
+          </Button>
+          {syncResult && (
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-sm font-medium mb-2">Sync Results</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Total Synced:</span>{" "}
+                    <span className="font-medium" data-testid="text-sync-total">{syncResult.synced}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">New:</span>{" "}
+                    <span className="font-medium text-green-600" data-testid="text-sync-added">{syncResult.added}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Updated:</span>{" "}
+                    <span className="font-medium" data-testid="text-sync-updated">{syncResult.updated}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Deactivated:</span>{" "}
+                    <span className="font-medium text-red-600" data-testid="text-sync-deactivated">{syncResult.deactivated}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">How Technician Login Works</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>Field technicians sign in using only their LDAP ID — no password required.</p>
+          <p>Technician records are synced from Snowflake. Only active technicians that appear in the Snowflake query can sign in.</p>
+          <p>On sign-in, technicians can flag if their phone number has changed and provide an updated number for SMS notifications.</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -404,6 +519,16 @@ export default function AdminDashboard() {
                       <span>Analytics</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => setActiveView("technicians")}
+                      data-active={activeView === "technicians"}
+                      data-testid="nav-technicians"
+                    >
+                      <Database className="w-4 h-4" />
+                      <span>Technician Sync</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -455,6 +580,7 @@ export default function AdminDashboard() {
                 {activeView === "divisions" && "Division Assignments"}
                 {activeView === "rgc" && "Daily RGC Code"}
                 {activeView === "analytics" && "Analytics"}
+                {activeView === "technicians" && "Technician Sync"}
               </h1>
             </div>
             {activeView === "users" && (
@@ -887,6 +1013,10 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+            )}
+
+            {activeView === "technicians" && (
+              <TechnicianSyncSection />
             )}
           </ScrollArea>
         </div>

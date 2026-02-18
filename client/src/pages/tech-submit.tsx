@@ -394,6 +394,8 @@ export default function TechSubmitPage() {
     }
     if (videoUrl) payload.videoUrl = videoUrl;
     if (voiceNoteUrl) payload.voiceNoteUrl = voiceNoteUrl;
+    const phoneOverride = localStorage.getItem("vrs_phone_override");
+    if (phoneOverride) payload.phoneOverride = phoneOverride;
     const photosObj: any = {};
     if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
     if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;

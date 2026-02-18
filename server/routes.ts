@@ -6,7 +6,8 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
-import type { User } from "@shared/schema";
+import type { User, Technician } from "@shared/schema";
+import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
@@ -112,11 +113,100 @@ export async function registerRoutes(
     }
   });
 
+  const techLoginSchema = z.object({
+    ldapId: z.string().min(1, "LDAP ID is required").regex(/^[a-z][a-z0-9]*$/i, "Invalid LDAP ID format"),
+  });
+
+  app.post("/api/auth/tech-login", async (req, res) => {
+    try {
+      const parsed = techLoginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const ldapId = parsed.data.ldapId.toLowerCase().trim();
+      const technician = await storage.getTechnicianByLdapId(ldapId);
+
+      if (!technician) {
+        return res.status(404).json({ error: "ID not found. Please contact your manager." });
+      }
+
+      if (!technician.isActive) {
+        return res.status(403).json({ error: "Account is inactive. Please contact your manager." });
+      }
+
+      const techUser = await storage.getOrCreateTechUser(
+        technician.ldapId,
+        technician.name || ldapId,
+        technician.phone || ""
+      );
+
+      const token = jwt.sign(
+        {
+          id: techUser.id,
+          email: techUser.email,
+          name: technician.name || ldapId,
+          role: "technician",
+          ldapId: technician.ldapId,
+          isTechnician: true,
+        },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      const safeUser = {
+        id: techUser.id,
+        email: techUser.email,
+        name: technician.name || ldapId,
+        role: "technician" as const,
+        phone: technician.phone,
+        racId: technician.ldapId,
+        isActive: technician.isActive,
+        firstLogin: true,
+        lastSeenVersion: null,
+        lastRgcCodeEntry: null,
+        createdAt: technician.createdAt,
+        updatedAt: technician.updatedAt,
+        district: technician.district,
+        ldapId: technician.ldapId,
+      };
+
+      return res.status(200).json({ user: safeUser, token, technician });
+    } catch (error) {
+      console.error("Tech login error:", error);
+      return res.status(500).json({ error: "Login failed" });
+    }
+  });
+
   app.get("/api/auth/me", authenticateToken, async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       if (!authReq.user) {
         return res.status(401).json({ error: "No user found" });
+      }
+
+      if (authReq.user.isTechnician && authReq.user.ldapId) {
+        const technician = await storage.getTechnicianByLdapId(authReq.user.ldapId);
+        if (!technician || !technician.isActive) {
+          return res.status(404).json({ error: "Technician not found or inactive" });
+        }
+        const safeUser = {
+          id: authReq.user.id,
+          email: `${technician.ldapId}@tech.sears.com`,
+          name: technician.name || technician.ldapId,
+          role: "technician",
+          phone: technician.phone,
+          racId: technician.ldapId,
+          isActive: technician.isActive,
+          firstLogin: true,
+          lastSeenVersion: null,
+          lastRgcCodeEntry: null,
+          createdAt: technician.createdAt,
+          updatedAt: technician.updatedAt,
+          district: technician.district,
+          ldapId: technician.ldapId,
+        };
+        return res.status(200).json({ user: safeUser });
       }
 
       const user = await storage.getUser(authReq.user.id);
@@ -128,6 +218,24 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get user error:", error);
       return res.status(500).json({ error: "Failed to get user" });
+    }
+  });
+
+  app.patch("/api/tech/update-phone", authenticateToken, async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      if (!authReq.user?.isTechnician || !authReq.user?.ldapId) {
+        return res.status(403).json({ error: "Only technicians can update phone" });
+      }
+      const schema = z.object({ phone: z.string().min(7, "Valid phone number required") });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+      return res.status(200).json({ phone: parsed.data.phone });
+    } catch (error) {
+      console.error("Tech update phone error:", error);
+      return res.status(500).json({ error: "Failed to update phone" });
     }
   });
 
@@ -244,6 +352,8 @@ export async function registerRoutes(
       const submission = await storage.createSubmission({
         technicianId: user.id,
         racId: user.racId || "",
+        technicianLdapId: authReq.user?.ldapId || null,
+        phoneOverride: req.body.phoneOverride || null,
         phone: parsed.data.phone,
         serviceOrder: parsed.data.serviceOrder,
         districtCode: parsed.data.serviceOrder.split("-")[0],
@@ -822,6 +932,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Admin analytics error:", error);
       return res.status(500).json({ error: "Failed to get analytics" });
+    }
+  });
+
+  // ========================================================================
+  // TECHNICIAN SYNC ROUTES (Admin)
+  // ========================================================================
+
+  app.post("/api/admin/sync-technicians", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const snowflakeData = await fetchTechniciansFromSnowflake();
+
+      let added = 0;
+      let updated = 0;
+      const syncedLdapIds: string[] = [];
+
+      for (const tech of snowflakeData) {
+        const existing = await storage.getTechnicianByLdapId(tech.ldapId);
+        await storage.upsertTechnician({
+          ldapId: tech.ldapId,
+          name: tech.name,
+          phone: tech.phone,
+          district: tech.district,
+          managerName: tech.managerName,
+          techUnNo: tech.techUnNo,
+          isActive: true,
+          lastSyncedAt: new Date(),
+        });
+        syncedLdapIds.push(tech.ldapId);
+        if (existing) {
+          updated++;
+        } else {
+          added++;
+        }
+      }
+
+      const deactivated = await storage.deactivateTechniciansNotIn(syncedLdapIds);
+
+      return res.status(200).json({
+        synced: snowflakeData.length,
+        added,
+        updated,
+        deactivated,
+      });
+    } catch (error: any) {
+      console.error("Snowflake sync error:", error);
+      return res.status(500).json({ error: `Sync failed: ${error.message || "Unknown error"}` });
+    }
+  });
+
+  app.get("/api/admin/technician-metrics", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const info = await storage.getTechnicianSyncInfo();
+      return res.status(200).json(info);
+    } catch (error) {
+      console.error("Technician metrics error:", error);
+      return res.status(500).json({ error: "Failed to get technician metrics" });
     }
   });
 

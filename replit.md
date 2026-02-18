@@ -14,7 +14,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 
 ### Database Tables
 - `users` - All users (technicians, vrs_agents, admins) with role-based access, isActive toggle
-- `submissions` - Authorization requests with two-stage review workflow
+- `technicians` - Field technicians synced from Snowflake (ldapId, name, phone, district, managerName, techUnNo, isActive, lastSyncedAt)
+- `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride for LDAP techs)
 - `vrs_agent_specializations` - Agent division assignments
 - `sms_notifications` - Twilio SMS notification log
 - `daily_rgc_codes` - Daily RGC codes for B2B (future)
@@ -49,6 +50,10 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/admin/users/:id/specializations - Get agent divisions (admin only)
 - PATCH /api/admin/users/:id/specializations - Set agent divisions (admin only, body: {divisions: string[]})
 - PATCH /api/users/me - Self-update firstLogin, lastSeenVersion (authenticated)
+- POST /api/auth/tech-login - LDAP technician passwordless login (body: {ldapId})
+- PATCH /api/tech/update-phone - Technician phone update
+- POST /api/admin/sync-technicians - Sync technicians from Snowflake (admin only)
+- GET /api/admin/technician-metrics - Get technician sync info (admin only)
 
 ### Frontend Pages
 - `/login` - Login page (redirects by role)
@@ -109,3 +114,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-11: Phase 4 complete - Stage 2 auth code queue with batch processing banner, warranty provider counts, Twilio SMS service, SMS triggers on Stage 1 and Stage 2 actions
 - 2026-02-11: Phase 5 complete - Admin dashboard with user management table (CRUD, status toggle), division assignment page with checkbox grid, separate /admin route, isActive field on users, deactivated login check
 - 2026-02-11: Phase 6 complete - PWA manifest (VRS Submit, Sears blue #003366), install prompt banner, admin analytics (submission counts, approval rates, processing times), confirmation modals for destructive actions (reject, deactivate), session expiration handling (401 redirect to login), user-facing 404 page
+- 2026-02-18: Snowflake technician sync + LDAP login - technicians table synced from Snowflake via key-pair auth, passwordless LDAP login flow with dual-tab login page, shadow user creation for FK compatibility, phone override support, admin technician sync dashboard section

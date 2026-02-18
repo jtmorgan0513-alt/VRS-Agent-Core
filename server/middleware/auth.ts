@@ -7,6 +7,8 @@ export interface AuthenticatedRequest extends Request {
     email: string;
     name: string;
     role: string;
+    ldapId?: string;
+    isTechnician?: boolean;
   };
 }
 
@@ -31,6 +33,8 @@ export function authenticateToken(
       email: string;
       name: string;
       role: string;
+      ldapId?: string;
+      isTechnician?: boolean;
     };
     (req as AuthenticatedRequest).user = decoded;
     next();

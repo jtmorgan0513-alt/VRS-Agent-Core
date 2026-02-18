@@ -83,6 +83,8 @@ export const submissions = pgTable("submissions", {
   photos: text("photos"), // JSON string of photo URLs array
   videoUrl: varchar("video_url", { length: 500 }),
   voiceNoteUrl: varchar("voice_note_url", { length: 500 }),
+  technicianLdapId: varchar("technician_ldap_id", { length: 50 }),
+  phoneOverride: varchar("phone_override", { length: 20 }),
   stage1Status: text("stage1_status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
   stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
   stage1ReviewedAt: timestamp("stage1_reviewed_at"),
@@ -152,3 +154,29 @@ export const insertDailyRgcCodeSchema = createInsertSchema(dailyRgcCodes).omit({
 
 export type InsertDailyRgcCode = z.infer<typeof insertDailyRgcCodeSchema>;
 export type DailyRgcCode = typeof dailyRgcCodes.$inferSelect;
+
+// ============================================================================
+// TECHNICIANS TABLE (Synced from Snowflake)
+// ============================================================================
+export const technicians = pgTable("technicians", {
+  id: serial("id").primaryKey(),
+  ldapId: varchar("ldap_id", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }),
+  phone: varchar("phone", { length: 20 }),
+  district: varchar("district", { length: 10 }),
+  managerName: varchar("manager_name", { length: 255 }),
+  techUnNo: varchar("tech_un_no", { length: 50 }),
+  isActive: boolean("is_active").notNull().default(true),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const insertTechnicianSchema = createInsertSchema(technicians).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTechnician = z.infer<typeof insertTechnicianSchema>;
+export type Technician = typeof technicians.$inferSelect;

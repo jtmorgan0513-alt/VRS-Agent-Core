@@ -8,6 +8,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  techLogin: (ldapId: string) => Promise<{ technician: any }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -63,6 +64,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }, []);
 
+  const techLogin = useCallback(async (ldapId: string) => {
+    const res = await fetch("/api/auth/tech-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ldapId }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "Login failed");
+    }
+
+    const data = await res.json();
+    localStorage.setItem("vrs_token", data.token);
+    setToken(data.token);
+    setUser(data.user);
+    return { technician: data.technician };
+  }, []);
+
   const refreshUser = useCallback(async () => {
     const currentToken = localStorage.getItem("vrs_token");
     if (!currentToken) return;
@@ -84,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, techLogin, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

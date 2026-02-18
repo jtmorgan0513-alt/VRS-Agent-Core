@@ -17,6 +17,9 @@ import {
   dailyRgcCodes,
   InsertDailyRgcCode,
   DailyRgcCode,
+  technicians,
+  InsertTechnician,
+  Technician,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -81,6 +84,15 @@ export interface IStorage {
   createDailyRgcCode(code: InsertDailyRgcCode): Promise<DailyRgcCode>;
   getDailyRgcCode(date: string): Promise<DailyRgcCode | undefined>;
   upsertDailyRgcCode(data: { code: string; validDate: string; createdBy: number | null }): Promise<DailyRgcCode>;
+
+  // Technician methods
+  getOrCreateTechUser(ldapId: string, name: string, phone: string): Promise<User>;
+
+  getTechnicianByLdapId(ldapId: string): Promise<Technician | undefined>;
+  getTechnicians(activeOnly?: boolean): Promise<Technician[]>;
+  upsertTechnician(data: InsertTechnician): Promise<Technician>;
+  deactivateTechniciansNotIn(ldapIds: string[]): Promise<number>;
+  getTechnicianSyncInfo(): Promise<{ activeCount: number; lastSyncedAt: Date | null }>;
 
   getAnalytics(): Promise<{
     submissionsToday: number;
@@ -292,16 +304,19 @@ export class DatabaseStorage implements IStorage {
         submission: submissions,
         technicianName: users.name,
         technicianPhone: users.phone,
+        ldapTechName: technicians.name,
+        ldapTechPhone: technicians.phone,
       })
       .from(submissions)
       .innerJoin(users, eq(submissions.technicianId, users.id))
+      .leftJoin(technicians, eq(submissions.technicianLdapId, technicians.ldapId))
       .where(whereClause)
       .orderBy(desc(submissions.createdAt));
 
     return result.map((r) => ({
       ...r.submission,
-      technicianName: r.technicianName,
-      technicianPhone: r.technicianPhone,
+      technicianName: r.ldapTechName || r.technicianName,
+      technicianPhone: r.submission.phoneOverride || r.ldapTechPhone || r.technicianPhone,
     }));
   }
 
@@ -424,6 +439,86 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return result[0];
+  }
+
+  async getOrCreateTechUser(ldapId: string, name: string, phone: string): Promise<User> {
+    const email = `${ldapId}@tech.sears.com`;
+    const existing = await db.select().from(users).where(eq(users.email, email));
+    if (existing[0]) return existing[0];
+
+    const bcrypt = await import("bcryptjs");
+    const randomPassword = await bcrypt.hash(crypto.randomUUID(), 10);
+    const result = await db.insert(users).values({
+      email,
+      name: name || ldapId,
+      password: randomPassword,
+      role: "technician",
+      phone: phone || "",
+      racId: ldapId,
+      isActive: true,
+    }).returning();
+    return result[0];
+  }
+
+  // Technician methods
+  async getTechnicianByLdapId(ldapId: string): Promise<Technician | undefined> {
+    const result = await db.select().from(technicians).where(eq(technicians.ldapId, ldapId));
+    return result[0];
+  }
+
+  async getTechnicians(activeOnly?: boolean): Promise<Technician[]> {
+    if (activeOnly) {
+      return await db.select().from(technicians).where(eq(technicians.isActive, true));
+    }
+    return await db.select().from(technicians);
+  }
+
+  async upsertTechnician(data: InsertTechnician): Promise<Technician> {
+    const result = await db
+      .insert(technicians)
+      .values(data)
+      .onConflictDoUpdate({
+        target: technicians.ldapId,
+        set: {
+          name: data.name,
+          phone: data.phone,
+          district: data.district,
+          managerName: data.managerName,
+          techUnNo: data.techUnNo,
+          isActive: data.isActive,
+          lastSyncedAt: data.lastSyncedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return result[0];
+  }
+
+  async deactivateTechniciansNotIn(ldapIds: string[]): Promise<number> {
+    if (ldapIds.length === 0) return 0;
+    const result = await db
+      .update(technicians)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(and(
+        eq(technicians.isActive, true),
+        sql`${technicians.ldapId} NOT IN (${sql.join(ldapIds.map(id => sql`${id}`), sql`, `)})`
+      ))
+      .returning();
+    return result.length;
+  }
+
+  async getTechnicianSyncInfo(): Promise<{ activeCount: number; lastSyncedAt: Date | null }> {
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(technicians)
+      .where(eq(technicians.isActive, true));
+    const lastSyncResult = await db
+      .select({ lastSynced: sql<Date | null>`max(${technicians.lastSyncedAt})` })
+      .from(technicians);
+    return {
+      activeCount: Number(countResult[0]?.count) || 0,
+      lastSyncedAt: lastSyncResult[0]?.lastSynced || null,
+    };
   }
 
   async getAnalytics(): Promise<{
