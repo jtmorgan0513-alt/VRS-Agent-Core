@@ -69,17 +69,31 @@ ORDER BY p.LDAP_ID
 
 function normalizePrivateKey(key: string): string {
   let normalized = key.trim();
-  if (!normalized.includes("-----BEGIN") && !normalized.includes("\n")) {
-    normalized = `-----BEGIN PRIVATE KEY-----\n${normalized}\n-----END PRIVATE KEY-----`;
-  }
-  if (normalized.includes("-----BEGIN") && !normalized.includes("\n")) {
-    normalized = normalized
-      .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
-      .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
-      .replace("-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n")
-      .replace("-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----");
-  }
   normalized = normalized.replace(/\\n/g, "\n");
+
+  const headerRe = /-----BEGIN (RSA )?PRIVATE KEY-----/;
+  const footerRe = /-----END (RSA )?PRIVATE KEY-----/;
+  const headerMatch = normalized.match(headerRe);
+  const footerMatch = normalized.match(footerRe);
+
+  if (headerMatch && footerMatch) {
+    const header = headerMatch[0];
+    const footer = footerMatch[0];
+    let body = normalized
+      .replace(header, "")
+      .replace(footer, "")
+      .replace(/[\s\r\n]+/g, "");
+    const lines = body.match(/.{1,64}/g) || [];
+    normalized = header + "\n" + lines.join("\n") + "\n" + footer + "\n";
+  } else if (!headerMatch) {
+    const body = normalized.replace(/[\s\r\n]+/g, "");
+    const lines = body.match(/.{1,64}/g) || [];
+    normalized =
+      "-----BEGIN PRIVATE KEY-----\n" +
+      lines.join("\n") +
+      "\n-----END PRIVATE KEY-----\n";
+  }
+
   return normalized;
 }
 
