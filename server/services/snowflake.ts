@@ -1,4 +1,5 @@
 import snowflake from "snowflake-sdk";
+import crypto from "crypto";
 
 interface SnowflakeTechRow {
   TECH_ID: string;
@@ -75,22 +76,45 @@ function getConnection(): Promise<snowflake.Connection> {
       return;
     }
 
-    let privateKey = rawKey.replace(/\\n/g, "\n");
+    let pemKey = rawKey.replace(/\\n/g, "\n");
 
-    if (!privateKey.includes("-----BEGIN")) {
-      const cleaned = privateKey.replace(/\s+/g, "");
+    if (!pemKey.includes("-----BEGIN")) {
+      const cleaned = pemKey.replace(/\s+/g, "");
       const lines = cleaned.match(/.{1,64}/g) || [];
-      privateKey =
+      pemKey =
         "-----BEGIN PRIVATE KEY-----\n" +
         lines.join("\n") +
         "\n-----END PRIVATE KEY-----";
+    }
+
+    if (pemKey.includes("-----BEGIN RSA PRIVATE KEY-----")) {
+      const keyObj = crypto.createPrivateKey({
+        key: pemKey,
+        format: "pem",
+      });
+      pemKey = keyObj
+        .export({ type: "pkcs8", format: "pem" })
+        .toString();
+    }
+
+    try {
+      const keyObj = crypto.createPrivateKey({
+        key: pemKey,
+        format: "pem",
+      });
+      pemKey = keyObj
+        .export({ type: "pkcs8", format: "pem" })
+        .toString();
+    } catch (e: any) {
+      reject(new Error(`Failed to parse private key: ${e.message}. Ensure the SNOWFLAKE_PRIVATE_KEY secret contains a valid unencrypted PKCS#8 PEM key.`));
+      return;
     }
 
     const connection = snowflake.createConnection({
       account: process.env.SNOWFLAKE_ACCOUNT!,
       username: process.env.SNOWFLAKE_USERNAME!,
       authenticator: "SNOWFLAKE_JWT",
-      privateKey: privateKey,
+      privateKey: pemKey,
       warehouse: process.env.SNOWFLAKE_WAREHOUSE!,
       database: "PRD_TPMS",
       schema: "HSTECH",
