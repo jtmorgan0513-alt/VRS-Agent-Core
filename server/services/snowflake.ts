@@ -69,10 +69,21 @@ ORDER BY p.LDAP_ID
 
 function getConnection(): Promise<snowflake.Connection> {
   return new Promise((resolve, reject) => {
-    const privateKey = process.env.SNOWFLAKE_PRIVATE_KEY;
-    if (!privateKey) {
+    const rawKey = process.env.SNOWFLAKE_PRIVATE_KEY;
+    if (!rawKey) {
       reject(new Error("SNOWFLAKE_PRIVATE_KEY not configured"));
       return;
+    }
+
+    let privateKey = rawKey.replace(/\\n/g, "\n");
+
+    if (!privateKey.includes("-----BEGIN")) {
+      const cleaned = privateKey.replace(/\s+/g, "");
+      const lines = cleaned.match(/.{1,64}/g) || [];
+      privateKey =
+        "-----BEGIN PRIVATE KEY-----\n" +
+        lines.join("\n") +
+        "\n-----END PRIVATE KEY-----";
     }
 
     const connection = snowflake.createConnection({
