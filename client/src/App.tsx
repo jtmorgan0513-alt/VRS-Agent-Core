@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -99,26 +100,37 @@ function HelpRoute() {
 
 function OnboardingManager() {
   const { user, refreshUser } = useAuth();
+  const [dismissed, setDismissed] = useState(false);
 
   if (!user) return null;
 
   const appVersion = import.meta.env.VITE_APP_VERSION || "1.0.0";
-  const showOnboarding = user.firstLogin === true;
-  const showWhatsNew = !showOnboarding && user.lastSeenVersion !== appVersion;
+  const showOnboarding = !dismissed && user.firstLogin === true;
+  const showWhatsNew = !dismissed && !showOnboarding && user.lastSeenVersion !== appVersion;
 
   const handleWizardComplete = async () => {
-    await apiRequest("PATCH", "/api/users/me", {
-      firstLogin: false,
-      lastSeenVersion: appVersion,
-    });
-    await refreshUser();
+    setDismissed(true);
+    try {
+      await apiRequest("PATCH", "/api/users/me", {
+        firstLogin: false,
+        lastSeenVersion: appVersion,
+      });
+    } catch (e) {
+      console.error("Failed to dismiss onboarding:", e);
+    }
+    refreshUser();
   };
 
   const handleWhatsNewDismiss = async () => {
-    await apiRequest("PATCH", "/api/users/me", {
-      lastSeenVersion: appVersion,
-    });
-    await refreshUser();
+    setDismissed(true);
+    try {
+      await apiRequest("PATCH", "/api/users/me", {
+        lastSeenVersion: appVersion,
+      });
+    } catch (e) {
+      console.error("Failed to dismiss what's new:", e);
+    }
+    refreshUser();
   };
 
   return (
