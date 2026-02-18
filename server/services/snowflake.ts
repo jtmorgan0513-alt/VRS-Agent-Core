@@ -1,5 +1,4 @@
 import snowflake from "snowflake-sdk";
-import crypto from "crypto";
 
 interface SnowflakeTechRow {
   TECH_ID: string;
@@ -68,6 +67,22 @@ WHERE p.primary_rank = 1
 ORDER BY p.LDAP_ID
 `;
 
+function normalizePrivateKey(key: string): string {
+  let normalized = key.trim();
+  if (!normalized.includes("-----BEGIN") && !normalized.includes("\n")) {
+    normalized = `-----BEGIN PRIVATE KEY-----\n${normalized}\n-----END PRIVATE KEY-----`;
+  }
+  if (normalized.includes("-----BEGIN") && !normalized.includes("\n")) {
+    normalized = normalized
+      .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+      .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+      .replace("-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n")
+      .replace("-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----");
+  }
+  normalized = normalized.replace(/\\n/g, "\n");
+  return normalized;
+}
+
 function getConnection(): Promise<snowflake.Connection> {
   return new Promise((resolve, reject) => {
     const rawKey = process.env.SNOWFLAKE_PRIVATE_KEY;
@@ -76,45 +91,13 @@ function getConnection(): Promise<snowflake.Connection> {
       return;
     }
 
-    let pemKey = rawKey.replace(/\\n/g, "\n");
-
-    if (!pemKey.includes("-----BEGIN")) {
-      const cleaned = pemKey.replace(/\s+/g, "");
-      const lines = cleaned.match(/.{1,64}/g) || [];
-      pemKey =
-        "-----BEGIN PRIVATE KEY-----\n" +
-        lines.join("\n") +
-        "\n-----END PRIVATE KEY-----";
-    }
-
-    if (pemKey.includes("-----BEGIN RSA PRIVATE KEY-----")) {
-      const keyObj = crypto.createPrivateKey({
-        key: pemKey,
-        format: "pem",
-      });
-      pemKey = keyObj
-        .export({ type: "pkcs8", format: "pem" })
-        .toString();
-    }
-
-    try {
-      const keyObj = crypto.createPrivateKey({
-        key: pemKey,
-        format: "pem",
-      });
-      pemKey = keyObj
-        .export({ type: "pkcs8", format: "pem" })
-        .toString();
-    } catch (e: any) {
-      reject(new Error(`Failed to parse private key: ${e.message}. Ensure the SNOWFLAKE_PRIVATE_KEY secret contains a valid unencrypted PKCS#8 PEM key.`));
-      return;
-    }
+    const privateKey = normalizePrivateKey(rawKey);
 
     const connection = snowflake.createConnection({
       account: process.env.SNOWFLAKE_ACCOUNT!,
       username: process.env.SNOWFLAKE_USERNAME!,
       authenticator: "SNOWFLAKE_JWT",
-      privateKey: pemKey,
+      privateKey,
       warehouse: process.env.SNOWFLAKE_WAREHOUSE!,
       database: "PRD_TPMS",
       schema: "HSTECH",
