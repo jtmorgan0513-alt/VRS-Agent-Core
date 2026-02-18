@@ -7,6 +7,8 @@ import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User, Technician } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
@@ -24,7 +26,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -90,9 +92,12 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors[0].message });
       }
-      const { email, password } = parsed.data;
+      const { identifier, password } = parsed.data;
 
-      const user = await storage.getUserByEmail(email);
+      let user = await storage.getUserByEmail(identifier);
+      if (!user) {
+        user = await storage.getUserByRacId(identifier);
+      }
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
@@ -110,6 +115,54 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Login error:", error);
       return res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  const changePasswordSchema = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8).regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/,
+      "Password must contain at least 8 characters, 1 uppercase, 1 lowercase, 1 number, and 1 special character (!@#$%^&*)"
+    ),
+  });
+
+  app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      if (!authReq.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const parsed = changePasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const user = await storage.getUser(authReq.user.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const passwordMatch = await bcryptjs.compare(parsed.data.currentPassword, user.password);
+      if (!passwordMatch) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      const hashedPassword = await bcryptjs.hash(parsed.data.newPassword, 10);
+      const updated = await storage.updateUser(user.id, {
+        password: hashedPassword,
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
+      } as any);
+
+      if (!updated) {
+        return res.status(500).json({ error: "Failed to update password" });
+      }
+
+      return res.status(200).json({ user: sanitizeUser(updated) });
+    } catch (error) {
+      console.error("Change password error:", error);
+      return res.status(500).json({ error: "Failed to change password" });
     }
   });
 
@@ -820,6 +873,7 @@ export async function registerRoutes(
     role: z.enum(["technician", "vrs_agent", "admin"]).optional(),
     isActive: z.boolean().optional(),
     password: z.string().min(6).optional(),
+    resetPassword: z.boolean().optional(),
   });
 
   app.patch("/api/admin/users/:id", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -862,6 +916,12 @@ export async function registerRoutes(
       if (parsed.data.password !== undefined) {
         const hashedPassword = await bcryptjs.hash(parsed.data.password, 10);
         updateData.password = hashedPassword;
+      }
+      if (parsed.data.resetPassword === true) {
+        const hashedPassword = await bcryptjs.hash("VRS2026!", 10);
+        updateData.password = hashedPassword;
+        updateData.mustChangePassword = true;
+        updateData.passwordChangedAt = null;
       }
 
       const updatedUser = await storage.updateUser(id, updateData as any);
@@ -989,6 +1049,61 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Technician metrics error:", error);
       return res.status(500).json({ error: "Failed to get technician metrics" });
+    }
+  });
+
+  app.post("/api/admin/import-users", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const csvPath = path.join(process.cwd(), "attached_assets", "VRS_Auth_Replit_Name_List(Names)_1771456018054.csv");
+      const csvContent = fs.readFileSync(csvPath, "utf-8");
+      const lines = csvContent.split("\n").filter((line) => line.trim());
+      const header = lines[0];
+      const dataLines = lines.slice(1);
+
+      let imported = 0;
+      let skipped = 0;
+      const defaultPassword = await bcryptjs.hash("VRS2026!", 10);
+
+      for (const line of dataLines) {
+        const parts = line.split(",");
+        if (parts.length < 4) continue;
+
+        const firstName = parts[0].trim();
+        const lastName = parts[1].trim();
+        const ldapId = parts[2].trim();
+        const roleStr = parts[3].trim();
+
+        if (!firstName || !lastName || !ldapId || !roleStr) continue;
+
+        const racId = ldapId.toLowerCase();
+        const existing = await storage.getUserByRacId(racId);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
+        const name = `${firstName} ${lastName}`;
+        const email = `${racId}@vrs.sears.com`;
+        const role = roleStr === "Admin" ? "admin" : "vrs_agent";
+
+        await storage.createUser({
+          email,
+          password: defaultPassword,
+          name,
+          role,
+          phone: null,
+          racId,
+          isActive: true,
+          firstLogin: true,
+          mustChangePassword: true,
+        });
+        imported++;
+      }
+
+      return res.status(200).json({ imported, skipped });
+    } catch (error) {
+      console.error("CSV import error:", error);
+      return res.status(500).json({ error: "Failed to import users" });
     }
   });
 

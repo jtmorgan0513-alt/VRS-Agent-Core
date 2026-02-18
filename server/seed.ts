@@ -51,6 +51,7 @@ export async function seedDatabase() {
         role: seedUser.role,
         phone: seedUser.phone,
         racId: seedUser.racId,
+        mustChangePassword: false,
       });
       console.log(`Seeded user: ${seedUser.email} (${seedUser.role})`);
     }

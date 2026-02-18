@@ -37,6 +37,7 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByRacId(racId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   getUsers(): Promise<User[]>;
   updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined>;
@@ -119,6 +120,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(users)
       .where(eq(users.email, email));
+    return result[0];
+  }
+
+  async getUserByRacId(racId: string): Promise<User | undefined> {
+    const result = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.racId}) = ${racId.toLowerCase()}`);
     return result[0];
   }
 

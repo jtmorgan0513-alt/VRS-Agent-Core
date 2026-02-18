@@ -18,6 +18,8 @@ export const users = pgTable("users", {
   firstLogin: boolean("first_login").notNull().default(true),
   lastSeenVersion: varchar("last_seen_version", { length: 50 }),
   lastRgcCodeEntry: date("last_rgc_code_entry"),
+  mustChangePassword: boolean("must_change_password").notNull().default(true),
+  passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

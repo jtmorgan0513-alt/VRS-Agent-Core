@@ -266,6 +266,7 @@ export default function AdminDashboard() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
+  const [resetPwConfirm, setResetPwConfirm] = useState<{ id: number; name: string } | null>(null);
   const [rgcDate, setRgcDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rgcDigits, setRgcDigits] = useState("");
 
@@ -351,6 +352,38 @@ export default function AdminDashboard() {
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await apiRequest("PATCH", `/api/admin/users/${id}`, { resetPassword: true });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Password Reset", description: "User must change password on next login." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setResetPwConfirm(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const importUsersMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/import-users");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Import Complete",
+        description: `Imported: ${data.imported}, Skipped: ${data.skipped}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -584,10 +617,25 @@ export default function AdminDashboard() {
               </h1>
             </div>
             {activeView === "users" && (
-              <Button onClick={openCreateDialog} data-testid="button-create-user">
-                <UserPlus className="w-4 h-4 mr-2" />
-                Create User
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="secondary"
+                  onClick={() => importUsersMutation.mutate()}
+                  disabled={importUsersMutation.isPending}
+                  data-testid="button-import-users"
+                >
+                  {importUsersMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4 mr-2" />
+                  )}
+                  Import Users
+                </Button>
+                <Button onClick={openCreateDialog} data-testid="button-create-user">
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Create User
+                </Button>
+              </div>
             )}
           </header>
 
@@ -609,6 +657,7 @@ export default function AdminDashboard() {
                         <TableHead>Role</TableHead>
                         <TableHead>Phone</TableHead>
                         <TableHead>RAC ID</TableHead>
+                        <TableHead>Password Status</TableHead>
                         <TableHead>
                           <div className="flex items-center gap-1.5">
                             Status
@@ -633,6 +682,15 @@ export default function AdminDashboard() {
                           </TableCell>
                           <TableCell data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
                           <TableCell data-testid={`text-user-racid-${u.id}`}>{u.racId || "-"}</TableCell>
+                          <TableCell data-testid={`text-pw-status-${u.id}`}>
+                            {u.mustChangePassword ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">Must Change</Badge>
+                            ) : u.passwordChangedAt ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">Changed {new Date(u.passwordChangedAt).toLocaleDateString()}</Badge>
+                            ) : (
+                              <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">Active</Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Switch
                               checked={u.isActive}
@@ -647,14 +705,24 @@ export default function AdminDashboard() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditDialog(u)}
-                              data-testid={`button-edit-${u.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEditDialog(u)}
+                                data-testid={`button-edit-${u.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setResetPwConfirm({ id: u.id, name: u.name })}
+                                data-testid={`button-reset-pw-${u.id}`}
+                              >
+                                <Key className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1155,6 +1223,30 @@ export default function AdminDashboard() {
               data-testid="button-confirm-deactivate"
             >
               Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!resetPwConfirm} onOpenChange={(open) => !open && setResetPwConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-reset-pw-title">Reset Password</AlertDialogTitle>
+            <AlertDialogDescription>
+              Reset password for <strong>{resetPwConfirm?.name}</strong>? They will need to change it on next login.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-reset-pw">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (resetPwConfirm) {
+                  resetPasswordMutation.mutate({ id: resetPwConfirm.id });
+                }
+              }}
+              data-testid="button-confirm-reset-pw"
+            >
+              Reset Password
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

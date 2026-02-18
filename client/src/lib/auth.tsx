@@ -7,7 +7,7 @@ interface AuthContextType {
   user: SafeUser | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<SafeUser>;
   techLogin: (ldapId: string) => Promise<{ technician: any }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -46,11 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string): Promise<SafeUser> => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     });
 
     if (!res.ok) {
@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("vrs_token", data.token);
     setToken(data.token);
     setUser(data.user);
+    return data.user;
   }, []);
 
   const techLogin = useCallback(async (ldapId: string) => {
