@@ -99,9 +99,6 @@ export async function registerRoutes(
 
       let user = await storage.getUserByRacId(identifier);
       if (!user) {
-        user = await storage.getUserByEmail(identifier);
-      }
-      if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
