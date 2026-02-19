@@ -869,6 +869,15 @@ export default function AgentDashboard() {
                             Show Service History
                           </Button>
                         )}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                          disabled={deleteMutation.isPending}
+                          data-testid="button-delete-submission-stage2"
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
                       </div>
                     </div>
 
