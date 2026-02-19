@@ -149,7 +149,6 @@ export default function AgentDashboard() {
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [authCode, setAuthCode] = useState("");
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
@@ -334,7 +333,6 @@ export default function AgentDashboard() {
       toast({ title: "Code Sent", description: "Authorization code sent to technician." });
       setSelectedId(null);
       setAuthCode("");
-      setSelectedIds(new Set());
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/agent/warranty-counts") });
@@ -377,31 +375,12 @@ export default function AgentDashboard() {
     },
   });
 
-  const toggleCheckbox = (id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
   const { data: agentsData } = useQuery<{ users: Array<{ id: number; name: string; role: string; racId: string | null }> }>({
     queryKey: ["/api/admin/users"],
     enabled: isAdminViewing && reassignOpen,
   });
   const vrsAgents = agentsData?.users?.filter(u => u.role === "vrs_agent") || [];
 
-  const selectedWarrantyProvider = selectedSubmission ? getWarrantyLabel(selectedSubmission) : null;
-  const batchSameProvider = useMemo(() => {
-    if (!selectedWarrantyProvider || activeView !== "stage2") return [];
-    return submissions.filter(
-      (s) => selectedIds.has(s.id) && getWarrantyLabel(s) === selectedWarrantyProvider && s.id !== selectedId
-    );
-  }, [selectedIds, selectedWarrantyProvider, submissions, selectedId, activeView]);
 
   const sidebarStyle = {
     "--sidebar-width": "16rem",
@@ -427,7 +406,7 @@ export default function AgentDashboard() {
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("stage1"); setSelectedId(null); setSelectedIds(new Set()); setWarrantyFilter(null); }}
+                      onClick={() => { setActiveView("stage1"); setSelectedId(null); setWarrantyFilter(null); }}
                       data-active={activeView === "stage1"}
                       data-testid="nav-stage1"
                     >
@@ -442,7 +421,7 @@ export default function AgentDashboard() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("stage2"); setSelectedId(null); setSelectedIds(new Set()); }}
+                      onClick={() => { setActiveView("stage2"); setSelectedId(null); }}
                       data-active={activeView === "stage2"}
                       data-testid="nav-stage2"
                     >
@@ -457,7 +436,7 @@ export default function AgentDashboard() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("completed"); setSelectedId(null); setSelectedIds(new Set()); setWarrantyFilter(null); }}
+                      onClick={() => { setActiveView("completed"); setSelectedId(null); setWarrantyFilter(null); }}
                       data-active={activeView === "completed"}
                       data-testid="nav-completed"
                     >
@@ -654,29 +633,6 @@ export default function AgentDashboard() {
             </div>
           </header>
 
-          {activeView === "stage2" && !selectedId && (
-            <div className="px-4 py-3 bg-primary/10 border-b" data-testid="text-batch-banner">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-md bg-primary/20">
-                    <Layers className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">Batch Processing Mode</p>
-                    <p className="text-xs text-muted-foreground">Select multiple orders from the same warranty provider to process together</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {warrantyCounts.map((wc) => (
-                    <span key={wc.warrantyProvider} className="text-sm font-medium" data-testid={`text-warranty-count-${wc.warrantyProvider}`}>
-                      {wc.count} {wc.warrantyProvider} Ready
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="flex flex-1 min-h-0">
             <div className={`w-[380px] border-r flex flex-col min-h-0 ${selectedId ? "hidden" : ""}`}>
               <div className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
@@ -722,7 +678,6 @@ export default function AgentDashboard() {
                     {submissions.map((sub) => {
                       const urgency = getUrgencyLevel(sub.createdAt!);
                       const isSelected = selectedId === sub.id;
-                      const isChecked = selectedIds.has(sub.id);
                       return (
                         <div
                           key={sub.id}
@@ -738,19 +693,6 @@ export default function AgentDashboard() {
                               : ""
                           }`}
                         >
-                          {activeView === "stage2" && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); toggleCheckbox(sub.id); }}
-                              className="mt-0.5 flex-shrink-0"
-                              data-testid={`checkbox-item-${sub.id}`}
-                            >
-                              {isChecked ? (
-                                <CheckSquare className="w-5 h-5 text-primary" />
-                              ) : (
-                                <Square className="w-5 h-5 text-muted-foreground" />
-                              )}
-                            </button>
-                          )}
                           <button
                             onClick={() => setSelectedId(sub.id)}
                             className="flex-1 text-left min-w-0"
@@ -1097,24 +1039,6 @@ export default function AgentDashboard() {
                         </div>
                       </CardContent>
                     </Card>
-
-                    {batchSameProvider.length > 0 && (
-                      <div data-testid="card-batch-mode">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Batch Mode Active</p>
-                        <div className="rounded-md bg-primary/10 p-4 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-md bg-primary/20">
-                              <Layers className="w-5 h-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">Processing {selectedWarrantyProvider} Orders Together</p>
-                              <p className="text-xs text-muted-foreground">Call warranty provider once, get auth codes for all selected orders</p>
-                            </div>
-                          </div>
-                          <span className="text-2xl font-bold text-primary">{batchSameProvider.length + 1}</span>
-                        </div>
-                      </div>
-                    )}
 
                     <Separator />
 
