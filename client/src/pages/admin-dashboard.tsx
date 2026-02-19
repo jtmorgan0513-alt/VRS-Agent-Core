@@ -88,6 +88,8 @@ import {
   Loader2,
   Trash2,
   ClipboardList,
+  X,
+  Search,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -268,7 +270,9 @@ export default function AdminDashboard() {
   const [formRole, setFormRole] = useState("technician");
   const [formPhone, setFormPhone] = useState("");
   const [formRacId, setFormRacId] = useState("");
-  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
+  const [agentSearchQuery, setAgentSearchQuery] = useState("");
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
   const [resetPwConfirm, setResetPwConfirm] = useState<{ id: number; name: string } | null>(null);
@@ -286,8 +290,8 @@ export default function AdminDashboard() {
   const { data: specData, isLoading: specLoading } = useQuery<{
     specializations: { id: number; userId: number; division: string }[];
   }>({
-    queryKey: ["/api/admin/users", selectedAgentId, "specializations"],
-    enabled: !!selectedAgentId,
+    queryKey: ["/api/admin/users", selectedAgentIds.length === 1 ? String(selectedAgentIds[0]) : "", "specializations"],
+    enabled: selectedAgentIds.length === 1,
   });
 
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
@@ -305,10 +309,12 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    if (specData?.specializations) {
+    if (selectedAgentIds.length === 1 && specData?.specializations) {
       setSelectedDivisions(specData.specializations.map((s) => s.division));
+    } else if (selectedAgentIds.length !== 1) {
+      setSelectedDivisions([]);
     }
-  }, [specData]);
+  }, [specData, selectedAgentIds]);
 
   const createUserMutation = useMutation({
     mutationFn: async (data: {
@@ -409,14 +415,18 @@ export default function AdminDashboard() {
   });
 
   const saveDivisionsMutation = useMutation({
-    mutationFn: async ({ id, divisions }: { id: number; divisions: string[] }) => {
-      const res = await apiRequest("PATCH", `/api/admin/users/${id}/specializations`, { divisions });
+    mutationFn: async ({ ids, divisions }: { ids: number[]; divisions: string[] }) => {
+      const results = await Promise.all(
+        ids.map((id) => apiRequest("PATCH", `/api/admin/users/${id}/specializations`, { divisions }))
+      );
+      const res = results[0];
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Divisions Saved", description: "Division assignments have been updated." });
+      const agentCount = selectedAgentIds.length;
+      toast({ title: "Divisions Saved", description: `Division assignments updated for ${agentCount} agent${agentCount > 1 ? "s" : ""}.` });
       queryClient.invalidateQueries({
-        queryKey: ["/api/admin/users", selectedAgentId, "specializations"],
+        predicate: (q) => (q.queryKey[0] as string)?.includes("/api/admin/users") && (q.queryKey[2] === "specializations"),
       });
     },
     onError: (err: Error) => {
@@ -778,33 +788,126 @@ export default function AdminDashboard() {
 
             {activeView === "divisions" && (
               <div className="p-4 space-y-4">
-                <div className="max-w-md">
-                  <Label htmlFor="agent-select" className="mb-2 block text-sm font-medium">
-                    Select VRS Agent
+                <div className="max-w-lg">
+                  <Label className="mb-2 block text-sm font-medium">
+                    Select VRS Agents
                   </Label>
-                  <Select
-                    value={selectedAgentId}
-                    onValueChange={(val) => {
-                      setSelectedAgentId(val);
-                      setSelectedDivisions([]);
-                    }}
-                  >
-                    <SelectTrigger data-testid="select-agent">
-                      <SelectValue placeholder="Choose an agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vrsAgents.map((agent) => (
-                        <SelectItem key={agent.id} value={String(agent.id)} data-testid={`select-agent-${agent.id}`}>
-                          {agent.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative">
+                    <div className="flex items-center border rounded-md bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+                      <Search className="w-4 h-4 ml-3 text-muted-foreground shrink-0" />
+                      <Input
+                        placeholder="Search agents by name..."
+                        value={agentSearchQuery}
+                        onChange={(e) => {
+                          setAgentSearchQuery(e.target.value);
+                          setAgentDropdownOpen(true);
+                        }}
+                        onFocus={() => setAgentDropdownOpen(true)}
+                        className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        data-testid="input-agent-search"
+                      />
+                    </div>
+                    {agentDropdownOpen && (
+                      <Card className="absolute z-50 w-full mt-1 shadow-lg">
+                        <ScrollArea className="max-h-48">
+                          <div className="p-1">
+                            {vrsAgents
+                              .filter((a) =>
+                                a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
+                              )
+                              .map((agent) => {
+                                const isSelected = selectedAgentIds.includes(agent.id);
+                                return (
+                                  <button
+                                    key={agent.id}
+                                    type="button"
+                                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md text-left hover-elevate ${
+                                      isSelected ? "bg-primary/10 font-medium" : ""
+                                    }`}
+                                    onClick={() => {
+                                      setSelectedAgentIds((prev) =>
+                                        isSelected
+                                          ? prev.filter((id) => id !== agent.id)
+                                          : [...prev, agent.id]
+                                      );
+                                    }}
+                                    data-testid={`option-agent-${agent.id}`}
+                                  >
+                                    <Checkbox
+                                      checked={isSelected}
+                                      className="pointer-events-none"
+                                    />
+                                    <span>{agent.name}</span>
+                                    {agent.racId && (
+                                      <span className="text-muted-foreground ml-auto text-xs">{agent.racId}</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            {vrsAgents.filter((a) =>
+                              a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
+                            ).length === 0 && (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">No agents found</div>
+                            )}
+                          </div>
+                        </ScrollArea>
+                        <Separator />
+                        <div className="p-2 flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setAgentDropdownOpen(false);
+                              setAgentSearchQuery("");
+                            }}
+                            data-testid="button-close-agent-dropdown"
+                          >
+                            Done
+                          </Button>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+
+                  {selectedAgentIds.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {selectedAgentIds.map((id) => {
+                        const agent = vrsAgents.find((a) => a.id === id);
+                        if (!agent) return null;
+                        return (
+                          <Badge key={id} variant="secondary" data-testid={`badge-agent-${id}`}>
+                            {agent.name}
+                            <button
+                              type="button"
+                              className="ml-1 rounded-full"
+                              onClick={() =>
+                                setSelectedAgentIds((prev) => prev.filter((aid) => aid !== id))
+                              }
+                              data-testid={`button-remove-agent-${id}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                      {selectedAgentIds.length > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs text-muted-foreground"
+                          onClick={() => setSelectedAgentIds([])}
+                          data-testid="button-clear-agents"
+                        >
+                          Clear all
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {selectedAgentId && (
+                {selectedAgentIds.length > 0 && (
                   <>
-                    {specLoading ? (
+                    {specLoading && selectedAgentIds.length === 1 ? (
                       <div className="space-y-3">
                         {[1, 2, 3].map((i) => (
                           <div key={i} className="h-10 bg-muted rounded-md animate-pulse" />
@@ -818,13 +921,25 @@ export default function AdminDashboard() {
                               <CardTitle className="text-base">Division Assignments</CardTitle>
                               <HelpTooltip content="Agents receive submissions matching their assigned divisions. Generalist agents receive all types." />
                             </div>
-                            {isGeneralist && (
-                              <Badge variant="secondary" data-testid="badge-generalist">
-                                <Shield className="w-3 h-3 mr-1" />
-                                Generalist
-                              </Badge>
-                            )}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {selectedAgentIds.length > 1 && (
+                                <Badge variant="outline" data-testid="badge-multi-agent-count">
+                                  {selectedAgentIds.length} agents selected
+                                </Badge>
+                              )}
+                              {isGeneralist && (
+                                <Badge variant="secondary" data-testid="badge-generalist">
+                                  <Shield className="w-3 h-3 mr-1" />
+                                  Generalist
+                                </Badge>
+                              )}
+                            </div>
                           </div>
+                          {selectedAgentIds.length > 1 && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Selected divisions will be applied to all {selectedAgentIds.length} agents.
+                            </p>
+                          )}
                         </CardHeader>
                         <CardContent className="space-y-4">
                           <div className="flex items-center gap-2">
@@ -861,7 +976,7 @@ export default function AdminDashboard() {
                             <Button
                               onClick={() =>
                                 saveDivisionsMutation.mutate({
-                                  id: Number(selectedAgentId),
+                                  ids: selectedAgentIds,
                                   divisions: selectedDivisions,
                                 })
                               }
@@ -869,13 +984,11 @@ export default function AdminDashboard() {
                               data-testid="button-save-divisions"
                             >
                               {saveDivisionsMutation.isPending ? (
-                                <span className="animate-spin mr-2">
-                                  <Save className="w-4 h-4" />
-                                </span>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                               ) : (
                                 <Save className="w-4 h-4 mr-2" />
                               )}
-                              Save
+                              Save{selectedAgentIds.length > 1 ? ` for ${selectedAgentIds.length} Agents` : ""}
                             </Button>
                           </div>
                         </CardContent>
