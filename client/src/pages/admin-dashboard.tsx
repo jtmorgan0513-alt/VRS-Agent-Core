@@ -272,7 +272,6 @@ export default function AdminDashboard() {
   const [formRacId, setFormRacId] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
-  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
   const [resetPwConfirm, setResetPwConfirm] = useState<{ id: number; name: string } | null>(null);
@@ -788,122 +787,119 @@ export default function AdminDashboard() {
 
             {activeView === "divisions" && (
               <div className="p-4 space-y-4">
-                <div className="max-w-lg">
-                  <Label className="mb-2 block text-sm font-medium">
-                    Select VRS Agents
-                  </Label>
-                  <div className="relative">
+                <Card className="max-w-lg">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <CardTitle className="text-base">Select VRS Agents</CardTitle>
+                      {selectedAgentIds.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" data-testid="badge-selected-count">
+                            {selectedAgentIds.length} selected
+                          </Badge>
+                          {selectedAgentIds.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs text-muted-foreground"
+                              onClick={() => setSelectedAgentIds([])}
+                              data-testid="button-clear-agents"
+                            >
+                              Clear all
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
                     <div className="flex items-center border rounded-md bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
                       <Search className="w-4 h-4 ml-3 text-muted-foreground shrink-0" />
                       <Input
                         placeholder="Search agents by name..."
                         value={agentSearchQuery}
-                        onChange={(e) => {
-                          setAgentSearchQuery(e.target.value);
-                          setAgentDropdownOpen(true);
-                        }}
-                        onFocus={() => setAgentDropdownOpen(true)}
+                        onChange={(e) => setAgentSearchQuery(e.target.value)}
                         className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                         data-testid="input-agent-search"
                       />
-                    </div>
-                    {agentDropdownOpen && (
-                      <Card className="absolute z-50 w-full mt-1 shadow-lg">
-                        <ScrollArea className="max-h-72">
-                          <div className="p-1">
-                            {vrsAgents
-                              .filter((a) =>
-                                a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
-                              )
-                              .map((agent) => {
-                                const isSelected = selectedAgentIds.includes(agent.id);
-                                return (
-                                  <button
-                                    key={agent.id}
-                                    type="button"
-                                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md text-left hover-elevate ${
-                                      isSelected ? "bg-primary/10 font-medium" : ""
-                                    }`}
-                                    onClick={() => {
-                                      setSelectedAgentIds((prev) =>
-                                        isSelected
-                                          ? prev.filter((id) => id !== agent.id)
-                                          : [...prev, agent.id]
-                                      );
-                                    }}
-                                    data-testid={`option-agent-${agent.id}`}
-                                  >
-                                    <Checkbox
-                                      checked={isSelected}
-                                      className="pointer-events-none"
-                                    />
-                                    <span>{agent.name}</span>
-                                    {agent.racId && (
-                                      <span className="text-muted-foreground ml-auto text-xs">{agent.racId}</span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            {vrsAgents.filter((a) =>
-                              a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
-                            ).length === 0 && (
-                              <div className="px-3 py-2 text-sm text-muted-foreground">No agents found</div>
-                            )}
-                          </div>
-                        </ScrollArea>
-                        <Separator />
-                        <div className="p-2 flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setAgentDropdownOpen(false);
-                              setAgentSearchQuery("");
-                            }}
-                            data-testid="button-close-agent-dropdown"
-                          >
-                            Done
-                          </Button>
-                        </div>
-                      </Card>
-                    )}
-                  </div>
-
-                  {selectedAgentIds.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {selectedAgentIds.map((id) => {
-                        const agent = vrsAgents.find((a) => a.id === id);
-                        if (!agent) return null;
-                        return (
-                          <Badge key={id} variant="secondary" data-testid={`badge-agent-${id}`}>
-                            {agent.name}
-                            <button
-                              type="button"
-                              className="ml-1 rounded-full"
-                              onClick={() =>
-                                setSelectedAgentIds((prev) => prev.filter((aid) => aid !== id))
-                              }
-                              data-testid={`button-remove-agent-${id}`}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </Badge>
-                        );
-                      })}
-                      {selectedAgentIds.length > 1 && (
+                      {agentSearchQuery && (
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
-                          className="h-6 text-xs text-muted-foreground"
-                          onClick={() => setSelectedAgentIds([])}
-                          data-testid="button-clear-agents"
+                          className="mr-1"
+                          onClick={() => setAgentSearchQuery("")}
+                          data-testid="button-clear-search"
                         >
-                          Clear all
+                          <X className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
-                  )}
-                </div>
+                    <ScrollArea className="h-64 border rounded-md">
+                      <div className="p-1">
+                        {vrsAgents
+                          .filter((a) =>
+                            a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
+                          )
+                          .map((agent) => {
+                            const isSelected = selectedAgentIds.includes(agent.id);
+                            return (
+                              <button
+                                key={agent.id}
+                                type="button"
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md text-left hover-elevate ${
+                                  isSelected ? "bg-primary/10 font-medium" : ""
+                                }`}
+                                onClick={() => {
+                                  setSelectedAgentIds((prev) =>
+                                    isSelected
+                                      ? prev.filter((id) => id !== agent.id)
+                                      : [...prev, agent.id]
+                                  );
+                                }}
+                                data-testid={`option-agent-${agent.id}`}
+                              >
+                                <Checkbox
+                                  checked={isSelected}
+                                  className="pointer-events-none"
+                                />
+                                <span>{agent.name}</span>
+                                {agent.racId && (
+                                  <span className="text-muted-foreground ml-auto text-xs">{agent.racId}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        {vrsAgents.filter((a) =>
+                          a.name.toLowerCase().includes(agentSearchQuery.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">No agents found</div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                    {selectedAgentIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAgentIds.map((id) => {
+                          const agent = vrsAgents.find((a) => a.id === id);
+                          if (!agent) return null;
+                          return (
+                            <Badge key={id} variant="secondary" data-testid={`badge-agent-${id}`}>
+                              {agent.name}
+                              <button
+                                type="button"
+                                className="ml-1 rounded-full"
+                                onClick={() =>
+                                  setSelectedAgentIds((prev) => prev.filter((aid) => aid !== id))
+                                }
+                                data-testid={`button-remove-agent-${id}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
                 {selectedAgentIds.length > 0 && (
                   <>
