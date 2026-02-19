@@ -680,7 +680,20 @@ export default function AgentDashboard() {
         <div className="flex flex-col flex-1 min-w-0">
           <header className="flex items-center justify-between gap-2 p-3 border-b sticky top-0 z-50 bg-background">
             <div className="flex items-center gap-2">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
+              {selectedId ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSelectedId(null)}
+                  data-testid="button-back-to-list"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Queue
+                </Button>
+              ) : (
+                <SidebarTrigger data-testid="button-sidebar-toggle" />
+              )}
               <h1 className="text-lg font-semibold" data-testid="text-page-title">
                 {activeView === "stage1" && `Stage 1 - Review (${statsData?.queueCount ?? 0} pending)`}
                 {activeView === "stage2" && `Stage 2 - My Authorizations (${statsData?.stage2Count ?? 0})`}
@@ -691,7 +704,7 @@ export default function AgentDashboard() {
             </div>
           </header>
 
-          {activeView === "stage2" && (
+          {activeView === "stage2" && !selectedId && (
             <div className="px-4 py-3 bg-primary/10 border-b" data-testid="text-batch-banner">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
@@ -715,7 +728,7 @@ export default function AgentDashboard() {
           )}
 
           <div className="flex flex-1 min-h-0">
-            <div className="w-[380px] border-r flex flex-col min-h-0">
+            <div className={`w-[380px] border-r flex flex-col min-h-0 ${selectedId ? "hidden" : ""}`}>
               <div className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm text-muted-foreground" data-testid="text-queue-count">
                   {activeView === "stage2" ? "Awaiting Auth Codes" : submissions.length + " submission" + (submissions.length !== 1 ? "s" : "")}
