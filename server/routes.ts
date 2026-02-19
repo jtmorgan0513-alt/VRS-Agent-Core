@@ -741,7 +741,7 @@ export async function registerRoutes(
     authCode: z.string().min(1, "Authorization code is required"),
   });
 
-  app.delete("/api/submissions/:id", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
+  app.delete("/api/submissions/:id", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid submission ID" });

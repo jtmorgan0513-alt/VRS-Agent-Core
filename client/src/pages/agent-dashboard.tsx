@@ -885,15 +885,17 @@ export default function AgentDashboard() {
                             Show Service History
                           </Button>
                         )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setDeleteConfirmOpen(true)}
-                          disabled={deleteMutation.isPending}
-                          data-testid="button-delete-submission-stage2"
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        {(user?.role === "admin" || user?.role === "super_admin") && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            disabled={deleteMutation.isPending}
+                            data-testid="button-delete-submission-stage2"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -1354,15 +1356,17 @@ export default function AgentDashboard() {
                             {getUrgencyLevel(selectedSubmission.createdAt!) === "urgent" ? "Urgent" : "Aging"}
                           </Badge>
                         )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setDeleteConfirmOpen(true)}
-                          disabled={deleteMutation.isPending}
-                          data-testid="button-delete-submission"
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        {(user?.role === "admin" || user?.role === "super_admin") && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            disabled={deleteMutation.isPending}
+                            data-testid="button-delete-submission"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </div>
 
