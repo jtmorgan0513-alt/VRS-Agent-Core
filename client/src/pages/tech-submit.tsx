@@ -68,6 +68,7 @@ export default function TechSubmitPage() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const estimatePhotoInputRef = useRef<HTMLInputElement>(null);
@@ -177,6 +178,13 @@ export default function TechSubmitPage() {
       return;
     }
 
+    const isMov = /\.(mov)$/i.test(file.name) || file.type === "video/quicktime";
+
+    if (isMov) {
+      uploadVideo(file);
+      return;
+    }
+
     const videoEl = document.createElement("video");
     videoEl.preload = "metadata";
     videoEl.onloadedmetadata = () => {
@@ -190,10 +198,27 @@ export default function TechSubmitPage() {
     };
     videoEl.onerror = () => {
       URL.revokeObjectURL(videoEl.src);
-      setVideoError("Could not read video file. Please try a different format.");
-      if (videoInputRef.current) videoInputRef.current.value = "";
+      uploadVideo(file);
     };
     videoEl.src = URL.createObjectURL(file);
+  }
+
+  async function convertVideo(objectPath: string): Promise<string> {
+    setIsConverting(true);
+    try {
+      const res = await apiRequest("POST", "/api/uploads/convert-video", { objectPath });
+      const data = await res.json();
+      return data.objectPath;
+    } catch {
+      return objectPath;
+    } finally {
+      setIsConverting(false);
+    }
+  }
+
+  function needsConversion(file: File): boolean {
+    const name = file.name.toLowerCase();
+    return name.endsWith(".mov") || file.type === "video/quicktime" || file.type === "video/x-m4v";
   }
 
   async function uploadVideo(file: File) {
@@ -230,11 +255,18 @@ export default function TechSubmitPage() {
         }
       });
 
-      xhr.addEventListener("load", () => {
-        setIsUploading(false);
+      xhr.addEventListener("load", async () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          setVideoUrl(objectPath);
+          if (needsConversion(file)) {
+            setIsUploading(false);
+            const convertedPath = await convertVideo(objectPath);
+            setVideoUrl(convertedPath);
+          } else {
+            setIsUploading(false);
+            setVideoUrl(objectPath);
+          }
         } else {
+          setIsUploading(false);
           toast({ title: "Upload Failed", description: "Failed to upload video to storage", variant: "destructive" });
         }
       });
@@ -850,7 +882,7 @@ export default function TechSubmitPage() {
                   onChange={handleVideoSelect}
                   data-testid="input-video-file"
                 />
-                {!videoUrl && !isUploading && (
+                {!videoUrl && !isUploading && !isConverting && (
                   <label
                     className="border-2 border-dashed rounded-md p-6 text-center block cursor-pointer"
                     data-testid="button-add-video"
@@ -871,6 +903,14 @@ export default function TechSubmitPage() {
                       <span className="text-sm text-muted-foreground whitespace-nowrap">{uploadProgress}%</span>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">Uploading video...</p>
+                  </div>
+                )}
+                {isConverting && (
+                  <div className="space-y-2" data-testid="video-converting">
+                    <div className="flex items-center justify-center gap-2 py-3">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">Converting video for playback...</span>
+                    </div>
                   </div>
                 )}
                 {videoUrl && !isUploading && (
@@ -982,11 +1022,11 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || audioUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : audioUploading ? "Uploading Audio..." : "Submit for Review"}
+              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : isConverting ? "Converting Video..." : audioUploading ? "Uploading Audio..." : "Submit for Review"}
             </Button>
           </form>
         </Form>

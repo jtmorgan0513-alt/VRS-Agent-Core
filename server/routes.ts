@@ -9,11 +9,20 @@ import { authenticateToken, requireRole, type AuthenticatedRequest } from "./mid
 import type { User, Technician } from "@shared/schema";
 import * as fs from "fs";
 import * as path from "path";
+import { createWriteStream, createReadStream } from "fs";
+import { unlink } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { randomUUID } from "crypto";
+import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
+import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
+
+const execFileAsync = promisify(execFile);
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -1300,6 +1309,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("SHSAI followup error:", error);
       return res.status(500).json({ success: false, error: "Failed to send follow-up" });
+    }
+  });
+
+  // ========================================================================
+  // VIDEO CONVERSION ROUTE
+  // ========================================================================
+
+  const convertVideoSchema = z.object({
+    objectPath: z.string().min(1),
+  });
+
+  app.post("/api/uploads/convert-video", authenticateToken, requireRole("technician"), async (req, res) => {
+    const parsed = convertVideoSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "objectPath is required" });
+    }
+
+    const { objectPath } = parsed.data;
+    const objectStorageService = new ObjectStorageService();
+    const inputPath = `/tmp/video-input-${randomUUID()}`;
+    const outputPath = `/tmp/video-output-${randomUUID()}.mp4`;
+
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      const readStream = objectFile.createReadStream();
+      const writeStream = createWriteStream(inputPath);
+      await pipeline(readStream, writeStream);
+
+      await execFileAsync("ffmpeg", [
+        "-i", inputPath,
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        "-preset", "fast",
+        "-crf", "23",
+        outputPath,
+      ], { timeout: 120000 });
+
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const newObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+
+      const fileBuffer = fs.readFileSync(outputPath);
+      const uploadRes = await fetch(uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": "video/mp4" },
+        body: fileBuffer,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed with status ${uploadRes.status}`);
+      }
+
+      try { await unlink(inputPath); } catch {}
+      try { await unlink(outputPath); } catch {}
+
+      return res.status(200).json({ objectPath: newObjectPath, converted: true });
+    } catch (error: any) {
+      console.error("Video conversion error:", error);
+      try { await unlink(inputPath); } catch {}
+      try { await unlink(outputPath); } catch {}
+      return res.status(200).json({ objectPath, converted: false, error: error.message || "Conversion failed" });
     }
   });
 
