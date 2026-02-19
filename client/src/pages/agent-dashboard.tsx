@@ -78,6 +78,9 @@ import {
   Globe,
   PanelRightClose,
   PanelRightOpen,
+  Loader2,
+  RefreshCw,
+  MessageSquare,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -154,8 +157,13 @@ export default function AgentDashboard() {
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
   const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
   const [shsaiVisible, setShsaiVisible] = useState(true);
-  const [shsaiKey, setShsaiKey] = useState(0);
-  const [shsaiPrompt, setShsaiPrompt] = useState<string | null>(null);
+  const [shsaiLoading, setShsaiLoading] = useState(false);
+  const [shsaiError, setShsaiError] = useState<string | null>(null);
+  const [shsaiSession, setShsaiSession] = useState<{ sessionId: string; trackId: string; threadId: string } | null>(null);
+  const [shsaiMessages, setShsaiMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [shsaiFollowup, setShsaiFollowup] = useState("");
+  const [shsaiFollowupLoading, setShsaiFollowupLoading] = useState(false);
+  const [lastQueriedSubmissionId, setLastQueriedSubmissionId] = useState<number | null>(null);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -223,15 +231,41 @@ export default function AgentDashboard() {
     setShowOriginalDesc(false);
   }, [selectedId]);
 
+  const fetchShsaiData = async (serviceOrder: string, submissionId: number) => {
+    setShsaiLoading(true);
+    setShsaiError(null);
+    setShsaiSession(null);
+    setShsaiMessages([]);
+    setShsaiFollowup("");
+    setLastQueriedSubmissionId(submissionId);
+    try {
+      const res = await apiRequest("POST", "/api/shsai/query", { serviceOrder });
+      const json = await res.json();
+      if (json.success) {
+        setShsaiSession(json.data.session);
+        const queryText = `Give me all orders for customer having sample service order number ${serviceOrder}`;
+        setShsaiMessages([
+          { role: "user", content: queryText },
+          { role: "assistant", content: typeof json.data.result === "string" ? json.data.result : JSON.stringify(json.data.result, null, 2) },
+        ]);
+      } else {
+        setShsaiError(json.error || "Failed to query SHSAI");
+      }
+    } catch {
+      setShsaiError("Could not load service order history. Click to retry.");
+    } finally {
+      setShsaiLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (activeView === "stage2" && selectedId) {
+    if (activeView === "stage2" && selectedId && shsaiVisible) {
       const sub = submissions.find((s) => s.id === selectedId);
-      if (sub) {
-        setShsaiKey((k) => k + 1);
-        setShsaiPrompt(`Give me all orders for customer having sample service order number ${sub.serviceOrder}`);
+      if (sub && sub.id !== lastQueriedSubmissionId) {
+        fetchShsaiData(sub.serviceOrder, sub.id);
       }
     }
-  }, [selectedId, activeView]);
+  }, [selectedId, activeView, shsaiVisible]);
 
   const warrantyCounstUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -979,56 +1013,133 @@ export default function AgentDashboard() {
                     <div className="px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-semibold">SHSAI Service History</span>
+                        <span className="text-sm font-semibold">Service Order History</span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setShsaiVisible(false)}
-                        data-testid="button-hide-shsai"
-                      >
-                        <PanelRightClose className="w-4 h-4 mr-1" />
-                        Hide
-                      </Button>
-                    </div>
-                    <div className="px-3 py-2 border-b flex flex-wrap gap-1.5">
-                      {[
-                        { label: "Order Info", prompt: `Give me order info for ${selectedSubmission.serviceOrder}` },
-                        { label: "Customer Info", prompt: `Give me customer info for ${selectedSubmission.serviceOrder}` },
-                        { label: "All Orders", prompt: `Give me all orders for customer having service order number ${selectedSubmission.serviceOrder}` },
-                        { label: "Protection Agreement", prompt: `Show protection agreement for ${selectedSubmission.serviceOrder}` },
-                        { label: "Warranty", prompt: `Show warranty info for ${selectedSubmission.serviceOrder}` },
-                        { label: "Pre-call Brief", prompt: `Give me pre-call brief for ${selectedSubmission.serviceOrder}` },
-                      ].map((action) => (
+                      <div className="flex items-center gap-1">
                         <Button
-                          key={action.label}
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          onClick={() => {
-                            setShsaiPrompt(action.prompt);
-                            setShsaiKey((k) => k + 1);
-                          }}
-                          data-testid={`button-shsai-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => fetchShsaiData(selectedSubmission.serviceOrder, selectedSubmission.id)}
+                          disabled={shsaiLoading}
+                          data-testid="button-shsai-refresh"
                         >
-                          {action.label}
+                          <RefreshCw className={`w-4 h-4 ${shsaiLoading ? "animate-spin" : ""}`} />
                         </Button>
-                      ))}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setShsaiVisible(false)}
+                          data-testid="button-hide-shsai"
+                        >
+                          <PanelRightClose className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex-1 relative">
-                      <iframe
-                        key={`shsai-${selectedSubmission.id}-${shsaiKey}`}
-                        src={`https://routing.uat.tellurideplatform.com/?t=${Date.now()}-${shsaiKey}`}
-                        className="w-full h-full border-0"
-                        title="SHSAI Service History"
-                        data-testid="iframe-shsai"
-                        allow="clipboard-read; clipboard-write"
-                      />
-                    </div>
-                    {shsaiPrompt && (
-                      <div className="px-3 py-2 border-t bg-muted/30">
-                        <p className="text-xs text-muted-foreground">Last prompt sent:</p>
-                        <p className="text-xs font-mono truncate">{shsaiPrompt}</p>
+                    <ScrollArea className="flex-1">
+                      <div className="p-4 space-y-3">
+                        {shsaiLoading && (
+                          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" data-testid="shsai-loading">
+                            <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                            <p className="text-sm">Loading service order history...</p>
+                          </div>
+                        )}
+                        {shsaiError && !shsaiLoading && (
+                          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" data-testid="shsai-error">
+                            <AlertTriangle className="w-6 h-6 mb-2 text-destructive" />
+                            <p className="text-sm text-center mb-3">{shsaiError}</p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => fetchShsaiData(selectedSubmission.serviceOrder, selectedSubmission.id)}
+                              data-testid="button-shsai-retry"
+                            >
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                              Retry
+                            </Button>
+                          </div>
+                        )}
+                        {!shsaiLoading && !shsaiError && shsaiMessages.length > 0 && (
+                          <div className="space-y-3" data-testid="shsai-messages">
+                            {shsaiMessages.map((msg, idx) => (
+                              <div
+                                key={idx}
+                                className={`text-sm ${msg.role === "user" ? "text-muted-foreground italic" : ""}`}
+                              >
+                                {msg.role === "user" ? (
+                                  <div className="flex items-start gap-2">
+                                    <User className="w-3 h-3 mt-1 shrink-0" />
+                                    <span>{msg.content}</span>
+                                  </div>
+                                ) : (
+                                  <Card>
+                                    <CardContent className="p-3">
+                                      <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed" data-testid={`shsai-response-${idx}`}>
+                                        {msg.content}
+                                      </pre>
+                                    </CardContent>
+                                  </Card>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {!shsaiLoading && !shsaiError && shsaiMessages.length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                            <MessageSquare className="w-6 h-6 mb-2 opacity-30" />
+                            <p className="text-sm">No service order data yet</p>
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                    {shsaiSession && !shsaiLoading && !shsaiError && (
+                      <div className="px-3 py-2 border-t">
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!shsaiFollowup.trim() || !shsaiSession) return;
+                            const question = shsaiFollowup.trim();
+                            setShsaiFollowupLoading(true);
+                            setShsaiFollowup("");
+                            setShsaiMessages((prev) => [...prev, { role: "user", content: question }]);
+                            try {
+                              const res = await apiRequest("POST", "/api/shsai/followup", {
+                                sessionId: shsaiSession.sessionId,
+                                trackId: shsaiSession.trackId,
+                                threadId: shsaiSession.threadId,
+                                message: question,
+                              });
+                              const json = await res.json();
+                              if (json.success) {
+                                const content = typeof json.data === "string" ? json.data : JSON.stringify(json.data, null, 2);
+                                setShsaiMessages((prev) => [...prev, { role: "assistant", content }]);
+                              } else {
+                                setShsaiMessages((prev) => [...prev, { role: "assistant", content: "Error: " + (json.error || "Failed to get response") }]);
+                              }
+                            } catch {
+                              setShsaiMessages((prev) => [...prev, { role: "assistant", content: "Error: Could not send follow-up question" }]);
+                            } finally {
+                              setShsaiFollowupLoading(false);
+                            }
+                          }}
+                          className="flex gap-2"
+                          data-testid="form-shsai-followup"
+                        >
+                          <Input
+                            placeholder="Ask a follow-up question..."
+                            value={shsaiFollowup}
+                            onChange={(e) => setShsaiFollowup(e.target.value)}
+                            disabled={shsaiFollowupLoading}
+                            data-testid="input-shsai-followup"
+                          />
+                          <Button
+                            type="submit"
+                            size="icon"
+                            disabled={!shsaiFollowup.trim() || shsaiFollowupLoading}
+                            data-testid="button-shsai-send"
+                          >
+                            {shsaiFollowupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                          </Button>
+                        </form>
                       </div>
                     )}
                   </div>
