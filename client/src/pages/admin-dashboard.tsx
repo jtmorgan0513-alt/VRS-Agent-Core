@@ -115,7 +115,7 @@ type SafeUser = Omit<User, "password">;
 
 type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians";
 
-const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"] as const;
+const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"] as const;
 
 const DIVISION_LABELS: Record<string, string> = {
   cooking: "Cooking",
@@ -124,6 +124,7 @@ const DIVISION_LABELS: Record<string, string> = {
   laundry: "Laundry",
   refrigeration: "Refrigeration",
   hvac: "HVAC",
+  all_other: "All Other",
 };
 
 const ROLE_BADGE_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {

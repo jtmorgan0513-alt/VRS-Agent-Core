@@ -46,7 +46,7 @@ export const vrsAgentSpecializations = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id),
-    division: text("division").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac', 'generalist'
+    division: text("division").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac', 'all_other', 'generalist'
   },
   (table) => ({
     uniqueUserDivision: unique().on(table.userId, table.division),
@@ -77,7 +77,7 @@ export const submissions = pgTable("submissions", {
   phone: varchar("phone", { length: 20 }).notNull(),
   serviceOrder: varchar("service_order", { length: 13 }).notNull(),
   districtCode: varchar("district_code", { length: 4 }),
-  applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac'
+  applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac', 'all_other'
   requestType: text("request_type").notNull(), // 'authorization', 'infestation_non_accessible'
   warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'
   warrantyProvider: varchar("warranty_provider", { length: 100 }),

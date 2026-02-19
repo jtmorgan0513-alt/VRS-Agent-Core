@@ -451,7 +451,7 @@ export async function registerRoutes(
 
   const createSubmissionSchema = z.object({
     serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
-    applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"]),
+    applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"]),
     requestType: z.enum(["authorization", "infestation_non_accessible"]),
     warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
     warrantyProvider: z.string().optional(),
@@ -1114,7 +1114,7 @@ export async function registerRoutes(
   });
 
   const setSpecializationsSchema = z.object({
-    divisions: z.array(z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"])),
+    divisions: z.array(z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"])),
   });
 
   app.patch("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {

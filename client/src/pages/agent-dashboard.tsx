@@ -97,6 +97,7 @@ const DIVISION_LABELS: Record<string, string> = {
   dishwasher: "Dishwasher",
   microwave: "Microwave",
   hvac: "HVAC",
+  all_other: "All Other",
 };
 
 const APPLIANCE_LABELS: Record<string, string> = {
@@ -106,6 +107,7 @@ const APPLIANCE_LABELS: Record<string, string> = {
   dishwasher: "Dishwasher",
   microwave: "Microwave",
   hvac: "HVAC",
+  all_other: "All Other",
 };
 
 function getTimeElapsed(createdAt: string | Date): string {

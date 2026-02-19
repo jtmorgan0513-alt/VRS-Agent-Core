@@ -38,6 +38,7 @@ const APPLIANCE_TYPES = [
   { value: "dishwasher", label: "Dishwasher" },
   { value: "microwave", label: "Microwave" },
   { value: "hvac", label: "HVAC" },
+  { value: "all_other", label: "All Other" },
 ];
 
 const WARRANTY_PROVIDERS = [
@@ -49,7 +50,7 @@ const WARRANTY_PROVIDERS = [
 const submissionFormSchema = z.object({
   serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
   phone: z.string().min(7, "Valid phone number is required"),
-  applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"], {
+  applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"], {
     required_error: "Select an appliance type",
   }),
   requestType: z.enum(["authorization", "infestation_non_accessible"]),
