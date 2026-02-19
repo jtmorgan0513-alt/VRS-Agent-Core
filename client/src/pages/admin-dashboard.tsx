@@ -809,7 +809,7 @@ export default function AdminDashboard() {
                     </div>
                     {agentDropdownOpen && (
                       <Card className="absolute z-50 w-full mt-1 shadow-lg">
-                        <ScrollArea className="max-h-48">
+                        <ScrollArea className="max-h-72">
                           <div className="p-1">
                             {vrsAgents
                               .filter((a) =>
