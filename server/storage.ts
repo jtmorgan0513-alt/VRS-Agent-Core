@@ -69,6 +69,7 @@ export interface IStorage {
     id: number,
     data: Partial<InsertSubmission>
   ): Promise<Submission | undefined>;
+  deleteSubmission(id: number): Promise<boolean>;
   getAgentQueueCount(agentId: number): Promise<number>;
   getCompletedTodayCount(agentId: number): Promise<number>;
 
@@ -265,6 +266,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(submissions.id, id))
       .returning();
     return result[0];
+  }
+
+  async deleteSubmission(id: number): Promise<boolean> {
+    await db.delete(smsNotifications).where(eq(smsNotifications.submissionId, id));
+    const result = await db.delete(submissions).where(eq(submissions.id, id)).returning();
+    return result.length > 0;
   }
 
   async getSubmissionsWithTechnician(filters?: {

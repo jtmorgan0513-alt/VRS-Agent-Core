@@ -74,6 +74,7 @@ import {
   Key,
   Sparkles,
   Mic,
+  Trash2,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -140,6 +141,7 @@ export default function AgentDashboard() {
   const [authCode, setAuthCode] = useState("");
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [rgcModalOpen, setRgcModalOpen] = useState(false);
   const [rgcInput, setRgcInput] = useState("");
   const [rgcVerified, setRgcVerified] = useState(false);
@@ -290,6 +292,23 @@ export default function AgentDashboard() {
       setSelectedId(null);
       setAuthCode("");
       setSelectedIds(new Set());
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/agent/warranty-counts") });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (submissionId: number) => {
+      const res = await apiRequest("DELETE", `/api/submissions/${submissionId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Deleted", description: "Submission has been deleted." });
+      setSelectedId(null);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/agent/warranty-counts") });
@@ -957,6 +976,15 @@ export default function AgentDashboard() {
                             {getUrgencyLevel(selectedSubmission.createdAt!) === "urgent" ? "Urgent" : "Aging"}
                           </Badge>
                         )}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                          disabled={deleteMutation.isPending}
+                          data-testid="button-delete-submission"
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
                       </div>
                     </div>
 
@@ -1263,6 +1291,32 @@ export default function AgentDashboard() {
               data-testid="button-confirm-reject"
             >
               Reject & Notify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-delete-confirm-title">Delete Submission</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete this submission? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedSubmission) {
+                  deleteMutation.mutate(selectedSubmission.id);
+                }
+                setDeleteConfirmOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

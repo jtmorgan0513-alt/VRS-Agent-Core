@@ -635,6 +635,24 @@ export async function registerRoutes(
     authCode: z.string().min(1, "Authorization code is required"),
   });
 
+  app.delete("/api/submissions/:id", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid submission ID" });
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      const deleted = await storage.deleteSubmission(id);
+      if (!deleted) return res.status(500).json({ message: "Failed to delete submission" });
+
+      res.json({ message: "Submission deleted" });
+    } catch (error) {
+      console.error("Delete submission error:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.patch("/api/submissions/:id/stage2", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
