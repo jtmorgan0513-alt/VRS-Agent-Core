@@ -13,6 +13,7 @@ import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
+import { initSession, sendPrompt, queryServiceOrder } from "./services/shsai";
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -1132,6 +1133,44 @@ export async function registerRoutes(
     } catch (error) {
       console.error("CSV import error:", error);
       return res.status(500).json({ error: "Failed to import users" });
+    }
+  });
+
+  app.post("/api/shsai/query", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const parsed = z.object({ serviceOrder: z.string().min(1) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Service order is required" });
+      }
+      const { serviceOrder } = parsed.data;
+      const user = await storage.getUser(authReq.user!.id);
+      const agentUserId = user?.racId || authReq.user!.email || authReq.user!.name;
+      const result = await queryServiceOrder(agentUserId, serviceOrder);
+      return res.json({ success: true, data: result });
+    } catch (error) {
+      console.error("SHSAI query error:", error);
+      return res.status(500).json({ success: false, error: "Failed to query SHSAI" });
+    }
+  });
+
+  app.post("/api/shsai/followup", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const parsed = z.object({
+        sessionId: z.string().min(1),
+        trackId: z.string().min(1),
+        threadId: z.string().min(1),
+        message: z.string().min(1),
+      }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Session info and message are required" });
+      }
+      const { sessionId, trackId, threadId, message } = parsed.data;
+      const result = await sendPrompt(sessionId, trackId, threadId, message);
+      return res.json({ success: true, data: result });
+    } catch (error) {
+      console.error("SHSAI followup error:", error);
+      return res.status(500).json({ success: false, error: "Failed to send follow-up" });
     }
   });
 
