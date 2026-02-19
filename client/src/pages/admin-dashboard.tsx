@@ -472,7 +472,6 @@ export default function AdminDashboard() {
     if (editingUser) {
       const data: Record<string, unknown> = {
         name: formName,
-        email: formEmail,
         role: formRole,
         phone: formPhone || null,
         racId: formRole === "technician" ? formRacId || null : null,
@@ -484,7 +483,6 @@ export default function AdminDashboard() {
     } else {
       createUserMutation.mutate({
         name: formName,
-        email: formEmail,
         password: formPassword,
         role: formRole,
         phone: formPhone || undefined,
@@ -673,7 +671,6 @@ export default function AdminDashboard() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
                         <TableHead>Role</TableHead>
                         <TableHead>Phone</TableHead>
                         <TableHead>RAC ID</TableHead>
@@ -691,7 +688,6 @@ export default function AdminDashboard() {
                       {users.map((u) => (
                         <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                           <TableCell data-testid={`text-user-name-${u.id}`}>{u.name}</TableCell>
-                          <TableCell data-testid={`text-user-email-${u.id}`}>{u.email}</TableCell>
                           <TableCell>
                             <Badge
                               variant={ROLE_BADGE_VARIANT[u.role] || "default"}
@@ -1141,18 +1137,6 @@ export default function AdminDashboard() {
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Full name"
                 data-testid="input-user-name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="user-email">Email</Label>
-              <Input
-                id="user-email"
-                type="email"
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                placeholder="email@example.com"
-                data-testid="input-user-email"
               />
             </div>
 

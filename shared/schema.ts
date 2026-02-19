@@ -8,7 +8,7 @@ import { z } from "zod";
 // ============================================================================
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: varchar("email", { length: 255 }).notNull().unique(),
+  email: varchar("email", { length: 255 }),
   password: varchar("password", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   role: text("role").notNull(), // 'technician', 'vrs_agent', 'admin', 'super_admin'

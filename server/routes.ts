@@ -18,7 +18,7 @@ import { queryServiceOrder, sendFollowup } from "./services/shsai";
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
 const registerSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional().or(z.literal("")),
   password: z.string().min(6),
   name: z.string().min(1),
   role: z.enum(["technician", "vrs_agent", "admin", "super_admin"]),
@@ -65,14 +65,16 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Only technician self-registration is allowed" });
       }
 
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(409).json({ error: "Email already exists" });
+      if (racId) {
+        const existingByRacId = await storage.getUserByRacId(racId);
+        if (existingByRacId) {
+          return res.status(409).json({ error: "LDAP ID already exists" });
+        }
       }
 
       const hashedPassword = await bcryptjs.hash(password, 10);
       const user = await storage.createUser({
-        email,
+        email: email || null,
         password: hashedPassword,
         name,
         role,
@@ -95,9 +97,9 @@ export async function registerRoutes(
       }
       const { identifier, password } = parsed.data;
 
-      let user = await storage.getUserByEmail(identifier);
+      let user = await storage.getUserByRacId(identifier);
       if (!user) {
-        user = await storage.getUserByRacId(identifier);
+        user = await storage.getUserByEmail(identifier);
       }
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -341,7 +343,7 @@ export async function registerRoutes(
         }
         const safeUser = {
           id: authReq.user.id,
-          email: `${technician.ldapId}@tech.sears.com`,
+          email: null,
           name: technician.name || technician.ldapId,
           role: "technician",
           phone: technician.phone,
@@ -946,14 +948,16 @@ export async function registerRoutes(
       }
       const { email, password, name, role, phone, racId } = parsed.data;
 
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(409).json({ error: "Email already exists" });
+      if (racId) {
+        const existingByRacId = await storage.getUserByRacId(racId);
+        if (existingByRacId) {
+          return res.status(409).json({ error: "LDAP ID already exists" });
+        }
       }
 
       const hashedPassword = await bcryptjs.hash(password, 10);
       const user = await storage.createUser({
-        email,
+        email: email || null,
         password: hashedPassword,
         name,
         role,
@@ -1240,11 +1244,10 @@ export async function registerRoutes(
         }
 
         const name = `${firstName} ${lastName}`;
-        const email = `${racId}@vrs.sears.com`;
         const role = roleStr === "Admin" ? "admin" : "vrs_agent";
 
         await storage.createUser({
-          email,
+          email: null,
           password: defaultPassword,
           name,
           role,

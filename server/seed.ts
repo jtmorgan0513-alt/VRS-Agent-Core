@@ -3,15 +3,15 @@ import { storage } from "./storage";
 
 const SEED_USERS = [
   {
-    email: "admin@vrs.com",
+    email: null,
     password: "admin123",
     name: "System Admin",
     role: "admin",
     phone: "5551234567",
-    racId: null,
+    racId: "sysadmin",
   },
   {
-    email: "tech1@vrs.com",
+    email: null,
     password: "tech123",
     name: "Tyler Morrison",
     role: "technician",
@@ -19,25 +19,25 @@ const SEED_USERS = [
     racId: "tmorri1",
   },
   {
-    email: "agent1@vrs.com",
+    email: null,
     password: "agent123",
     name: "Maria Johnson",
     role: "vrs_agent",
     phone: "5559876543",
-    racId: null,
+    racId: "mjohnson1",
     specializations: ["refrigeration", "laundry"],
   },
   {
-    email: "agent2@vrs.com",
+    email: null,
     password: "agent123",
     name: "James Chen",
     role: "vrs_agent",
     phone: "5551112222",
-    racId: null,
+    racId: "jchen1",
     specializations: ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "generalist"],
   },
   {
-    email: "master@vrs.system",
+    email: null,
     password: "VRS!M@ster2026#Secure",
     name: "System Administrator",
     role: "super_admin",
@@ -49,12 +49,12 @@ const SEED_USERS = [
 
 export async function seedDatabase() {
   for (const seedUser of SEED_USERS) {
-    let user = await storage.getUserByEmail(seedUser.email);
+    let user = seedUser.racId ? await storage.getUserByRacId(seedUser.racId) : null;
 
     if (!user) {
       const hashedPassword = await bcryptjs.hash(seedUser.password, 10);
       const createData: any = {
-        email: seedUser.email,
+        email: null,
         password: hashedPassword,
         name: seedUser.name,
         role: seedUser.role,
@@ -67,14 +67,14 @@ export async function seedDatabase() {
         createData.mustChangePassword = false;
       }
       user = await storage.createUser(createData);
-      console.log(`Seeded user: ${seedUser.email} (${seedUser.role})`);
+      console.log(`Seeded user: ${seedUser.name} / ${seedUser.racId} (${seedUser.role})`);
     }
 
     if ("specializations" in seedUser && seedUser.specializations) {
       const existing = await storage.getSpecializations(user.id);
       if (existing.length === 0) {
         await storage.setSpecializations(user.id, [...seedUser.specializations]);
-        console.log(`Seeded specializations for: ${seedUser.email}`);
+        console.log(`Seeded specializations for: ${seedUser.name}`);
       }
     }
   }

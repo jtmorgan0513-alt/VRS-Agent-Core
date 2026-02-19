@@ -467,14 +467,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOrCreateTechUser(ldapId: string, name: string, phone: string): Promise<User> {
-    const email = `${ldapId}@tech.sears.com`;
-    const existing = await db.select().from(users).where(eq(users.email, email));
+    const existing = await db.select().from(users).where(eq(users.racId, ldapId));
     if (existing[0]) return existing[0];
 
     const bcrypt = await import("bcryptjs");
     const randomPassword = await bcrypt.hash(crypto.randomUUID(), 10);
     const result = await db.insert(users).values({
-      email,
+      email: null,
       name: name || ldapId,
       password: randomPassword,
       role: "technician",
