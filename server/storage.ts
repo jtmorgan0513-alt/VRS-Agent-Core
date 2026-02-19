@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, or, desc, sql } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNull, inArray } from "drizzle-orm";
 import {
   users,
   InsertUser,
@@ -57,6 +57,7 @@ export interface IStorage {
     stage2Status?: string;
     applianceType?: string;
     assignedTo?: number;
+    divisionFilter?: string[];
   }): Promise<Submission[]>;
   getSubmissionsWithTechnician(filters?: {
     technicianId?: number;
@@ -65,6 +66,7 @@ export interface IStorage {
     applianceType?: string;
     assignedTo?: number;
     requestType?: string;
+    divisionFilter?: string[];
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]>;
   updateSubmission(
     id: number,
@@ -72,6 +74,7 @@ export interface IStorage {
   ): Promise<Submission | undefined>;
   deleteSubmission(id: number): Promise<boolean>;
   getAgentQueueCount(agentId?: number): Promise<number>;
+  getDivisionQueueCount(divisions: string[]): Promise<number>;
   getCompletedTodayCount(agentId?: number): Promise<number>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
@@ -233,6 +236,7 @@ export class DatabaseStorage implements IStorage {
     stage2Status?: string;
     applianceType?: string;
     assignedTo?: number;
+    divisionFilter?: string[];
   }): Promise<Submission[]> {
     const conditions: ReturnType<typeof eq>[] = [];
 
@@ -254,6 +258,10 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.assignedTo !== undefined) {
       conditions.push(eq(submissions.assignedTo, filters.assignedTo));
+    }
+
+    if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
+      conditions.push(inArray(submissions.applianceType, filters.divisionFilter) as any);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -290,6 +298,7 @@ export class DatabaseStorage implements IStorage {
     applianceType?: string;
     assignedTo?: number;
     requestType?: string;
+    divisionFilter?: string[];
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]> {
     const conditions: ReturnType<typeof eq>[] = [];
 
@@ -310,6 +319,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.requestType !== undefined) {
       conditions.push(eq(submissions.requestType, filters.requestType));
+    }
+    if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
+      conditions.push(inArray(submissions.applianceType, filters.divisionFilter) as any);
     }
     if (completedToday) {
       const today = new Date();
@@ -378,6 +390,25 @@ export class DatabaseStorage implements IStorage {
     if (agentId !== undefined) {
       conditions.push(eq(submissions.assignedTo, agentId));
     }
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(...conditions));
+    return result[0]?.count || 0;
+  }
+
+  async getDivisionQueueCount(divisions: string[]): Promise<number> {
+    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+    const isGeneralist = divisions.length >= allDivisions.length;
+
+    const conditions: any[] = [
+      eq(submissions.stage1Status, "pending"),
+    ];
+
+    if (!isGeneralist && divisions.length > 0) {
+      conditions.push(inArray(submissions.applianceType, divisions));
+    }
+
     const result = await db
       .select({ count: sql<number>`count(*)` })
       .from(submissions)

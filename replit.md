@@ -31,13 +31,14 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - POST /api/auth/register - Create new user (technician self-registration only)
 - POST /api/auth/login - Authenticate and receive JWT (checks isActive)
 - GET /api/auth/me - Get current user (protected)
-- POST /api/submissions - Create submission (technician only, auto-assigns to VRS agent)
-- GET /api/submissions - List submissions (filtered by role, supports ?allQueue=true, ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
-- GET /api/submissions/:id - Get submission detail (access-controlled)
-- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent only, body: {action, rejectionReason?})
+- POST /api/submissions - Create submission (technician only, assignedTo=null, enters shared division queue)
+- GET /api/submissions - List submissions (division-filtered Stage 1 for agents, personal Stage 2, supports ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
+- GET /api/submissions/:id - Get submission detail (access-controlled: agent sees own + shared Stage 1 by division)
+- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent, verifies division match, approval assigns ticket to agent)
 - PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode}), auto-populates rgcCode for sears_protect
-- GET /api/agent/stats - Agent queue count, stage2 count, completed today count
-- GET /api/agent/warranty-counts - Warranty provider counts for Stage 2 queue (supports ?allQueue=true)
+- PATCH /api/submissions/:id/reassign - Reassign Stage 2 ticket to another agent (admin only, body: {agentId})
+- GET /api/agent/stats - Division-based Stage 1 count, personal Stage 2 count, completed today count
+- GET /api/agent/warranty-counts - Warranty provider counts for agent's Stage 2 queue
 - GET /api/agent/rgc-status - Check if agent needs to enter today's RGC code
 - POST /api/agent/verify-rgc - Verify agent's RGC code entry (body: {code: "5digits"})
 - POST /api/admin/rgc-code - Set daily RGC code (admin only, body: {code: "5digits", date: "YYYY-MM-DD"})
@@ -124,3 +125,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-19: Master admin account + super_admin role - isSystemAccount flag, VRS_MASTER account hidden from user list, protected from modification/deletion, super_admin bypasses all role checks, LDAP ID login with forced password change for CSV-imported users
 - 2026-02-19: SHSAI direct API integration - replaced iframe with direct API calls to SHSAI service (init session + prompt), auto-queries on Stage 2 ticket selection, follow-up chat input, retry on error, fresh session per ticket
 - 2026-02-19: Password reset features - Admin permission check (admins can only reset agent/tech passwords, super_admin can reset anyone), self-service forgot password via SMS (6-digit code, 15-min expiry, Twilio), forgot password UI on agent/admin login pages, passwordResetToken/passwordResetExpires columns added to users
+- 2026-02-19: Shared division queue workflow - Tickets submit unassigned (assignedTo=null), Stage 1 is shared division queue filtered by agent specializations, Stage 1 approval assigns ticket to approving agent, Stage 2 is personal queue, removed My Assignments toggle, admin reassign endpoint for Stage 2 tickets, division-based stats counting, multi-agent division assignments in admin dashboard, ticket deletion restricted to admin/super_admin only

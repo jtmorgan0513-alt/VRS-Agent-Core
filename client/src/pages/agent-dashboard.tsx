@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -58,8 +59,7 @@ import {
   Wrench,
   AlertTriangle,
   Filter,
-  ToggleLeft,
-  ToggleRight,
+  UserPlus,
   Image as ImageIcon,
   ShieldCheck,
   ShieldX,
@@ -144,7 +144,6 @@ export default function AgentDashboard() {
   const [activeView, setActiveView] = useState<"stage1" | "stage2" | "completed">("stage1");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
-  const [myAssignments, setMyAssignments] = useState(!isAdminViewing);
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -160,6 +159,8 @@ export default function AgentDashboard() {
   const [rgcMissing, setRgcMissing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignAgentId, setReassignAgentId] = useState<string>("");
   const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
   const [shsaiVisible, setShsaiVisible] = useState(true);
   const [shsaiLoading, setShsaiLoading] = useState(false);
@@ -180,9 +181,6 @@ export default function AgentDashboard() {
     } else if (activeView === "completed") {
       params.set("completedToday", "true");
     }
-    if (!myAssignments) {
-      params.set("allQueue", "true");
-    }
     if (divisionFilter) {
       params.set("applianceType", divisionFilter);
     }
@@ -193,7 +191,7 @@ export default function AgentDashboard() {
       params.set("search", searchQuery.trim());
     }
     return params.toString();
-  }, [activeView, myAssignments, divisionFilter, requestTypeFilter, searchQuery]);
+  }, [activeView, divisionFilter, requestTypeFilter, searchQuery]);
 
   const submissionsUrl = queryParams ? `/api/submissions?${queryParams}` : "/api/submissions";
 
@@ -274,11 +272,8 @@ export default function AgentDashboard() {
   }, [selectedId, activeView, shsaiVisible]);
 
   const warrantyCounstUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (!myAssignments) params.set("allQueue", "true");
-    const qs = params.toString();
-    return qs ? `/api/agent/warranty-counts?${qs}` : "/api/agent/warranty-counts";
-  }, [myAssignments]);
+    return "/api/agent/warranty-counts";
+  }, []);
 
   const { data: warrantyCountsData } = useQuery<{ counts: { warrantyProvider: string; count: number }[] }>({
     queryKey: [warrantyCounstUrl],
@@ -374,6 +369,22 @@ export default function AgentDashboard() {
     },
   });
 
+  const reassignMutation = useMutation({
+    mutationFn: async ({ submissionId, agentId }: { submissionId: number; agentId: number }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/reassign`, { agentId });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Reassigned", description: "Ticket has been reassigned to another agent." });
+      setSelectedId(null);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const verifyRgcMutation = useMutation({
     mutationFn: async (code: string) => {
       const res = await apiRequest("POST", "/api/agent/verify-rgc", { code });
@@ -404,6 +415,12 @@ export default function AgentDashboard() {
       return next;
     });
   };
+
+  const { data: agentsData } = useQuery<{ users: Array<{ id: number; name: string; role: string; racId: string | null }> }>({
+    queryKey: ["/api/admin/users"],
+    enabled: isAdminViewing && reassignOpen,
+  });
+  const vrsAgents = agentsData?.users?.filter(u => u.role === "vrs_agent") || [];
 
   const selectedWarrantyProvider = selectedSubmission ? getWarrantyLabel(selectedSubmission) : null;
   const batchSameProvider = useMemo(() => {
@@ -664,24 +681,12 @@ export default function AgentDashboard() {
             <div className="flex items-center gap-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <h1 className="text-lg font-semibold" data-testid="text-page-title">
-                {activeView === "stage1" && "Stage 1 - Submission Review"}
-                {activeView === "stage2" && "Stage 2 - Auth Code Issuance"}
+                {activeView === "stage1" && `Stage 1 - Review (${statsData?.queueCount ?? 0} pending)`}
+                {activeView === "stage2" && `Stage 2 - My Authorizations (${statsData?.stage2Count ?? 0})`}
                 {activeView === "completed" && "Completed Today"}
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setMyAssignments(!myAssignments)}
-                className="flex items-center gap-2 text-sm text-muted-foreground hover-elevate rounded-md px-3 py-1.5"
-                data-testid="toggle-assignments"
-              >
-                {myAssignments ? (
-                  <ToggleRight className="w-5 h-5 text-primary" />
-                ) : (
-                  <ToggleLeft className="w-5 h-5" />
-                )}
-                <span>{myAssignments ? "My Assignments" : "All Queue"}</span>
-              </button>
             </div>
           </header>
 
@@ -812,7 +817,7 @@ export default function AgentDashboard() {
                             </div>
                             {activeView === "stage2" && sub.stage1ReviewedAt && (
                               <p className="text-xs text-muted-foreground mt-1">
-                                Stage 1 approved {getTimeElapsed(sub.stage1ReviewedAt)} ago
+                                Approved by you at {new Date(sub.stage1ReviewedAt).toLocaleTimeString()}
                               </p>
                             )}
                             {sub.requestType === "infestation_non_accessible" && (
@@ -883,6 +888,17 @@ export default function AgentDashboard() {
                           >
                             <PanelRightOpen className="w-4 h-4 mr-1" />
                             Show Service History
+                          </Button>
+                        )}
+                        {isAdminViewing && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setReassignOpen(true)}
+                            data-testid="button-reassign"
+                          >
+                            <UserPlus className="w-4 h-4 mr-1" />
+                            Reassign
                           </Button>
                         )}
                         {(user?.role === "admin" || user?.role === "super_admin") && (
@@ -1743,6 +1759,49 @@ export default function AgentDashboard() {
           {enlargedPhoto && (
             <img src={enlargedPhoto} alt="Enlarged photo" className="w-full h-auto rounded-md" data-testid="img-enlarged-photo" />
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign Ticket</DialogTitle>
+            <DialogDescription>
+              Select a new agent to handle this ticket.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Assign to Agent</Label>
+              <Select value={reassignAgentId} onValueChange={setReassignAgentId}>
+                <SelectTrigger data-testid="select-reassign-agent">
+                  <SelectValue placeholder="Choose an agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vrsAgents.map((agent) => (
+                    <SelectItem key={agent.id} value={String(agent.id)} data-testid={`option-reassign-agent-${agent.id}`}>
+                      {agent.name} {agent.racId ? `(${agent.racId})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setReassignOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (selectedId && reassignAgentId) {
+                  reassignMutation.mutate({ submissionId: selectedId, agentId: Number(reassignAgentId) });
+                  setReassignOpen(false);
+                  setReassignAgentId("");
+                }
+              }}
+              disabled={!reassignAgentId || reassignMutation.isPending}
+              data-testid="button-confirm-reassign"
+            >
+              Reassign
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </SidebarProvider>
