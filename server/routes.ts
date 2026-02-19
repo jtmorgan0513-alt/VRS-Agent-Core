@@ -989,17 +989,11 @@ export async function registerRoutes(
 
   app.get("/api/agent/rgc-status", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
-      const authReq = req as AuthenticatedRequest;
-      const user = await storage.getUser(authReq.user!.id);
       const todayStr = new Date().toISOString().slice(0, 10);
       const todayCode = await storage.getDailyRgcCode(todayStr);
 
       if (!todayCode) {
         return res.status(200).json({ needsEntry: false, missingCode: true, code: null });
-      }
-
-      if ((user as any)?.lastRgcCodeEntry !== todayStr) {
-        return res.status(200).json({ needsEntry: true, missingCode: false, code: null });
       }
 
       return res.status(200).json({ needsEntry: false, missingCode: false, code: todayCode.code });

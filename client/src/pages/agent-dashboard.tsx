@@ -154,9 +154,6 @@ export default function AgentDashboard() {
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [rgcModalOpen, setRgcModalOpen] = useState(false);
-  const [rgcInput, setRgcInput] = useState("");
-  const [rgcVerified, setRgcVerified] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
   const [rgcMissing, setRgcMissing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -215,17 +212,10 @@ export default function AgentDashboard() {
 
   useEffect(() => {
     if (rgcStatus) {
-      if (rgcStatus.needsEntry) {
-        setRgcModalOpen(true);
-        setRgcVerified(false);
-        setTodaysRgcCode(null);
-        setRgcMissing(false);
-      } else if (rgcStatus.missingCode) {
+      if (rgcStatus.missingCode) {
         setRgcMissing(true);
-        setRgcVerified(false);
         setTodaysRgcCode(null);
       } else {
-        setRgcVerified(true);
         setTodaysRgcCode(rgcStatus.code);
         setRgcMissing(false);
       }
@@ -387,25 +377,6 @@ export default function AgentDashboard() {
     },
   });
 
-  const verifyRgcMutation = useMutation({
-    mutationFn: async (code: string) => {
-      const res = await apiRequest("POST", "/api/agent/verify-rgc", { code });
-      return res.json();
-    },
-    onSuccess: (data: { success: boolean; code: string }) => {
-      setRgcModalOpen(false);
-      setRgcVerified(true);
-      setTodaysRgcCode(data.code);
-      setRgcMissing(false);
-      setRgcInput("");
-      toast({ title: "RGC Code Verified", description: `Today's code: ${data.code}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/agent/rgc-status"] });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Verification Failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const toggleCheckbox = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -447,15 +418,6 @@ export default function AgentDashboard() {
               <span className="font-semibold text-sm" data-testid="text-sidebar-title">VRS Agent</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1" data-testid="text-agent-name">{user?.name}</p>
-            {rgcVerified && todaysRgcCode && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs font-mono font-semibold" data-testid="text-todays-rgc">{todaysRgcCode}</span>
-              </div>
-            )}
-            {rgcMissing && (
-              <p className="text-xs text-destructive mt-2" data-testid="text-rgc-missing">Daily code not set</p>
-            )}
           </SidebarHeader>
 
           <SidebarContent>
@@ -629,19 +591,6 @@ export default function AgentDashboard() {
                 <span>Back to Admin</span>
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2"
-              onClick={() => {
-                setRgcInput("");
-                setRgcModalOpen(true);
-              }}
-              data-testid="button-update-rgc"
-            >
-              <Key className="w-4 h-4" />
-              <span>Update Code</span>
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -1741,40 +1690,6 @@ export default function AgentDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={rgcModalOpen} onOpenChange={(open) => { if (!open) setRgcModalOpen(false); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle data-testid="text-rgc-modal-title">Enter Today's RGC Code</DialogTitle>
-            <DialogDescription>
-              Enter the daily RGC code to access your dashboard. Contact your admin if you don't have the code.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-mono font-semibold text-muted-foreground">RGC</span>
-              <Input
-                placeholder="12345"
-                value={rgcInput}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                  setRgcInput(val);
-                }}
-                maxLength={5}
-                className="font-mono"
-                data-testid="input-rgc-verify"
-              />
-            </div>
-            <Button
-              onClick={() => verifyRgcMutation.mutate(rgcInput)}
-              disabled={rgcInput.length !== 5 || verifyRgcMutation.isPending}
-              className="w-full"
-              data-testid="button-verify-rgc"
-            >
-              {verifyRgcMutation.isPending ? "Verifying..." : "Submit"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
       <Dialog open={!!enlargedPhoto} onOpenChange={() => setEnlargedPhoto(null)}>
         <DialogContent className="max-w-4xl p-2 z-[100]">
           {enlargedPhoto && (
