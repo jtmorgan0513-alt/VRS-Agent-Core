@@ -139,7 +139,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUsers(): Promise<User[]> {
-    return await db.select().from(users);
+    return await db.select().from(users).orderBy(
+      sql`CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 WHEN 'vrs_agent' THEN 2 WHEN 'technician' THEN 3 ELSE 4 END`,
+      users.name
+    );
   }
 
   async updateUser(
