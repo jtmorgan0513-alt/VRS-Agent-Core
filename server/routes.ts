@@ -1083,7 +1083,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/import-users", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
-      const csvPath = path.join(process.cwd(), "attached_assets", "VRS_Auth_Replit_Name_List(Names)_1771456018054.csv");
+      const csvPath = path.join(process.cwd(), "attached_assets", "VRS_Auth_Replit_Name_List(Names)_1771470188669.csv");
       const csvContent = fs.readFileSync(csvPath, "utf-8");
       const lines = csvContent.split("\n").filter((line) => line.trim());
       const header = lines[0];
@@ -1104,7 +1104,7 @@ export async function registerRoutes(
 
         if (!firstName || !lastName || !ldapId || !roleStr) continue;
 
-        const racId = ldapId.toLowerCase();
+        const racId = ldapId;
         const existing = await storage.getUserByRacId(racId);
         if (existing) {
           skipped++;
