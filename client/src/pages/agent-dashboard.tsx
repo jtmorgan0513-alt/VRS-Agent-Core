@@ -82,6 +82,7 @@ import {
   RefreshCw,
   MessageSquare,
   ArrowLeft,
+  ZoomIn,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import HelpTooltip from "@/components/help-tooltip";
@@ -1068,8 +1069,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-s2">
                                     {estimatePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-photo-s2-${i}`} />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-s2-${i}`} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1083,8 +1085,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-s2">
                                     {issuePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-photo-s2-${i}`} />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-s2-${i}`} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1098,8 +1101,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-photos-s2">
                                     {legacyPhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1512,8 +1516,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos">
                                     {estimatePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-photo-${i}`} />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-${i}`} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1527,8 +1532,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos">
                                     {issuePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-photo-${i}`} />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-${i}`} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1542,8 +1548,9 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
                                     {legacyPhotos.map((url: string, i: number) => (
-                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
@@ -1769,9 +1776,9 @@ export default function AgentDashboard() {
         </DialogContent>
       </Dialog>
       <Dialog open={!!enlargedPhoto} onOpenChange={() => setEnlargedPhoto(null)}>
-        <DialogContent className="max-w-3xl p-2">
+        <DialogContent className="max-w-4xl p-2 z-[100]">
           {enlargedPhoto && (
-            <img src={enlargedPhoto} alt="Enlarged photo" className="w-full h-auto rounded-md" data-testid="img-enlarged-photo" />
+            <img src={enlargedPhoto} alt="Enlarged photo" className="w-full h-auto rounded-md max-h-[85vh] object-contain" data-testid="img-enlarged-photo" />
           )}
         </DialogContent>
       </Dialog>
