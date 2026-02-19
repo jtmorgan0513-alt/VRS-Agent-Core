@@ -83,7 +83,7 @@ export async function sendSms(
 }
 
 export function buildStage1ApprovedMessage(serviceOrder: string): string {
-  return `VRS Authorization Update: Your submission for SO# ${serviceOrder} has been APPROVED at Stage 1 review. An auth code will be sent shortly.`;
+  return `Your VRS submission has been approved for SO# ${serviceOrder} (Stage 1). Your authorization code will follow shortly. You may same-day reschedule and proceed to your next call while you wait. You'll receive an additional text and the code will also be available in the app once authorized.`;
 }
 
 export function buildStage1RejectedMessage(serviceOrder: string, reason: string): string {
