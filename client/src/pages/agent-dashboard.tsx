@@ -898,54 +898,204 @@ export default function AgentDashboard() {
                       </CardContent>
                     </Card>
 
-                    <div>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Order Details</p>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Appliance Type</p>
-                          <p className="text-sm font-medium" data-testid="text-detail-appliance">
-                            {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
-                          </p>
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          Technician Info
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Name</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-tech-name">{selectedSubmission.technicianName}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">RAC ID</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-rac">{selectedSubmission.racId}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Phone</p>
+                            <p className="text-sm font-medium flex items-center gap-1" data-testid="text-s2-phone">
+                              <Phone className="w-3 h-3" />
+                              {selectedSubmission.phone}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">District</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-district">{selectedSubmission.districtCode || "—"}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Warranty Provider</p>
-                          <p className="text-sm font-medium" data-testid="text-warranty-provider">
-                            {getWarrantyLabel(selectedSubmission)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
 
-                    <div>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
-                        <Video className="w-3.5 h-3.5" />
-                        Video
-                      </p>
-                      {selectedSubmission.videoUrl ? (
-                        <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video-stage2">
-                          <video
-                            src={selectedSubmission.videoUrl}
-                            controls
-                            className="w-full max-h-[300px]"
-                            data-testid="video-player-stage2"
-                          />
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          Submission Details
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Appliance Type</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-appliance">
+                              {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Warranty Provider</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-warranty">
+                              {getWarrantyLabel(selectedSubmission)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Estimate Amount</p>
+                            <p className="text-sm font-medium" data-testid="text-s2-estimate">
+                              {selectedSubmission.estimateAmount ? `$${selectedSubmission.estimateAmount}` : "—"}
+                            </p>
+                          </div>
                         </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground" data-testid="text-no-video-stage2">No video attached</p>
-                      )}
-                    </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-xs text-muted-foreground">Description</p>
+                            {selectedSubmission.aiEnhanced && (
+                              <Badge variant="secondary" className="text-xs gap-0.5">
+                                <Sparkles className="w-3 h-3" />
+                                AI-Enhanced
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap" data-testid="text-s2-description">
+                            {selectedSubmission.issueDescription}
+                          </p>
+                          {selectedSubmission.aiEnhanced && selectedSubmission.originalDescription && (
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                className="text-xs text-muted-foreground hover:underline"
+                                onClick={() => setShowOriginalDesc(!showOriginalDesc)}
+                                data-testid="button-toggle-original-s2"
+                              >
+                                {showOriginalDesc ? "Hide original" : "View original"}
+                              </button>
+                              {showOriginalDesc && (
+                                <div className="mt-1.5 p-2.5 rounded-md bg-muted text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-original-description-s2">
+                                  {selectedSubmission.originalDescription}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
 
-                    <div>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
-                        <Mic className="w-3.5 h-3.5" />
-                        Voice Note
-                      </p>
-                      {selectedSubmission.voiceNoteUrl ? (
-                        <audio src={selectedSubmission.voiceNoteUrl} controls className="w-full" data-testid="audio-player-stage2" />
-                      ) : (
-                        <p className="text-sm text-muted-foreground" data-testid="text-no-voice-note-stage2">No voice note attached</p>
-                      )}
-                    </div>
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4" />
+                          Photos & Media
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {(() => {
+                          let parsed: any = null;
+                          try { parsed = selectedSubmission.photos ? JSON.parse(selectedSubmission.photos) : null; } catch { parsed = null; }
+                          if (!parsed) return <p className="text-sm text-muted-foreground" data-testid="text-no-photos-s2">No photos attached</p>;
+
+                          const isNewFormat = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+                          const estimatePhotos: string[] = isNewFormat ? (parsed.estimate || []) : [];
+                          const issuePhotos: string[] = isNewFormat ? (parsed.issue || []) : [];
+                          const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
+
+                          return (
+                            <div className="space-y-4">
+                              {estimatePhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    TechHub Estimate ({estimatePhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-s2">
+                                    {estimatePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-photo-s2-${i}`} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {issuePhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    Model/Serial & Issue Photos ({issuePhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-s2">
+                                    {issuePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-photo-s2-${i}`} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {legacyPhotos.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                    Photos ({legacyPhotos.length})
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-photos-s2">
+                                    {legacyPhotos.map((url: string, i: number) => (
+                                      <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden cursor-pointer" onClick={() => setEnlargedPhoto(url)}>
+                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {estimatePhotos.length === 0 && issuePhotos.length === 0 && legacyPhotos.length === 0 && (
+                                <p className="text-sm text-muted-foreground" data-testid="text-no-photos-s2">No photos attached</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <Separator />
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                            <Video className="w-3.5 h-3.5" />
+                            Video
+                          </p>
+                          {selectedSubmission.videoUrl ? (
+                            <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video-stage2">
+                              <video
+                                src={selectedSubmission.videoUrl}
+                                controls
+                                className="w-full max-h-[300px]"
+                                data-testid="video-player-stage2"
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground" data-testid="text-no-video-stage2">No video attached</p>
+                          )}
+                        </div>
+                        <Separator />
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5" />
+                            Voice Note
+                          </p>
+                          {selectedSubmission.voiceNoteUrl ? (
+                            <audio src={selectedSubmission.voiceNoteUrl} controls className="w-full" data-testid="audio-player-stage2" />
+                          ) : (
+                            <p className="text-sm text-muted-foreground" data-testid="text-no-voice-note-stage2">No voice note attached</p>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
 
                     {batchSameProvider.length > 0 && (
                       <div data-testid="card-batch-mode">
