@@ -3,10 +3,10 @@ import { Home, FileText, Clock, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { path: "/", label: "Home", icon: Home },
-  { path: "/submit", label: "Submit", icon: FileText },
-  { path: "/history", label: "History", icon: Clock },
-  { path: "/help", label: "Help", icon: HelpCircle },
+  { path: "/tech", label: "Home", icon: Home },
+  { path: "/tech/submit", label: "Submit", icon: FileText },
+  { path: "/tech/history", label: "History", icon: Clock },
+  { path: "/tech/help", label: "Help", icon: HelpCircle },
 ];
 
 export default function BottomNav() {
@@ -16,7 +16,7 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background" data-testid="nav-bottom">
       <div className="flex items-center justify-around h-14 max-w-lg mx-auto">
         {navItems.map((item) => {
-          const isActive = location === item.path || (item.path === "/submit" && location.startsWith("/submit"));
+          const isActive = location === item.path || (item.path !== "/tech" && location.startsWith(item.path));
           return (
             <Link key={item.path} href={item.path}>
               <button

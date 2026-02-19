@@ -6,7 +6,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import BottomNav from "@/components/bottom-nav";
-import LoginPage from "@/pages/login";
+import LandingPage from "@/pages/landing";
+import TechLoginPage from "@/pages/tech-login";
+import AgentLoginPage from "@/pages/agent-login";
+import AdminLoginPage from "@/pages/admin-login";
 import TechHomePage from "@/pages/tech-home";
 import TechSubmitPage from "@/pages/tech-submit";
 import TechHistoryPage from "@/pages/tech-history";
@@ -32,12 +35,10 @@ function LoadingScreen() {
 
 function TechRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
-
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Redirect to="/login" />;
-  if (user.role === "vrs_agent") return <Redirect to="/agent" />;
-  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
-
+  if (!user) return <Redirect to="/tech/login" />;
+  if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
+  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin/dashboard" />;
   return (
     <>
       <Component />
@@ -48,54 +49,31 @@ function TechRoute({ component: Component }: { component: React.ComponentType })
 
 function AgentRoute() {
   const { user, isLoading } = useAuth();
-
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Redirect to="/login" />;
-  if (user.role === "technician") return <Redirect to="/" />;
-  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
-
+  if (!user) return <Redirect to="/agent/login" />;
+  if (user.role === "technician") return <Redirect to="/tech" />;
+  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin/dashboard" />;
   return <AgentDashboard />;
 }
 
 function AdminRoute() {
   const { user, isLoading } = useAuth();
-
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Redirect to="/login" />;
-  if (user.role === "technician") return <Redirect to="/" />;
-  if (user.role === "vrs_agent") return <Redirect to="/agent" />;
-
+  if (!user) return <Redirect to="/admin/login" />;
+  if (user.role === "technician") return <Redirect to="/tech" />;
+  if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
   return <AdminDashboard />;
 }
 
-function AuthRoute() {
+function LandingRoute() {
   const { user, isLoading } = useAuth();
-
-  if (isLoading) return null;
-  if (user) {
-    if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
-    if (user.role === "vrs_agent") return <Redirect to="/agent" />;
-    return <Redirect to="/" />;
-  }
-  return <LoginPage />;
-}
-
-function HelpRoute() {
-  const { user, isLoading } = useAuth();
-
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Redirect to="/login" />;
-
-  if (user.role === "technician") {
-    return (
-      <>
-        <HelpCenterPage />
-        <BottomNav />
-      </>
-    );
+  if (user) {
+    if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin/dashboard" />;
+    if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
+    return <Redirect to="/tech" />;
   }
-
-  return <HelpCenterPage />;
+  return <LandingPage />;
 }
 
 function OnboardingManager() {
@@ -149,39 +127,39 @@ function OnboardingManager() {
   );
 }
 
-function HomeRedirect() {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) return <LoadingScreen />;
-  if (!user) return <Redirect to="/login" />;
-  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
-  if (user.role === "vrs_agent") return <Redirect to="/agent" />;
-
-  return (
-    <>
-      <TechHomePage />
-      <BottomNav />
-    </>
-  );
-}
-
 function Router() {
   return (
     <Switch>
-      <Route path="/login" component={AuthRoute} />
-      <Route path="/" component={HomeRedirect} />
-      <Route path="/agent" component={AgentRoute} />
-      <Route path="/admin" component={AdminRoute} />
-      <Route path="/submit">
+      <Route path="/" component={LandingRoute} />
+      <Route path="/tech/login" component={TechLoginPage} />
+      <Route path="/agent/login" component={AgentLoginPage} />
+      <Route path="/admin/login" component={AdminLoginPage} />
+      <Route path="/tech">
+        {() => <TechRoute component={TechHomePage} />}
+      </Route>
+      <Route path="/tech/submit">
         {() => <TechRoute component={TechSubmitPage} />}
       </Route>
-      <Route path="/history">
+      <Route path="/tech/history">
         {() => <TechRoute component={TechHistoryPage} />}
       </Route>
-      <Route path="/submissions/:id">
+      <Route path="/tech/submissions/:id">
         {() => <TechRoute component={SubmissionDetailPage} />}
       </Route>
-      <Route path="/help" component={HelpRoute} />
+      <Route path="/agent/dashboard" component={AgentRoute} />
+      <Route path="/admin/dashboard" component={AdminRoute} />
+      <Route path="/tech/help">
+        {() => <TechRoute component={HelpCenterPage} />}
+      </Route>
+      <Route path="/login">{() => <Redirect to="/" />}</Route>
+      <Route path="/submit">{() => <Redirect to="/tech/submit" />}</Route>
+      <Route path="/history">{() => <Redirect to="/tech/history" />}</Route>
+      <Route path="/submissions/:id">
+        {(params: { id: string }) => <Redirect to={`/tech/submissions/${params.id}`} />}
+      </Route>
+      <Route path="/help">{() => <Redirect to="/tech/help" />}</Route>
+      <Route path="/agent">{() => <Redirect to="/agent/dashboard" />}</Route>
+      <Route path="/admin">{() => <Redirect to="/admin/dashboard" />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

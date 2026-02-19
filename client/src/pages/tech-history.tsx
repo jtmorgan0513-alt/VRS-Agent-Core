@@ -33,7 +33,7 @@ export default function TechHistoryPage() {
           </Card>
         ) : (
           submissions.map((sub) => (
-            <Link key={sub.id} href={`/submissions/${sub.id}`}>
+            <Link key={sub.id} href={`/tech/submissions/${sub.id}`}>
               <Card className="hover-elevate cursor-pointer">
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between gap-2 mb-1">

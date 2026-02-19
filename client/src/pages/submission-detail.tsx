@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
 
 export default function SubmissionDetailPage() {
-  const [, params] = useRoute("/submissions/:id");
+  const [, params] = useRoute("/tech/submissions/:id");
   const id = params?.id;
   const { toast } = useToast();
 
@@ -50,7 +50,7 @@ export default function SubmissionDetailPage() {
       <div className="min-h-screen pb-20">
         <div className="bg-primary text-primary-foreground p-4">
           <div className="max-w-lg mx-auto flex items-center gap-2">
-            <Link href="/history">
+            <Link href="/tech/history">
               <Button size="icon" variant="ghost" className="text-primary-foreground no-default-hover-elevate no-default-active-elevate">
                 <ArrowLeft className="w-5 h-5" />
               </Button>
@@ -60,7 +60,7 @@ export default function SubmissionDetailPage() {
         </div>
         <div className="max-w-lg mx-auto px-4 py-8 text-center">
           <p className="text-muted-foreground">This submission could not be found.</p>
-          <Link href="/">
+          <Link href="/tech">
             <Button className="mt-4" data-testid="button-go-home">Go Home</Button>
           </Link>
         </div>
@@ -119,7 +119,7 @@ export default function SubmissionDetailPage() {
       <div className={`${headerConfig.bgClass} p-4 pb-8`}>
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-2 mb-4">
-            <Link href="/history">
+            <Link href="/tech/history">
               <Button size="icon" variant="ghost" className="text-inherit no-default-hover-elevate no-default-active-elevate">
                 <ArrowLeft className="w-5 h-5" />
               </Button>
@@ -301,13 +301,13 @@ export default function SubmissionDetailPage() {
 
         {stage1Status === "rejected" && (
           <div className="space-y-2">
-            <Link href="/submit">
+            <Link href="/tech/submit">
               <Button className="w-full" data-testid="button-resubmit">Resubmit with Updates</Button>
             </Link>
           </div>
         )}
 
-        <Link href="/">
+        <Link href="/tech">
           <Button variant="outline" className="w-full" data-testid="button-view-next">
             {stage1Status === "approved" ? "View Next Job" : "Back to Home"}
           </Button>

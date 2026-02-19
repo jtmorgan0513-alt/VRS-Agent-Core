@@ -1,0 +1,248 @@
+import { useState } from "react";
+import { useLocation, Redirect } from "wouter";
+import { useAuth } from "@/lib/auth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Check, X } from "lucide-react";
+import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
+
+export default function AgentLoginPage() {
+  const [agentLdapId, setAgentLdapId] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [changePasswordUser, setChangePasswordUser] = useState<any>(null);
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [changePwLoading, setChangePwLoading] = useState(false);
+  const { user, isLoading: authLoading, login } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (user && user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
+  if (user && (user.role === "admin" || user.role === "super_admin")) return <Redirect to="/admin/dashboard" />;
+  if (user && user.role === "technician") return <Redirect to="/tech" />;
+
+  async function handleAgentSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const u = await login(agentLdapId.trim(), password);
+      if (u.mustChangePassword) {
+        setMustChangePassword(true);
+        setChangePasswordUser(u);
+      } else {
+        setLocation("/agent/dashboard");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid credentials",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const pwRequirements = [
+    { label: "Min 8 characters", met: newPw.length >= 8 },
+    { label: "1 uppercase letter", met: /[A-Z]/.test(newPw) },
+    { label: "1 lowercase letter", met: /[a-z]/.test(newPw) },
+    { label: "1 number", met: /\d/.test(newPw) },
+    { label: "1 special character (!@#$%^&*)", met: /[!@#$%^&*]/.test(newPw) },
+  ];
+
+  const allRequirementsMet = pwRequirements.every((r) => r.met);
+  const passwordsMatch = newPw === confirmPw && confirmPw.length > 0;
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!allRequirementsMet || !passwordsMatch) return;
+    setChangePwLoading(true);
+    try {
+      const token = localStorage.getItem("vrs_token");
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ currentPassword: password, newPassword: newPw }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to change password");
+      }
+      toast({ title: "Password Changed", description: "Your password has been updated successfully." });
+      setLocation("/agent/dashboard");
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setChangePwLoading(false);
+    }
+  }
+
+  if (mustChangePassword && changePasswordUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-6">
+            <img src={searsLogo} alt="Sears Home Services" className="h-10 mx-auto mb-3" data-testid="img-logo-change-pw" />
+            <h1 className="text-2xl font-bold" data-testid="text-change-pw-title">
+              Change Password
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Welcome, {changePasswordUser.name}
+            </p>
+          </div>
+          <Card>
+            <CardContent className="p-4">
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    placeholder="Enter new password"
+                    value={newPw}
+                    onChange={(e) => setNewPw(e.target.value)}
+                    required
+                    data-testid="input-new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirm Password</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmPw}
+                    onChange={(e) => setConfirmPw(e.target.value)}
+                    required
+                    data-testid="input-confirm-password"
+                  />
+                  {confirmPw.length > 0 && !passwordsMatch && (
+                    <p className="text-xs text-red-600 dark:text-red-400" data-testid="text-pw-mismatch">Passwords do not match</p>
+                  )}
+                </div>
+                <div className="space-y-1.5" data-testid="pw-requirements">
+                  <p className="text-xs font-medium text-muted-foreground">Password Requirements:</p>
+                  {pwRequirements.map((req) => (
+                    <div key={req.label} className="flex items-center gap-2">
+                      {req.met ? (
+                        <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <X className="w-3.5 h-3.5 text-muted-foreground" />
+                      )}
+                      <span className={`text-xs ${req.met ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                        {req.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={changePwLoading || !allRequirementsMet || !passwordsMatch}
+                  data-testid="button-change-password"
+                >
+                  {changePwLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Changing...
+                    </>
+                  ) : (
+                    "Change Password"
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <img src={searsLogo} alt="Sears Home Services" className="h-10 mx-auto mb-3" data-testid="img-logo" />
+          <h1 className="text-2xl font-bold" data-testid="text-login-title">VRS Agent Portal</h1>
+          <p className="text-sm text-muted-foreground mt-1">Sears Home Services</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Agent Sign In</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleAgentSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="agent-ldap-id">LDAP ID</Label>
+                <Input
+                  id="agent-ldap-id"
+                  type="text"
+                  placeholder="e.g., MSARAF"
+                  value={agentLdapId}
+                  onChange={(e) => setAgentLdapId(e.target.value)}
+                  required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  data-testid="input-agent-ldap-id"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  data-testid="input-password"
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-login">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  "Sign In"
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="text-center mt-4">
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setLocation("/admin/login")}
+            data-testid="link-admin-login"
+          >
+            Admin? Login here
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

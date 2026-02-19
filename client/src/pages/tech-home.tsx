@@ -91,7 +91,7 @@ export default function TechHomePage() {
           </Card>
         </div>
 
-        <Link href="/submit">
+        <Link href="/tech/submit">
           <Button className="w-full" size="lg" data-testid="button-new-submission">
             <FileText className="w-4 h-4 mr-2" />
             New Submission
@@ -101,7 +101,7 @@ export default function TechHomePage() {
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <h2 className="font-semibold text-sm">Recent Submissions</h2>
-            <Link href="/history">
+            <Link href="/tech/history">
               <span className="text-xs text-primary cursor-pointer" data-testid="link-view-all">View All</span>
             </Link>
           </div>
@@ -121,7 +121,7 @@ export default function TechHomePage() {
           ) : (
             <div className="space-y-2">
               {recentSubmissions.map((sub) => (
-                <Link key={sub.id} href={`/submissions/${sub.id}`}>
+                <Link key={sub.id} href={`/tech/submissions/${sub.id}`}>
                   <Card className="hover-elevate cursor-pointer">
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between gap-2">

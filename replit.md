@@ -56,14 +56,17 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/admin/technician-metrics - Get technician sync info (admin only)
 
 ### Frontend Pages
-- `/login` - Login page (redirects by role)
-- `/` - Technician home dashboard (stats, recent submissions)
-- `/submit` - New submission form (request type toggle, appliance type, warranty provider with B2B Coming Soon badges)
-- `/history` - Submission history list
-- `/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
-- `/agent` - VRS Agent dashboard (sidebar nav, split-panel queue/detail, approve/reject actions)
-- `/admin` - Admin dashboard (sidebar nav, user management table, division assignments, analytics)
-- `/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
+- `/` - Landing page (choose user type: Field Technician, VRS Agent, Administrator)
+- `/tech/login` - Technician LDAP login (mobile-first, no password)
+- `/agent/login` - VRS Agent login (LDAP ID + password, "VRS Agent Portal")
+- `/admin/login` - Admin login (LDAP ID + password, "VRS Administration")
+- `/tech` - Technician home dashboard (stats, recent submissions)
+- `/tech/submit` - New submission form (request type toggle, appliance type, warranty provider with B2B Coming Soon badges)
+- `/tech/history` - Submission history list
+- `/tech/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
+- `/tech/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
+- `/agent/dashboard` - VRS Agent dashboard (sidebar nav, split-panel queue/detail, approve/reject actions)
+- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics)
 
 ### Onboarding & Help System
 - First-login wizard: role-based step-by-step modal (5 slides tech, 5 agent, 4 admin)
@@ -77,7 +80,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - JWT tokens stored in localStorage
 - AuthContext provides user/token/login/logout/refreshUser
 - queryClient injects Authorization header via getToken()
-- Role-based routing: technicians -> /, agents -> /agent, admins -> /admin
+- Role-based routing: technicians -> /tech, agents -> /agent/dashboard, admins -> /admin/dashboard
 - Bottom navigation (Home, Submit, History, Help) on technician pages only
 - Deactivated users (isActive=false) get 403 on login
 

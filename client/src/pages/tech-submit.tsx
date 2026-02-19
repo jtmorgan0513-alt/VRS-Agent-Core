@@ -365,7 +365,7 @@ export default function TechSubmitPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
       toast({ title: "Submission Created", description: `Service Order #${data.submission.serviceOrder} submitted successfully.` });
-      setLocation(`/submissions/${data.submission.id}`);
+      setLocation(`/tech/submissions/${data.submission.id}`);
     },
     onError: (error: Error) => {
       toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
