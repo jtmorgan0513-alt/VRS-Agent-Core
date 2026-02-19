@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 const SHSAI_BASE_URL = "https://ais.tellurideplatform.com/tell/api/hs/routing/v1";
 
 function generateTrackId(): string {
@@ -9,20 +11,28 @@ function generateTrackId(): string {
   return result;
 }
 
+function generateDeviceInfo(): string {
+  const uuid = crypto.randomUUID();
+  return `${uuid}~~Server~~nodejs~~VRS~~1`;
+}
+
 export interface ShsaiSession {
   trackId: string;
   sessionId: string;
   threadId: string;
+  deviceInfo: string;
 }
 
 export async function initSession(agentUserId: string): Promise<ShsaiSession> {
   const trackId = generateTrackId();
+  const deviceInfo = generateDeviceInfo();
 
   const response = await fetch(`${SHSAI_BASE_URL}/init`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Accept: "application/json",
+      "Accept": "application/json, text/plain, */*",
+      "deviceinfo": deviceInfo,
     },
     body: JSON.stringify({
       chat_bot_type: "HS_ROUTE_ASSISTANT",
@@ -38,83 +48,63 @@ export async function initSession(agentUserId: string): Promise<ShsaiSession> {
     throw new Error(`SHSAI init failed: ${response.status} ${response.statusText}`);
   }
 
+  const sessionId = response.headers.get("sessionid");
   const data = await response.json();
-  const sessionId = data.session_id || data.sessionId || response.headers.get("sessionid") || "";
-  const threadId = data.thread_id || data.threadId || "";
-  return { trackId, sessionId, threadId };
+
+  return {
+    trackId,
+    sessionId: sessionId || data.session_id || data.sessionId || "",
+    threadId: data.thread_id || data.threadId || "",
+    deviceInfo,
+  };
 }
 
-export async function sendPrompt(
-  sessionId: string,
-  trackId: string,
-  threadId: string,
-  promptText: string
-): Promise<any> {
-  const response = await fetch(`${SHSAI_BASE_URL}/prompt`, {
+async function sseAssist(
+  session: ShsaiSession,
+  userMessage: string
+): Promise<string> {
+  const response = await fetch(`${SHSAI_BASE_URL}/sse/assist`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Accept: "application/json",
-      Sessionid: sessionId,
+      "Accept": "text/event-stream",
+      "deviceinfo": session.deviceInfo,
+      "sessionid": session.sessionId,
     },
     body: JSON.stringify({
       chat_bot_type: "HS_ROUTE_ASSISTANT",
-      trackId,
-      thread_id: threadId,
+      trackId: session.trackId,
+      thread_id: session.threadId,
       parameters: {
-        userMessage: promptText,
+        userMessage,
       },
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "");
-    throw new Error(`SHSAI prompt failed: ${response.status} - ${errorBody}`);
+    throw new Error(`SHSAI sse/assist failed: ${response.status} - ${errorBody}`);
   }
 
-  return await response.json();
-}
+  const text = await response.text();
+  const chunks = text.split("\n").filter((line) => line.trim());
+  let fullContent = "";
 
-export async function fetchAssistResponse(
-  sessionId: string,
-  trackId: string,
-  threadId: string
-): Promise<string> {
-  const response = await fetch(`${SHSAI_BASE_URL}/assist`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Sessionid: sessionId,
-    },
-    body: JSON.stringify({
-      chat_bot_type: "HS_ROUTE_ASSISTANT",
-      trackId,
-      thread_id: threadId,
-      parameters: {},
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    console.error(`[SHSAI assist] Error ${response.status}: ${errorBody}`);
-    throw new Error(`SHSAI assist failed: ${response.status} - ${errorBody}`);
+  for (const chunk of chunks) {
+    try {
+      const parsed = JSON.parse(chunk);
+      if (parsed.type === "TEXT") {
+        fullContent += parsed.content;
+      }
+      if (parsed.type === "STATUS" && parsed.content === "COMPLETE") {
+        break;
+      }
+    } catch {
+      // skip non-JSON lines
+    }
   }
 
-  const data = await response.json();
-
-  if (Array.isArray(data)) {
-    return data
-      .filter((chunk: any) => chunk.type === "TEXT")
-      .map((chunk: any) => chunk.content)
-      .join("");
-  }
-
-  if (data && typeof data === "object" && data.content) {
-    return typeof data.content === "string" ? data.content : JSON.stringify(data.content, null, 2);
-  }
-
-  return typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  return fullContent;
 }
 
 export async function queryServiceOrder(
@@ -123,46 +113,13 @@ export async function queryServiceOrder(
 ): Promise<{ session: ShsaiSession; content: string }> {
   const session = await initSession(agentUserId);
   const prompt = `Give me all orders for customer having sample service order number ${serviceOrder}`;
-  const promptResult = await sendPrompt(session.sessionId, session.trackId, session.threadId, prompt);
-
-  let content = "";
-  try {
-    content = await fetchAssistResponse(session.sessionId, session.trackId, session.threadId);
-  } catch (assistError) {
-    console.warn("[SHSAI] Assist endpoint failed, using prompt response:", (assistError as Error).message);
-    if (promptResult && typeof promptResult === "object") {
-      if (promptResult.questions && Array.isArray(promptResult.questions) && promptResult.questions.length > 0) {
-        content = promptResult.questions.map((q: any) => typeof q === "string" ? q : JSON.stringify(q)).join("\n");
-      } else {
-        content = `Query sent successfully. Status: ${promptResult.status || "unknown"}. Processing time: ${promptResult.time_taken || "N/A"}s.`;
-      }
-    }
-  }
-
+  const content = await sseAssist(session, prompt);
   return { session, content };
 }
 
 export async function sendFollowup(
-  sessionId: string,
-  trackId: string,
-  threadId: string,
+  session: ShsaiSession,
   message: string
 ): Promise<string> {
-  const promptResult = await sendPrompt(sessionId, trackId, threadId, message);
-
-  let content = "";
-  try {
-    content = await fetchAssistResponse(sessionId, trackId, threadId);
-  } catch (assistError) {
-    console.warn("[SHSAI] Assist endpoint failed on followup, using prompt response:", (assistError as Error).message);
-    if (promptResult && typeof promptResult === "object") {
-      if (promptResult.questions && Array.isArray(promptResult.questions) && promptResult.questions.length > 0) {
-        content = promptResult.questions.map((q: any) => typeof q === "string" ? q : JSON.stringify(q)).join("\n");
-      } else {
-        content = `Query processed. Status: ${promptResult.status || "unknown"}. Processing time: ${promptResult.time_taken || "N/A"}s.`;
-      }
-    }
-  }
-
-  return content;
+  return await sseAssist(session, message);
 }

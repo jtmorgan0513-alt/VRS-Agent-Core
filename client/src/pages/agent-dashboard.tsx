@@ -160,7 +160,7 @@ export default function AgentDashboard() {
   const [shsaiVisible, setShsaiVisible] = useState(true);
   const [shsaiLoading, setShsaiLoading] = useState(false);
   const [shsaiError, setShsaiError] = useState<string | null>(null);
-  const [shsaiSession, setShsaiSession] = useState<{ sessionId: string; trackId: string; threadId: string } | null>(null);
+  const [shsaiSession, setShsaiSession] = useState<{ sessionId: string; trackId: string; threadId: string; deviceInfo: string } | null>(null);
   const [shsaiMessages, setShsaiMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [shsaiFollowup, setShsaiFollowup] = useState("");
   const [shsaiFollowupLoading, setShsaiFollowupLoading] = useState(false);
@@ -1107,6 +1107,7 @@ export default function AgentDashboard() {
                                 sessionId: shsaiSession.sessionId,
                                 trackId: shsaiSession.trackId,
                                 threadId: shsaiSession.threadId,
+                                deviceInfo: shsaiSession.deviceInfo,
                                 message: question,
                               });
                               const json = await res.json();

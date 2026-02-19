@@ -1160,13 +1160,14 @@ export async function registerRoutes(
         sessionId: z.string().min(1),
         trackId: z.string().min(1),
         threadId: z.string().min(1),
+        deviceInfo: z.string().min(1),
         message: z.string().min(1),
       }).safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Session info and message are required" });
       }
-      const { sessionId, trackId, threadId, message } = parsed.data;
-      const content = await sendFollowup(sessionId, trackId, threadId, message);
+      const { sessionId, trackId, threadId, deviceInfo, message } = parsed.data;
+      const content = await sendFollowup({ sessionId, trackId, threadId, deviceInfo }, message);
       return res.json({ success: true, data: { content } });
     } catch (error) {
       console.error("SHSAI followup error:", error);
