@@ -75,6 +75,9 @@ import {
   Sparkles,
   Mic,
   Trash2,
+  Globe,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -150,6 +153,9 @@ export default function AgentDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
   const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
+  const [shsaiVisible, setShsaiVisible] = useState(true);
+  const [shsaiKey, setShsaiKey] = useState(0);
+  const [shsaiPrompt, setShsaiPrompt] = useState<string | null>(null);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -216,6 +222,16 @@ export default function AgentDashboard() {
   useEffect(() => {
     setShowOriginalDesc(false);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (activeView === "stage2" && selectedId) {
+      const sub = submissions.find((s) => s.id === selectedId);
+      if (sub) {
+        setShsaiKey((k) => k + 1);
+        setShsaiPrompt(`Give me all orders for customer having sample service order number ${sub.serviceOrder}`);
+      }
+    }
+  }, [selectedId, activeView]);
 
   const warrantyCounstUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -780,7 +796,8 @@ export default function AgentDashboard() {
                   </div>
                 </div>
               ) : activeView === "stage2" ? (
-                <ScrollArea className="flex-1">
+                <div className="flex flex-1 min-h-0">
+                <ScrollArea className={shsaiVisible ? "w-[60%] border-r" : "flex-1"}>
                   <div className="p-6 max-w-3xl space-y-6">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
@@ -801,9 +818,22 @@ export default function AgentDashboard() {
                           )}
                         </p>
                       </div>
-                      <Badge variant="secondary" data-testid="badge-stage2-status">
-                        Stage 2 - Awaiting Auth
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" data-testid="badge-stage2-status">
+                          Stage 2 - Awaiting Auth
+                        </Badge>
+                        {!shsaiVisible && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShsaiVisible(true)}
+                            data-testid="button-show-shsai"
+                          >
+                            <PanelRightOpen className="w-4 h-4 mr-1" />
+                            Show Service History
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
                     <Card>
@@ -944,6 +974,66 @@ export default function AgentDashboard() {
                     </div>
                   </div>
                 </ScrollArea>
+                {shsaiVisible && (
+                  <div className="w-[40%] flex flex-col min-h-0" data-testid="panel-shsai">
+                    <div className="px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-semibold">SHSAI Service History</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setShsaiVisible(false)}
+                        data-testid="button-hide-shsai"
+                      >
+                        <PanelRightClose className="w-4 h-4 mr-1" />
+                        Hide
+                      </Button>
+                    </div>
+                    <div className="px-3 py-2 border-b flex flex-wrap gap-1.5">
+                      {[
+                        { label: "Order Info", prompt: `Give me order info for ${selectedSubmission.serviceOrder}` },
+                        { label: "Customer Info", prompt: `Give me customer info for ${selectedSubmission.serviceOrder}` },
+                        { label: "All Orders", prompt: `Give me all orders for customer having service order number ${selectedSubmission.serviceOrder}` },
+                        { label: "Protection Agreement", prompt: `Show protection agreement for ${selectedSubmission.serviceOrder}` },
+                        { label: "Warranty", prompt: `Show warranty info for ${selectedSubmission.serviceOrder}` },
+                        { label: "Pre-call Brief", prompt: `Give me pre-call brief for ${selectedSubmission.serviceOrder}` },
+                      ].map((action) => (
+                        <Button
+                          key={action.label}
+                          size="sm"
+                          variant="outline"
+                          className="text-xs"
+                          onClick={() => {
+                            setShsaiPrompt(action.prompt);
+                            setShsaiKey((k) => k + 1);
+                          }}
+                          data-testid={`button-shsai-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        >
+                          {action.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex-1 relative">
+                      <iframe
+                        key={`shsai-${selectedSubmission.id}-${shsaiKey}`}
+                        src={`https://routing.uat.tellurideplatform.com/?t=${Date.now()}-${shsaiKey}`}
+                        className="w-full h-full border-0"
+                        title="SHSAI Service History"
+                        data-testid="iframe-shsai"
+                        allow="clipboard-read; clipboard-write"
+                      />
+                    </div>
+                    {shsaiPrompt && (
+                      <div className="px-3 py-2 border-t bg-muted/30">
+                        <p className="text-xs text-muted-foreground">Last prompt sent:</p>
+                        <p className="text-xs font-mono truncate">{shsaiPrompt}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
               ) : (
                 <ScrollArea className="flex-1">
                   <div className="p-6 max-w-3xl space-y-6">
