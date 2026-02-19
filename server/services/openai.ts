@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o-mini" which is cost-effective for text enhancement
+// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ENHANCE_PROMPT = `You are a Sears appliance repair documentation assistant. Improve this technician's issue description for clarity and readability WITHOUT changing any of the content or meaning.
@@ -49,7 +49,7 @@ export async function enhanceDescription(
     .replace("{description}", description);
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
     max_completion_tokens: 2048,
