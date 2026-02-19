@@ -13,7 +13,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ## Project Architecture
 
 ### Database Tables
-- `users` - All users (technicians, vrs_agents, admins) with role-based access, isActive toggle
+- `users` - All users (technicians, vrs_agents, admins, super_admin) with role-based access, isActive toggle, isSystemAccount flag for protected accounts
 - `technicians` - Field technicians synced from Snowflake (ldapId, name, phone, district, managerName, techUnNo, isActive, lastSyncedAt)
 - `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride for LDAP techs)
 - `vrs_agent_specializations` - Agent division assignments
@@ -86,6 +86,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - tech1@vrs.com / tech123 (technician, tmorri1)
 - agent1@vrs.com / agent123 (vrs_agent, specializations: refrigeration, laundry)
 - agent2@vrs.com / agent123 (vrs_agent, generalist - all divisions)
+- VRS_MASTER / VRS!M@ster2026#Secure (super_admin, isSystemAccount=true, hidden from user list)
 
 ### Key Files
 - `client/src/lib/auth.tsx` - AuthContext, AuthProvider, useAuth hook, getToken
@@ -115,3 +116,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-11: Phase 5 complete - Admin dashboard with user management table (CRUD, status toggle), division assignment page with checkbox grid, separate /admin route, isActive field on users, deactivated login check
 - 2026-02-11: Phase 6 complete - PWA manifest (VRS Submit, Sears blue #003366), install prompt banner, admin analytics (submission counts, approval rates, processing times), confirmation modals for destructive actions (reject, deactivate), session expiration handling (401 redirect to login), user-facing 404 page
 - 2026-02-18: Snowflake technician sync + LDAP login - technicians table synced from Snowflake via key-pair auth, passwordless LDAP login flow with dual-tab login page, shadow user creation for FK compatibility, phone override support, admin technician sync dashboard section
+- 2026-02-19: Master admin account + super_admin role - isSystemAccount flag, VRS_MASTER account hidden from user list, protected from modification/deletion, super_admin bypasses all role checks, LDAP ID login with forced password change for CSV-imported users

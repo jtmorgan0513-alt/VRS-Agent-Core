@@ -129,12 +129,14 @@ const ROLE_BADGE_VARIANT: Record<string, "default" | "secondary" | "destructive"
   technician: "default",
   vrs_agent: "secondary",
   admin: "destructive",
+  super_admin: "destructive",
 };
 
 const ROLE_LABELS: Record<string, string> = {
   technician: "Technician",
   vrs_agent: "VRS Agent",
   admin: "Admin",
+  super_admin: "Super Admin",
 };
 
 function TechnicianSyncSection() {

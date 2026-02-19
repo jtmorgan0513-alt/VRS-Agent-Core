@@ -36,6 +36,15 @@ const SEED_USERS = [
     racId: null,
     specializations: ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "generalist"],
   },
+  {
+    email: "master@vrs.system",
+    password: "VRS!M@ster2026#Secure",
+    name: "System Administrator",
+    role: "super_admin",
+    phone: null,
+    racId: "VRS_MASTER",
+    isSystemAccount: true,
+  },
 ] as const;
 
 export async function seedDatabase() {
@@ -44,7 +53,7 @@ export async function seedDatabase() {
 
     if (!user) {
       const hashedPassword = await bcryptjs.hash(seedUser.password, 10);
-      user = await storage.createUser({
+      const createData: any = {
         email: seedUser.email,
         password: hashedPassword,
         name: seedUser.name,
@@ -52,7 +61,12 @@ export async function seedDatabase() {
         phone: seedUser.phone,
         racId: seedUser.racId,
         mustChangePassword: false,
-      });
+      };
+      if ("isSystemAccount" in seedUser) {
+        createData.isSystemAccount = true;
+        createData.mustChangePassword = false;
+      }
+      user = await storage.createUser(createData);
       console.log(`Seeded user: ${seedUser.email} (${seedUser.role})`);
     }
 

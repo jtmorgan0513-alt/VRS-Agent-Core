@@ -51,6 +51,11 @@ export function requireRole(...roles: string[]) {
       return;
     }
 
+    if (authReq.user.role === "super_admin") {
+      next();
+      return;
+    }
+
     if (!roles.includes(authReq.user.role)) {
       res.status(403).json({ error: "Access denied" });
       return;

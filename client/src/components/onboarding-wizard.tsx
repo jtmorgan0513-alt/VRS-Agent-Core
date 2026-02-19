@@ -131,7 +131,7 @@ const slidesByRole: Record<string, Slide[]> = {
 };
 
 interface OnboardingWizardProps {
-  role: "technician" | "vrs_agent" | "admin";
+  role: "technician" | "vrs_agent" | "admin" | "super_admin";
   open: boolean;
   onComplete: () => void;
 }

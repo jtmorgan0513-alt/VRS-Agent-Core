@@ -37,7 +37,13 @@ export default function LoginPage() {
         setMustChangePassword(true);
         setChangePasswordUser(user);
       } else {
-        setLocation("/");
+        if (user.role === "admin" || user.role === "super_admin") {
+          setLocation("/admin");
+        } else if (user.role === "vrs_agent") {
+          setLocation("/agent");
+        } else {
+          setLocation("/");
+        }
       }
     } catch (error: any) {
       toast({
@@ -80,7 +86,13 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to change password");
       }
       toast({ title: "Password Changed", description: "Your password has been updated successfully." });
-      setLocation("/");
+      if (changePasswordUser?.role === "admin" || changePasswordUser?.role === "super_admin") {
+        setLocation("/admin");
+      } else if (changePasswordUser?.role === "vrs_agent") {
+        setLocation("/agent");
+      } else {
+        setLocation("/");
+      }
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {

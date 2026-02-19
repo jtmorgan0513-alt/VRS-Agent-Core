@@ -20,7 +20,7 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   name: z.string().min(1),
-  role: z.enum(["technician", "vrs_agent", "admin"]),
+  role: z.enum(["technician", "vrs_agent", "admin", "super_admin"]),
   phone: z.string().optional(),
   racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
 });
@@ -477,7 +477,7 @@ export async function registerRoutes(
 
       const completedToday = req.query.completedToday === "true";
 
-      if (user.role === "vrs_agent" || user.role === "admin") {
+      if (user.role === "vrs_agent" || user.role === "admin" || user.role === "super_admin") {
         let result = await storage.getSubmissionsWithTechnician(filters, completedToday);
 
         const search = req.query.search as string | undefined;
@@ -857,7 +857,7 @@ export async function registerRoutes(
   app.get("/api/admin/users", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const users = await storage.getUsers();
-      const sanitizedUsers = users.map(sanitizeUser);
+      const sanitizedUsers = users.map(sanitizeUser).filter(u => !u.isSystemAccount);
       return res.status(200).json({ users: sanitizedUsers });
     } catch (error) {
       console.error("Admin get users error:", error);
@@ -870,7 +870,7 @@ export async function registerRoutes(
     email: z.string().email().optional(),
     phone: z.string().optional(),
     racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
-    role: z.enum(["technician", "vrs_agent", "admin"]).optional(),
+    role: z.enum(["technician", "vrs_agent", "admin", "super_admin"]).optional(),
     isActive: z.boolean().optional(),
     password: z.string().min(6).optional(),
     resetPassword: z.boolean().optional(),
@@ -891,6 +891,16 @@ export async function registerRoutes(
       const user = await storage.getUser(id);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isSystemAccount) {
+        const authReq = req as AuthenticatedRequest;
+        if (!authReq.user || authReq.user.role !== "super_admin") {
+          return res.status(403).json({ error: "System accounts cannot be modified" });
+        }
+        if (parsed.data.role !== undefined || parsed.data.isActive === false) {
+          return res.status(403).json({ error: "Cannot change role or deactivate system accounts" });
+        }
       }
 
       const updateData: Record<string, unknown> = {};

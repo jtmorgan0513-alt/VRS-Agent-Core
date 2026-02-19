@@ -11,7 +11,7 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   password: varchar("password", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
-  role: text("role").notNull(), // 'technician', 'vrs_agent', 'admin'
+  role: text("role").notNull(), // 'technician', 'vrs_agent', 'admin', 'super_admin'
   phone: varchar("phone", { length: 20 }),
   racId: varchar("rac_id", { length: 50 }),
   isActive: boolean("is_active").notNull().default(true),
@@ -20,6 +20,7 @@ export const users = pgTable("users", {
   lastRgcCodeEntry: date("last_rgc_code_entry"),
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   passwordChangedAt: timestamp("password_changed_at"),
+  isSystemAccount: boolean("is_system_account").notNull().default(false),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

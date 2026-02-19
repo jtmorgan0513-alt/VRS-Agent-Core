@@ -36,7 +36,7 @@ function TechRoute({ component: Component }: { component: React.ComponentType })
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent" />;
-  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
 
   return (
     <>
@@ -52,7 +52,7 @@ function AgentRoute() {
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
   if (user.role === "technician") return <Redirect to="/" />;
-  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
 
   return <AgentDashboard />;
 }
@@ -73,7 +73,7 @@ function AuthRoute() {
 
   if (isLoading) return null;
   if (user) {
-    if (user.role === "admin") return <Redirect to="/admin" />;
+    if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
     if (user.role === "vrs_agent") return <Redirect to="/agent" />;
     return <Redirect to="/" />;
   }
@@ -136,7 +136,7 @@ function OnboardingManager() {
   return (
     <div data-testid="onboarding-manager">
       <OnboardingWizard
-        role={user.role as "technician" | "vrs_agent" | "admin"}
+        role={user.role as "technician" | "vrs_agent" | "admin" | "super_admin"}
         open={showOnboarding}
         onComplete={handleWizardComplete}
       />
@@ -154,7 +154,7 @@ function HomeRedirect() {
 
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/login" />;
-  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent" />;
 
   return (
