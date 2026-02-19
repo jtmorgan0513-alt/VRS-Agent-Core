@@ -356,7 +356,7 @@ export async function registerRoutes(
   const createSubmissionSchema = z.object({
     serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
     applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"]),
-    requestType: z.enum(["authorization", "non_repairable_review", "infestation_non_accessible"]),
+    requestType: z.enum(["authorization", "infestation_non_accessible"]),
     warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
     warrantyProvider: z.string().optional(),
     issueDescription: z.string().min(1, "Issue description is required").max(2000, "Description must be 2000 characters or less"),

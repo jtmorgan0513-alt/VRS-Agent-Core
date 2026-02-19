@@ -466,7 +466,6 @@ export default function AgentDashboard() {
                   </SidebarMenuItem>
                   {[
                     { value: "authorization", label: "Authorization" },
-                    { value: "non_repairable_review", label: "Non-Repairable" },
                     { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
                   ].map((rt) => (
                     <SidebarMenuItem key={rt.value}>
@@ -729,17 +728,13 @@ export default function AgentDashboard() {
                                 Stage 1 approved {getTimeElapsed(sub.stage1ReviewedAt)} ago
                               </p>
                             )}
-                            {sub.requestType !== "authorization" && (
+                            {sub.requestType === "infestation_non_accessible" && (
                               <Badge
                                 variant="secondary"
-                                className={`mt-1 text-xs ${
-                                  sub.requestType === "non_repairable_review"
-                                    ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
-                                    : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                                }`}
+                                className="mt-1 text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
                                 data-testid={`badge-request-type-${sub.id}`}
                               >
-                                {sub.requestType === "non_repairable_review" ? "Non-Repairable" : "Infestation / Non-Accessible"}
+                                Infestation / Non-Accessible
                               </Badge>
                             )}
                             {sub.aiEnhanced && (
@@ -945,19 +940,15 @@ export default function AgentDashboard() {
                       <div className="flex items-center gap-2">
                         <Badge
                           className={
-                            selectedSubmission.requestType === "authorization"
-                              ? ""
-                              : selectedSubmission.requestType === "non_repairable_review"
-                              ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
-                              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                            selectedSubmission.requestType === "infestation_non_accessible"
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                              : ""
                           }
                           variant={selectedSubmission.requestType === "authorization" ? "default" : "secondary"}
                           data-testid="badge-request-type"
                         >
                           {selectedSubmission.requestType === "authorization"
                             ? "Authorization"
-                            : selectedSubmission.requestType === "non_repairable_review"
-                            ? "Non-Repairable Review"
                             : "Infestation / Non-Accessible"}
                         </Badge>
                         {getUrgencyLevel(selectedSubmission.createdAt!) !== "normal" && (

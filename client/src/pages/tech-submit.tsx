@@ -52,7 +52,7 @@ const submissionFormSchema = z.object({
   applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac"], {
     required_error: "Select an appliance type",
   }),
-  requestType: z.enum(["authorization", "non_repairable_review", "infestation_non_accessible"]),
+  requestType: z.enum(["authorization", "infestation_non_accessible"]),
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
@@ -431,8 +431,7 @@ export default function TechSubmitPage() {
                   </div>
                   <div className="space-y-2">
                     {[
-                      { value: "authorization", label: "Authorization", desc: "Request approval for repair costs" },
-                      { value: "non_repairable_review", label: "Non-Repairable", desc: "Unit cannot be repaired, needs replacement review" },
+                      { value: "authorization", label: "Authorization", desc: "Request approval for repairs or non-repairable determination" },
                       { value: "infestation_non_accessible", label: "Infestation / Non-Accessible", desc: "Unable to service due to infestation or access limitations" },
                     ].map((opt) => (
                       <button
@@ -614,7 +613,7 @@ export default function TechSubmitPage() {
                       <FormLabel>Issue Description *</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Describe the issue and required repair..."
+                          placeholder={watchedRequestType === "authorization" ? "Describe the issue and required repair. For non-repairable units, explain why the unit cannot be repaired." : "Describe the issue..."}
                           className="min-h-[100px]"
                           maxLength={2000}
                           {...field}
