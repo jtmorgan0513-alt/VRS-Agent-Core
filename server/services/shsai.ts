@@ -76,12 +76,64 @@ export async function sendPrompt(
   return await response.json();
 }
 
+export async function fetchAssistResponse(
+  sessionId: string,
+  trackId: string,
+  threadId: string
+): Promise<string> {
+  const response = await fetch(`${SHSAI_BASE_URL}/assist`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Sessionid: sessionId,
+    },
+    body: JSON.stringify({
+      chat_bot_type: "HS_ROUTE_ASSISTANT",
+      trackId,
+      thread_id: threadId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`SHSAI assist failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  if (Array.isArray(data)) {
+    const textContent = data
+      .filter((chunk: any) => chunk.type === "TEXT")
+      .map((chunk: any) => chunk.content)
+      .join("");
+    return textContent;
+  }
+
+  if (data && typeof data === "object" && data.content) {
+    return typeof data.content === "string" ? data.content : JSON.stringify(data.content, null, 2);
+  }
+
+  return typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
 export async function queryServiceOrder(
   agentUserId: string,
   serviceOrder: string
-): Promise<{ session: ShsaiSession; result: any }> {
+): Promise<{ session: ShsaiSession; content: string }> {
   const session = await initSession(agentUserId);
   const prompt = `Give me all orders for customer having sample service order number ${serviceOrder}`;
-  const result = await sendPrompt(session.sessionId, session.trackId, session.threadId, prompt);
-  return { session, result };
+  await sendPrompt(session.sessionId, session.trackId, session.threadId, prompt);
+  const content = await fetchAssistResponse(session.sessionId, session.trackId, session.threadId);
+  return { session, content };
+}
+
+export async function sendFollowup(
+  sessionId: string,
+  trackId: string,
+  threadId: string,
+  message: string
+): Promise<string> {
+  await sendPrompt(sessionId, trackId, threadId, message);
+  const content = await fetchAssistResponse(sessionId, trackId, threadId);
+  return content;
 }

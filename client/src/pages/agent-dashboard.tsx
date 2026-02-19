@@ -82,6 +82,7 @@ import {
   RefreshCw,
   MessageSquare,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import HelpTooltip from "@/components/help-tooltip";
 
 type SubmissionWithTech = Submission & {
@@ -246,7 +247,7 @@ export default function AgentDashboard() {
         const queryText = `Give me all orders for customer having sample service order number ${serviceOrder}`;
         setShsaiMessages([
           { role: "user", content: queryText },
-          { role: "assistant", content: typeof json.data.result === "string" ? json.data.result : JSON.stringify(json.data.result, null, 2) },
+          { role: "assistant", content: json.data.content || "" },
         ]);
       } else {
         setShsaiError(json.error || "Failed to query SHSAI");
@@ -1072,10 +1073,10 @@ export default function AgentDashboard() {
                                   </div>
                                 ) : (
                                   <Card>
-                                    <CardContent className="p-3">
-                                      <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed" data-testid={`shsai-response-${idx}`}>
-                                        {msg.content}
-                                      </pre>
+                                    <CardContent className="p-3" data-testid={`shsai-response-${idx}`}>
+                                      <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_strong]:font-semibold">
+                                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                      </div>
                                     </CardContent>
                                   </Card>
                                 )}
@@ -1110,8 +1111,7 @@ export default function AgentDashboard() {
                               });
                               const json = await res.json();
                               if (json.success) {
-                                const content = typeof json.data === "string" ? json.data : JSON.stringify(json.data, null, 2);
-                                setShsaiMessages((prev) => [...prev, { role: "assistant", content }]);
+                                setShsaiMessages((prev) => [...prev, { role: "assistant", content: json.data.content || "" }]);
                               } else {
                                 setShsaiMessages((prev) => [...prev, { role: "assistant", content: "Error: " + (json.error || "Failed to get response") }]);
                               }

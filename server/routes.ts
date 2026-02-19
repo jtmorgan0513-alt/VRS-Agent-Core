@@ -13,7 +13,7 @@ import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
-import { initSession, sendPrompt, queryServiceOrder } from "./services/shsai";
+import { queryServiceOrder, sendFollowup } from "./services/shsai";
 
 const JWT_SECRET = process.env.SESSION_SECRET!;
 
@@ -1166,8 +1166,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Session info and message are required" });
       }
       const { sessionId, trackId, threadId, message } = parsed.data;
-      const result = await sendPrompt(sessionId, trackId, threadId, message);
-      return res.json({ success: true, data: result });
+      const content = await sendFollowup(sessionId, trackId, threadId, message);
+      return res.json({ success: true, data: { content } });
     } catch (error) {
       console.error("SHSAI followup error:", error);
       return res.status(500).json({ success: false, error: "Failed to send follow-up" });
