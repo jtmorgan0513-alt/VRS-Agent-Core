@@ -89,6 +89,7 @@ import HelpTooltip from "@/components/help-tooltip";
 type SubmissionWithTech = Submission & {
   technicianName: string;
   technicianPhone: string | null;
+  assignedAgentName: string | null;
 };
 
 const DIVISION_LABELS: Record<string, string> = {
@@ -815,9 +816,9 @@ export default function AgentDashboard() {
                                 </Badge>
                               )}
                             </div>
-                            {activeView === "stage2" && sub.stage1ReviewedAt && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Approved by you at {new Date(sub.stage1ReviewedAt).toLocaleTimeString()}
+                            {sub.assignedAgentName && (
+                              <p className="text-xs text-muted-foreground mt-1" data-testid={`text-assigned-${sub.id}`}>
+                                Assigned to: {sub.assignedAgentName}
                               </p>
                             )}
                             {sub.requestType === "infestation_non_accessible" && (
@@ -923,7 +924,7 @@ export default function AgentDashboard() {
                             <p className="font-medium text-sm">Stage 1 Approved</p>
                             <p className="text-xs text-muted-foreground">
                               {selectedSubmission.stage1ReviewedAt && (
-                                <>Approved {selectedSubmission.stage1ReviewedBy ? `by Agent` : ""} at {new Date(selectedSubmission.stage1ReviewedAt).toLocaleString()}</>
+                                <>Approved {selectedSubmission.assignedAgentName ? `by ${selectedSubmission.assignedAgentName}` : ""} at {new Date(selectedSubmission.stage1ReviewedAt).toLocaleString()}</>
                               )}
                               {" \u2022 Tech notified and cleared to move on"}
                             </p>

@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, and, or, desc, sql, isNull, inArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   users,
   InsertUser,
@@ -67,7 +68,7 @@ export interface IStorage {
     assignedTo?: number;
     requestType?: string;
     divisionFilter?: string[];
-  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]>;
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]>;
   updateSubmission(
     id: number,
     data: Partial<InsertSubmission>
@@ -299,7 +300,7 @@ export class DatabaseStorage implements IStorage {
     assignedTo?: number;
     requestType?: string;
     divisionFilter?: string[];
-  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null })[]> {
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]> {
     const conditions: ReturnType<typeof eq>[] = [];
 
     if (filters?.technicianId !== undefined) {
@@ -336,6 +337,8 @@ export class DatabaseStorage implements IStorage {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+    const assignedAgent = alias(users, "assignedAgent");
+
     const result = await db
       .select({
         submission: submissions,
@@ -343,10 +346,12 @@ export class DatabaseStorage implements IStorage {
         technicianPhone: users.phone,
         ldapTechName: technicians.name,
         ldapTechPhone: technicians.phone,
+        assignedAgentName: assignedAgent.name,
       })
       .from(submissions)
       .innerJoin(users, eq(submissions.technicianId, users.id))
       .leftJoin(technicians, eq(submissions.technicianLdapId, technicians.ldapId))
+      .leftJoin(assignedAgent, eq(submissions.assignedTo, assignedAgent.id))
       .where(whereClause)
       .orderBy(desc(submissions.createdAt));
 
@@ -354,6 +359,7 @@ export class DatabaseStorage implements IStorage {
       ...r.submission,
       technicianName: r.ldapTechName || r.technicianName,
       technicianPhone: r.submission.phoneOverride || r.ldapTechPhone || r.technicianPhone,
+      assignedAgentName: r.assignedAgentName,
     }));
   }
 
