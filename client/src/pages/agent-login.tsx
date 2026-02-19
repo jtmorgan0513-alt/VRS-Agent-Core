@@ -40,8 +40,7 @@ export default function AgentLoginPage() {
     );
   }
 
-  if (user && user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
-  if (user && (user.role === "admin" || user.role === "super_admin")) return <Redirect to="/admin/dashboard" />;
+  if (user && (user.role === "vrs_agent" || user.role === "admin" || user.role === "super_admin")) return <Redirect to="/agent/dashboard" />;
   if (user && user.role === "technician") return <Redirect to="/tech" />;
 
   async function handleAgentSubmit(e: React.FormEvent) {

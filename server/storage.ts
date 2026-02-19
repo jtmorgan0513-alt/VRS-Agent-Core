@@ -71,10 +71,10 @@ export interface IStorage {
     data: Partial<InsertSubmission>
   ): Promise<Submission | undefined>;
   deleteSubmission(id: number): Promise<boolean>;
-  getAgentQueueCount(agentId: number): Promise<number>;
-  getCompletedTodayCount(agentId: number): Promise<number>;
+  getAgentQueueCount(agentId?: number): Promise<number>;
+  getCompletedTodayCount(agentId?: number): Promise<number>;
 
-  getStage2QueueCount(agentId: number): Promise<number>;
+  getStage2QueueCount(agentId?: number): Promise<number>;
   getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]>;
 
   // SMS methods
@@ -345,56 +345,58 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getCompletedTodayCount(agentId: number): Promise<number> {
+  async getCompletedTodayCount(agentId?: number): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const conditions = [
+      or(
+        eq(submissions.stage1Status, "approved"),
+        eq(submissions.stage1Status, "rejected")
+      ),
+      sql`${submissions.stage1ReviewedAt} >= ${today}`,
+    ];
+    if (agentId !== undefined) {
+      conditions.push(eq(submissions.assignedTo, agentId));
+    }
     const result = await db
       .select({ count: sql<number>`count(*)` })
       .from(submissions)
-      .where(
-        and(
-          eq(submissions.assignedTo, agentId),
-          or(
-            eq(submissions.stage1Status, "approved"),
-            eq(submissions.stage1Status, "rejected")
-          ),
-          sql`${submissions.stage1ReviewedAt} >= ${today}`
-        )
-      );
+      .where(and(...conditions));
     return result[0]?.count || 0;
   }
 
-  async getAgentQueueCount(agentId: number): Promise<number> {
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(submissions)
-      .where(
+  async getAgentQueueCount(agentId?: number): Promise<number> {
+    const conditions = [
+      or(
+        eq(submissions.stage1Status, "pending"),
         and(
-          eq(submissions.assignedTo, agentId),
-          or(
-            eq(submissions.stage1Status, "pending"),
-            and(
-              eq(submissions.stage1Status, "approved"),
-              eq(submissions.stage2Status, "pending")
-            )
-          )
-        )
-      );
-
-    return result[0]?.count || 0;
-  }
-
-  async getStage2QueueCount(agentId: number): Promise<number> {
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(submissions)
-      .where(
-        and(
-          eq(submissions.assignedTo, agentId),
           eq(submissions.stage1Status, "approved"),
           eq(submissions.stage2Status, "pending")
         )
-      );
+      ),
+    ];
+    if (agentId !== undefined) {
+      conditions.push(eq(submissions.assignedTo, agentId));
+    }
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(...conditions));
+    return result[0]?.count || 0;
+  }
+
+  async getStage2QueueCount(agentId?: number): Promise<number> {
+    const conditions = [
+      eq(submissions.stage1Status, "approved"),
+      eq(submissions.stage2Status, "pending"),
+    ];
+    if (agentId !== undefined) {
+      conditions.push(eq(submissions.assignedTo, agentId));
+    }
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(...conditions));
     return result[0]?.count || 0;
   }
 

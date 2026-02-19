@@ -81,6 +81,7 @@ import {
   Loader2,
   RefreshCw,
   MessageSquare,
+  ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import HelpTooltip from "@/components/help-tooltip";
@@ -142,7 +143,8 @@ export default function AgentDashboard() {
   const [, navigate] = useLocation();
   const [activeView, setActiveView] = useState<"stage1" | "stage2" | "completed">("stage1");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [myAssignments, setMyAssignments] = useState(true);
+  const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
+  const [myAssignments, setMyAssignments] = useState(!isAdminViewing);
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -596,6 +598,18 @@ export default function AgentDashboard() {
           </SidebarContent>
 
           <SidebarFooter className="p-4 space-y-1">
+            {(user?.role === "admin" || user?.role === "super_admin") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => navigate("/admin/dashboard")}
+                data-testid="nav-back-to-admin"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Admin</span>
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

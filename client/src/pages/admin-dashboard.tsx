@@ -87,6 +87,7 @@ import {
   Database,
   Loader2,
   Trash2,
+  ClipboardList,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -578,6 +579,22 @@ export default function AdminDashboard() {
                     >
                       <Database className="w-4 h-4" />
                       <span>Technician Sync</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Views</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => navigate("/agent/dashboard")}
+                      data-testid="nav-agent-view"
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                      <span>Agent Queue View</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>

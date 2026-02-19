@@ -16,7 +16,9 @@ export default function TechLoginPage() {
   const [techInfo, setTechInfo] = useState<any>(null);
   const [phoneChanged, setPhoneChanged] = useState(false);
   const [newPhone, setNewPhone] = useState("");
-  const { user, isLoading: authLoading, techLogin } = useAuth();
+  const [showPasswordField, setShowPasswordField] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const { user, isLoading: authLoading, techLogin, login } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -33,20 +35,37 @@ export default function TechLoginPage() {
 
   if (user && user.role === "technician") return <Redirect to="/tech" />;
   if (user && user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
-  if (user && (user.role === "admin" || user.role === "super_admin")) return <Redirect to="/admin/dashboard" />;
+  if (user && (user.role === "admin" || user.role === "super_admin")) return <Redirect to="/tech" />;
 
   async function handleTechSubmit(e: React.FormEvent) {
     e.preventDefault();
     setIsLoading(true);
     try {
+      if (showPasswordField) {
+        const u = await login(ldapId.trim(), adminPassword);
+        if (u.role === "admin" || u.role === "super_admin") {
+          setLocation("/tech");
+          return;
+        }
+        setLocation("/tech");
+        return;
+      }
       const result = await techLogin(ldapId.toLowerCase().trim());
       setTechInfo(result.technician);
     } catch (error: any) {
-      toast({
-        title: "Login Failed",
-        description: error.message || "ID not found or inactive",
-        variant: "destructive",
-      });
+      if (!showPasswordField && error.message && error.message.includes("not found")) {
+        setShowPasswordField(true);
+        toast({
+          title: "Not a Technician",
+          description: "Not found as technician. If you're an admin, enter your password below.",
+        });
+      } else {
+        toast({
+          title: "Login Failed",
+          description: error.message || "ID not found or inactive",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -168,7 +187,22 @@ export default function TechLoginPage() {
                 />
                 <p className="text-xs text-muted-foreground">Enter your LDAP ID to sign in. No password required.</p>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading || !ldapId.trim()} data-testid="button-tech-login">
+              {showPasswordField && (
+                <div className="space-y-2">
+                  <Label htmlFor="admin-password">Password</Label>
+                  <Input
+                    id="admin-password"
+                    type="password"
+                    placeholder="Enter admin password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    required
+                    data-testid="input-tech-admin-password"
+                  />
+                  <p className="text-xs text-muted-foreground">Not found as technician. If you're an admin, enter your password above.</p>
+                </div>
+              )}
+              <Button type="submit" className="w-full" disabled={isLoading || !ldapId.trim() || (showPasswordField && !adminPassword)} data-testid="button-tech-login">
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

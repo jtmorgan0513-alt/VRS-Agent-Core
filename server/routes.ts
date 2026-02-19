@@ -653,7 +653,7 @@ export async function registerRoutes(
     rejectionReason: z.string().optional(),
   });
 
-  app.patch("/api/submissions/:id/stage1", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.patch("/api/submissions/:id/stage1", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const id = parseInt(req.params.id as string);
@@ -671,7 +671,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Submission not found" });
       }
 
-      if (submission.assignedTo !== authReq.user!.id) {
+      if (submission.assignedTo !== authReq.user!.id && authReq.user!.role !== "admin" && authReq.user!.role !== "super_admin") {
         return res.status(403).json({ error: "Not assigned to you" });
       }
 
@@ -715,10 +715,12 @@ export async function registerRoutes(
   // AGENT STATS ROUTE
   // ========================================================================
 
-  app.get("/api/agent/stats", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.get("/api/agent/stats", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
-      const userId = authReq.user!.id;
+      const userRole = authReq.user!.role;
+      const useAllQueue = req.query.allQueue === "true" || userRole === "admin" || userRole === "super_admin";
+      const userId = useAllQueue ? undefined : authReq.user!.id;
 
       const queueCount = await storage.getAgentQueueCount(userId);
       const completedToday = await storage.getCompletedTodayCount(userId);
@@ -739,7 +741,7 @@ export async function registerRoutes(
     authCode: z.string().min(1, "Authorization code is required"),
   });
 
-  app.delete("/api/submissions/:id", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.delete("/api/submissions/:id", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid submission ID" });
@@ -757,7 +759,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/submissions/:id/stage2", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.patch("/api/submissions/:id/stage2", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const id = parseInt(req.params.id as string);
@@ -775,7 +777,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Submission not found" });
       }
 
-      if (submission.assignedTo !== authReq.user!.id) {
+      if (submission.assignedTo !== authReq.user!.id && authReq.user!.role !== "admin" && authReq.user!.role !== "super_admin") {
         return res.status(403).json({ error: "Not assigned to you" });
       }
 
@@ -824,7 +826,7 @@ export async function registerRoutes(
   // WARRANTY PROVIDER COUNTS
   // ========================================================================
 
-  app.get("/api/agent/warranty-counts", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.get("/api/agent/warranty-counts", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const assignedTo = req.query.allQueue === "true" ? undefined : authReq.user!.id;
@@ -892,7 +894,7 @@ export async function registerRoutes(
     code: z.string().regex(/^\d{5}$/, "Must be exactly 5 digits"),
   });
 
-  app.post("/api/agent/verify-rgc", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.post("/api/agent/verify-rgc", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const parsed = verifyRgcSchema.safeParse(req.body);
@@ -920,7 +922,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/agent/rgc-status", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.get("/api/agent/rgc-status", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const user = await storage.getUser(authReq.user!.id);

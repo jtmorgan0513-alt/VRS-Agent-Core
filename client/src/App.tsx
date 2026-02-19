@@ -38,7 +38,6 @@ function TechRoute({ component: Component }: { component: React.ComponentType })
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/tech/login" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
-  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin/dashboard" />;
   return (
     <>
       <Component />
@@ -52,7 +51,6 @@ function AgentRoute() {
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/agent/login" />;
   if (user.role === "technician") return <Redirect to="/tech" />;
-  if (user.role === "admin" || user.role === "super_admin") return <Redirect to="/admin/dashboard" />;
   return <AgentDashboard />;
 }
 
