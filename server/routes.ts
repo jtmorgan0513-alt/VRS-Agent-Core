@@ -11,7 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 
@@ -116,6 +116,101 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Login error:", error);
       return res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // ========================================================================
+  // FORGOT / RESET PASSWORD (PUBLIC - no auth required)
+  // ========================================================================
+
+  const forgotPasswordSchema = z.object({
+    identifier: z.string().min(1),
+  });
+
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const parsed = forgotPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const genericMessage = "If your LDAP ID is on file and has a phone number, you will receive a reset code via SMS.";
+
+      const user = await storage.getUserByRacId(parsed.data.identifier);
+      if (!user || !user.phone) {
+        return res.status(200).json({ message: genericMessage });
+      }
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const hashedCode = await bcryptjs.hash(code, 10);
+      const expires = new Date(Date.now() + 15 * 60 * 1000);
+
+      await storage.updateUser(user.id, {
+        passwordResetToken: hashedCode,
+        passwordResetExpires: expires,
+      } as any);
+
+      const smsBody = `VRS Password Reset - Your reset code is: ${code}. This code expires in 15 minutes.`;
+      try {
+        await sendSmsMessage(user.phone, smsBody);
+      } catch (smsErr: any) {
+        console.error("Forgot password SMS error:", smsErr.message);
+      }
+
+      return res.status(200).json({ message: genericMessage });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      return res.status(500).json({ error: "An error occurred" });
+    }
+  });
+
+  const resetPasswordSchema = z.object({
+    identifier: z.string().min(1),
+    code: z.string().min(1),
+    newPassword: z.string().min(8).regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/,
+      "Password must contain at least 8 characters, 1 uppercase, 1 lowercase, 1 number, and 1 special character (!@#$%^&*)"
+    ),
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const parsed = resetPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const user = await storage.getUserByRacId(parsed.data.identifier);
+      if (!user) {
+        return res.status(400).json({ error: "Invalid or expired reset code" });
+      }
+
+      if (!user.passwordResetToken || !user.passwordResetExpires) {
+        return res.status(400).json({ error: "Invalid or expired reset code" });
+      }
+
+      if (new Date() > new Date(user.passwordResetExpires)) {
+        return res.status(400).json({ error: "Invalid or expired reset code" });
+      }
+
+      const codeMatch = await bcryptjs.compare(parsed.data.code, user.passwordResetToken);
+      if (!codeMatch) {
+        return res.status(400).json({ error: "Invalid or expired reset code" });
+      }
+
+      const hashedPassword = await bcryptjs.hash(parsed.data.newPassword, 10);
+      await storage.updateUser(user.id, {
+        password: hashedPassword,
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      } as any);
+
+      return res.status(200).json({ message: "Password updated successfully" });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      return res.status(500).json({ error: "An error occurred" });
     }
   });
 
@@ -947,6 +1042,10 @@ export async function registerRoutes(
         updateData.password = hashedPassword;
       }
       if (parsed.data.resetPassword === true) {
+        const authReq = req as AuthenticatedRequest;
+        if (authReq.user?.role === "admin" && user.role !== "vrs_agent" && user.role !== "technician") {
+          return res.status(403).json({ error: "Admins can only reset passwords for agents and technicians" });
+        }
         const hashedPassword = await bcryptjs.hash("VRS2026!", 10);
         updateData.password = hashedPassword;
         updateData.mustChangePassword = true;

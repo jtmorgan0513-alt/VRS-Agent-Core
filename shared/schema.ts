@@ -21,6 +21,8 @@ export const users = pgTable("users", {
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   passwordChangedAt: timestamp("password_changed_at"),
   isSystemAccount: boolean("is_system_account").notNull().default(false),
+  passwordResetToken: varchar("password_reset_token", { length: 100 }),
+  passwordResetExpires: timestamp("password_reset_expires"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

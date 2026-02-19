@@ -12,6 +12,31 @@ function getTwilioClient() {
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
 
+export async function sendSmsMessage(
+  recipientPhone: string,
+  messageBody: string
+): Promise<{ success: boolean; twilioSid?: string; error?: string }> {
+  const client = getTwilioClient();
+
+  if (client && TWILIO_PHONE_NUMBER) {
+    try {
+      const message = await client.messages.create({
+        body: messageBody,
+        from: TWILIO_PHONE_NUMBER,
+        to: recipientPhone,
+      });
+      console.log(`[SMS] Sent to ${recipientPhone}, SID: ${message.sid}`);
+      return { success: true, twilioSid: message.sid };
+    } catch (err: any) {
+      console.error("Twilio SMS error:", err.message);
+      return { success: false, error: err.message };
+    }
+  } else {
+    console.log(`[SMS MOCK] To: ${recipientPhone} | Body: ${messageBody}`);
+    return { success: true, twilioSid: `MOCK_${Date.now()}` };
+  }
+}
+
 export async function sendSms(
   submissionId: number,
   recipientPhone: string,
