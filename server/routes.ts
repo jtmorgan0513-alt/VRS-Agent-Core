@@ -1064,6 +1064,35 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/admin/users/:id", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+      }
+
+      const user = await storage.getUser(id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isSystemAccount) {
+        return res.status(403).json({ error: "System accounts cannot be deleted" });
+      }
+
+      if (authReq.user?.role === "admin" && user.role !== "vrs_agent" && user.role !== "technician") {
+        return res.status(403).json({ error: "Admins can only delete agents and technicians" });
+      }
+
+      await storage.deleteUser(id);
+      return res.status(200).json({ message: "User deleted successfully" });
+    } catch (error) {
+      console.error("Admin delete user error:", error);
+      return res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
   app.get("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);

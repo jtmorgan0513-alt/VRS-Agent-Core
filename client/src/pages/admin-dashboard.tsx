@@ -86,6 +86,7 @@ import {
   Key,
   Database,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -269,6 +270,7 @@ export default function AdminDashboard() {
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
   const [resetPwConfirm, setResetPwConfirm] = useState<{ id: number; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
   const [rgcDate, setRgcDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rgcDigits, setRgcDigits] = useState("");
 
@@ -366,6 +368,21 @@ export default function AdminDashboard() {
       toast({ title: "Password Reset", description: "User must change password on next login." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       setResetPwConfirm(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const res = await apiRequest("DELETE", `/api/admin/users/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "User Deleted", description: "User deleted successfully." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setDeleteConfirm(null);
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -724,6 +741,17 @@ export default function AdminDashboard() {
                               >
                                 <Key className="w-4 h-4" />
                               </Button>
+                              {!u.isSystemAccount && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-red-600 dark:text-red-400 hover-elevate"
+                                  onClick={() => setDeleteConfirm({ id: u.id, name: u.name })}
+                                  data-testid={`button-delete-user-${u.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1249,6 +1277,30 @@ export default function AdminDashboard() {
               data-testid="button-confirm-reset-pw"
             >
               Reset Password
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent data-testid="dialog-delete-user">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete <strong>{deleteConfirm?.name}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteConfirm) {
+                  deleteUserMutation.mutate({ id: deleteConfirm.id });
+                }
+              }}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
