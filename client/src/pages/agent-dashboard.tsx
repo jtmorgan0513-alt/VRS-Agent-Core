@@ -244,7 +244,8 @@ export default function AgentDashboard() {
       const json = await res.json();
       if (json.success) {
         setShsaiSession(json.data.session);
-        const queryText = `Give me all orders for customer having sample service order number ${serviceOrder}`;
+        const soNumber = serviceOrder.includes("-") ? serviceOrder.split("-").pop()! : serviceOrder;
+        const queryText = `Give me all orders for customer having sample service order number ${soNumber}`;
         setShsaiMessages([
           { role: "user", content: queryText },
           { role: "assistant", content: json.data.content || "" },
