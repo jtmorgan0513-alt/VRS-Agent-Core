@@ -112,7 +112,8 @@ export async function queryServiceOrder(
   serviceOrder: string
 ): Promise<{ session: ShsaiSession; content: string }> {
   const session = await initSession(agentUserId);
-  const prompt = `Give me all orders for customer having sample service order number ${serviceOrder}`;
+  const soNumber = serviceOrder.includes("-") ? serviceOrder.split("-").pop()! : serviceOrder;
+  const prompt = `Give me all orders for customer having sample service order number ${soNumber}`;
   const content = await sseAssist(session, prompt);
   return { session, content };
 }
