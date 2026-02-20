@@ -324,9 +324,9 @@ export default function AgentDashboard() {
 
   const stage2Mutation = useMutation({
     mutationFn: async (submissionId: number) => {
-      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage2`, {
-        authCode,
-      });
+      const submission = submissions.find(s => s.id === submissionId);
+      const body = submission?.warrantyType === "sears_protect" ? {} : { authCode };
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage2`, body);
       return res.json();
     },
     onSuccess: () => {
@@ -1055,42 +1055,55 @@ export default function AgentDashboard() {
                         </span>
                       </div>
 
-                      {selectedSubmission.warrantyType === "sears_protect" && (
-                        <div className="mb-4 space-y-2">
-                          <Label className="text-xs text-muted-foreground">RGC Code</Label>
+                      {selectedSubmission.warrantyType === "sears_protect" ? (
+                        <div>
                           {rgcMissing ? (
-                            <p className="text-sm text-destructive" data-testid="text-rgc-not-set">
+                            <p className="text-sm text-destructive mb-3" data-testid="text-rgc-not-set">
                               No RGC code has been set for today. Please contact an administrator.
                             </p>
                           ) : (
-                            <Input
-                              value={todaysRgcCode || ""}
-                              readOnly
-                              className="font-mono bg-muted"
-                              data-testid="input-rgc-readonly"
-                            />
+                            <div className="mb-3 space-y-2">
+                              <Label className="text-xs text-muted-foreground">Today's RGC Code (Auth Code)</Label>
+                              <Input
+                                value={todaysRgcCode || ""}
+                                readOnly
+                                className="font-mono bg-muted"
+                                data-testid="input-rgc-readonly"
+                              />
+                              <p className="text-xs text-muted-foreground">For Sears Protect, the RGC code is the authorization code.</p>
+                            </div>
                           )}
+                          <Button
+                            onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
+                            disabled={stage2Mutation.isPending || rgcMissing || !todaysRgcCode}
+                            data-testid="button-send-code"
+                          >
+                            <Send className="w-4 h-4" />
+                            {stage2Mutation.isPending ? "Sending..." : "Send RGC Code to Tech"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-3">Authorization Code from {getWarrantyLabel(selectedSubmission)}</p>
+                          <div className="flex items-center gap-3">
+                            <Input
+                              placeholder="WRN-000000"
+                              value={authCode}
+                              onChange={(e) => setAuthCode(e.target.value)}
+                              data-testid="input-auth-code"
+                              className="flex-1"
+                            />
+                            <Button
+                              onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
+                              disabled={!authCode.trim() || stage2Mutation.isPending}
+                              data-testid="button-send-code"
+                            >
+                              <Send className="w-4 h-4" />
+                              {stage2Mutation.isPending ? "Sending..." : "Send Code to Tech"}
+                            </Button>
+                          </div>
                         </div>
                       )}
-
-                      <p className="text-xs text-muted-foreground mb-3">Authorization Code from {getWarrantyLabel(selectedSubmission)}</p>
-                      <div className="flex items-center gap-3">
-                        <Input
-                          placeholder="WRN-000000"
-                          value={authCode}
-                          onChange={(e) => setAuthCode(e.target.value)}
-                          data-testid="input-auth-code"
-                          className="flex-1"
-                        />
-                        <Button
-                          onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
-                          disabled={!authCode.trim() || stage2Mutation.isPending || (selectedSubmission.warrantyType === "sears_protect" && (rgcMissing || !todaysRgcCode))}
-                          data-testid="button-send-code"
-                        >
-                          <Send className="w-4 h-4" />
-                          {stage2Mutation.isPending ? "Sending..." : "Send Code to Tech"}
-                        </Button>
-                      </div>
                     </div>
                   </div>
                 </ScrollArea>

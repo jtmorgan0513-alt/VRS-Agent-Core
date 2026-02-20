@@ -92,7 +92,7 @@ export function buildStage1RejectedMessage(serviceOrder: string, reason: string)
 
 export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null): string {
   if (rgcCode) {
-    return `VRS Authorization for SO#${serviceOrder}\nRGC Code: ${rgcCode}\nAuth Code: ${authCode}\nEnter both codes in TechHub to complete the job.`;
+    return `VRS Authorization for SO#${serviceOrder}\nYour RGC/Auth Code: ${rgcCode}\nEnter this code in TechHub to complete the job.`;
   }
   return `VRS Authorization Code: Your auth code for SO# ${serviceOrder} is: ${authCode}. Please use this code to proceed with the repair.`;
 }

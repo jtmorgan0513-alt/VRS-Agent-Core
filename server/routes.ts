@@ -764,7 +764,7 @@ export async function registerRoutes(
   // ========================================================================
 
   const stage2ActionSchema = z.object({
-    authCode: z.string().min(1, "Authorization code is required"),
+    authCode: z.string().optional(),
   });
 
   app.delete("/api/submissions/:id", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -854,18 +854,23 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Stage 2 already processed" });
       }
 
-      const { authCode } = parsed.data;
+      let { authCode } = parsed.data;
 
       const todayStr = new Date().toISOString().slice(0, 10);
-      let todayRgcCode = null as Awaited<ReturnType<typeof storage.getDailyRgcCode>> | null;
+      let rgcCode: string | null = null;
+
       if (submission.warrantyType === "sears_protect") {
-        todayRgcCode = await storage.getDailyRgcCode(todayStr) || null;
+        const todayRgcCode = await storage.getDailyRgcCode(todayStr);
         if (!todayRgcCode) {
           return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
         }
+        rgcCode = todayRgcCode.code;
+        authCode = rgcCode;
+      } else {
+        if (!authCode || !authCode.trim()) {
+          return res.status(400).json({ error: "Authorization code is required" });
+        }
       }
-
-      const rgcCode = todayRgcCode?.code || null;
 
       const updated = await storage.updateSubmission(id, {
         authCode,
@@ -876,8 +881,7 @@ export async function registerRoutes(
         updatedAt: new Date(),
       } as any);
 
-      const rgcCodeForSms = submission.warrantyType === "sears_protect" ? (todayRgcCode?.code || null) : null;
-      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode, rgcCodeForSms);
+      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode!, rgcCode);
       await sendSms(submission.id, submission.phone, "auth_code_sent", smsMessage);
 
       return res.status(200).json({ submission: updated });
