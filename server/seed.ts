@@ -1,5 +1,7 @@
 import bcryptjs from "bcryptjs";
 import { storage } from "./storage";
+import { db } from "./db";
+import { technicians } from "@shared/schema";
 
 const SEED_USERS = [
   {
@@ -45,6 +47,31 @@ const SEED_USERS = [
     racId: "VRS_MASTER",
     isSystemAccount: true,
   },
+  {
+    email: null,
+    password: "TestTech2026!",
+    name: "Test Tech",
+    role: "technician",
+    phone: "5550001111",
+    racId: "testtech1",
+  },
+  {
+    email: null,
+    password: "TestAgent2026!",
+    name: "Test Agent",
+    role: "vrs_agent",
+    phone: "5550002222",
+    racId: "testagent1",
+    specializations: ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "generalist"],
+  },
+  {
+    email: null,
+    password: "TestAdmin2026!",
+    name: "Test Admin",
+    role: "admin",
+    phone: "5550003333",
+    racId: "TESTADMIN",
+  },
 ] as const;
 
 export async function seedDatabase() {
@@ -76,6 +103,27 @@ export async function seedDatabase() {
         await storage.setSpecializations(user.id, [...seedUser.specializations]);
         console.log(`Seeded specializations for: ${seedUser.name}`);
       }
+    }
+  }
+
+  const testTechEntries = [
+    { ldapId: "testtech1", name: "Test Tech", phone: "5550001111", district: "TEST", techUnNo: "T0001" },
+    { ldapId: "tmorri1", name: "Tyler Morrison", phone: "9105550147", district: "TEST", techUnNo: "T0002" },
+  ];
+  for (const tech of testTechEntries) {
+    try {
+      await storage.upsertTechnician({
+        ldapId: tech.ldapId,
+        name: tech.name,
+        phone: tech.phone,
+        district: tech.district,
+        managerName: "Test Manager",
+        techUnNo: tech.techUnNo,
+        isActive: true,
+      });
+      console.log(`Seeded technician: ${tech.name} / ${tech.ldapId}`);
+    } catch (e) {
+      // Already exists
     }
   }
 }
