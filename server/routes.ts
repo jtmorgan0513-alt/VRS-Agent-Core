@@ -1228,6 +1228,104 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // CSV EXPORT ROUTE (Admin)
+  // ========================================================================
+
+  app.get("/api/admin/export-csv", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const range = (req.query.range as string) || "all";
+      const now = new Date();
+      let startDate: Date | null = null;
+
+      if (range === "today") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      } else if (range === "week") {
+        const day = now.getDay();
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+      } else if (range === "month") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      const allSubmissions = await storage.getAllSubmissions(startDate);
+
+      const userCache: Record<number, string> = {};
+      const getUserName = async (userId: number | null): Promise<string> => {
+        if (!userId) return "";
+        if (userCache[userId]) return userCache[userId];
+        const u = await storage.getUser(userId);
+        userCache[userId] = u?.name || "";
+        return userCache[userId];
+      };
+
+      const headers = [
+        "ID", "Service Order", "Technician LDAP", "Technician Name", "Phone",
+        "District", "Appliance Type", "Request Type", "Warranty Type", "Warranty Provider",
+        "Issue Description", "Estimate Amount",
+        "Stage 1 Status", "Stage 1 Reviewed By", "Stage 1 Reviewed At", "Stage 1 Rejection Reason",
+        "Stage 2 Status", "Stage 2 Reviewed By", "Stage 2 Reviewed At",
+        "Auth Code", "RGC Code", "Assigned To",
+        "Created At", "Updated At"
+      ];
+
+      const escCsv = (val: any): string => {
+        if (val === null || val === undefined) return "";
+        const str = String(val);
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const rows: string[] = [headers.join(",")];
+
+      for (const s of allSubmissions) {
+        const techName = await getUserName(s.technicianId);
+        const s1Reviewer = await getUserName(s.stage1ReviewedBy);
+        const s2Reviewer = await getUserName(s.stage2ReviewedBy);
+        const assignedName = await getUserName(s.assignedTo);
+
+        rows.push([
+          s.id,
+          escCsv(s.serviceOrder),
+          escCsv(s.technicianLdapId || s.racId),
+          escCsv(techName),
+          escCsv(s.phone),
+          escCsv(s.districtCode),
+          escCsv(s.applianceType),
+          escCsv(s.requestType),
+          escCsv(s.warrantyType),
+          escCsv(s.warrantyProvider),
+          escCsv(s.issueDescription),
+          escCsv(s.estimateAmount),
+          escCsv(s.stage1Status),
+          escCsv(s1Reviewer),
+          s.stage1ReviewedAt ? new Date(s.stage1ReviewedAt).toISOString() : "",
+          escCsv(s.stage1RejectionReason),
+          escCsv(s.stage2Status),
+          escCsv(s2Reviewer),
+          s.stage2ReviewedAt ? new Date(s.stage2ReviewedAt).toISOString() : "",
+          escCsv(s.authCode),
+          escCsv(s.rgcCode),
+          escCsv(assignedName),
+          s.createdAt ? new Date(s.createdAt).toISOString() : "",
+          s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
+        ].join(","));
+      }
+
+      const csv = rows.join("\n");
+      const rangeLabel = range === "today" ? "today" : range === "week" ? "this-week" : range === "month" ? "this-month" : "all-time";
+      const filename = `vrs-tickets-${rangeLabel}-${now.toISOString().slice(0, 10)}.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.status(200).send(csv);
+    } catch (error) {
+      console.error("CSV export error:", error);
+      return res.status(500).json({ error: "Failed to export CSV" });
+    }
+  });
+
+  // ========================================================================
   // TECHNICIAN SYNC ROUTES (Admin)
   // ========================================================================
 

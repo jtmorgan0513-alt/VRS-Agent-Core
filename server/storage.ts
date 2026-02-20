@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, or, desc, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, desc, gte, sql, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   users,
@@ -74,6 +74,7 @@ export interface IStorage {
     data: Partial<InsertSubmission>
   ): Promise<Submission | undefined>;
   deleteSubmission(id: number): Promise<boolean>;
+  getAllSubmissions(startDate?: Date | null): Promise<Submission[]>;
   getAgentQueueCount(agentId?: number): Promise<number>;
   getDivisionQueueCount(divisions: string[]): Promise<number>;
   getCompletedTodayCount(agentId?: number): Promise<number>;
@@ -302,6 +303,13 @@ export class DatabaseStorage implements IStorage {
     await db.delete(smsNotifications).where(eq(smsNotifications.submissionId, id));
     const result = await db.delete(submissions).where(eq(submissions.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getAllSubmissions(startDate?: Date | null): Promise<Submission[]> {
+    if (startDate) {
+      return db.select().from(submissions).where(gte(submissions.createdAt, startDate)).orderBy(desc(submissions.createdAt));
+    }
+    return db.select().from(submissions).orderBy(desc(submissions.createdAt));
   }
 
   async getSubmissionsWithTechnician(filters?: {

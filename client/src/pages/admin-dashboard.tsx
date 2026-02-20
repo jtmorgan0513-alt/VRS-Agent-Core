@@ -90,6 +90,7 @@ import {
   ClipboardList,
   X,
   Search,
+  Download,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -297,6 +298,32 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/analytics"],
     enabled: activeView === "analytics",
   });
+
+  const [exportingRange, setExportingRange] = useState<string | null>(null);
+  const handleExportCsv = async (range: string) => {
+    try {
+      setExportingRange(range);
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/admin/export-csv?range=${range}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || `vrs-export-${range}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Export Complete", description: "CSV file downloaded successfully." });
+    } catch {
+      toast({ title: "Export Failed", description: "Could not export CSV file.", variant: "destructive" });
+    } finally {
+      setExportingRange(null);
+    }
+  };
 
   const rgcQueryUrl = `/api/admin/rgc-code?date=${rgcDate}`;
   const { data: currentRgc, isLoading: rgcLoading } = useQuery<{
@@ -1227,6 +1254,41 @@ export default function AdminDashboard() {
                         </CardContent>
                       </Card>
                     </div>
+
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <CardTitle className="text-base">Export Tickets (CSV)</CardTitle>
+                          <Download className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground mb-4">Download all processed tickets as a CSV file for the selected time range.</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {[
+                            { range: "today", label: "Today" },
+                            { range: "week", label: "This Week" },
+                            { range: "month", label: "This Month" },
+                            { range: "all", label: "All Time" },
+                          ].map(({ range, label }) => (
+                            <Button
+                              key={range}
+                              variant="outline"
+                              onClick={() => handleExportCsv(range)}
+                              disabled={exportingRange !== null}
+                              data-testid={`button-export-${range}`}
+                            >
+                              {exportingRange === range ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Download className="w-4 h-4" />
+                              )}
+                              {label}
+                            </Button>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
                   </>
                 ) : (
                   <div className="flex items-center justify-center min-h-[400px]">
