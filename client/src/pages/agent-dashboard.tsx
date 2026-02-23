@@ -1178,7 +1178,6 @@ export default function AgentDashboard() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="Warranty company declined repair">Warranty company declined repair</SelectItem>
-                                <SelectItem value="Customer declined repair">Customer declined repair</SelectItem>
                                 <SelectItem value="Unit not covered">Unit not covered</SelectItem>
                                 <SelectItem value="Pre-existing condition">Pre-existing condition</SelectItem>
                                 <SelectItem value="Other">Other</SelectItem>
