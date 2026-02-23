@@ -406,7 +406,7 @@ export default function TechResubmitPage() {
                       </button>
                     </div>
                   ))}
-                  {issuePhotoUrls.length < 5 && (
+                  {issuePhotoUrls.length < 15 && (
                     <button
                       type="button"
                       className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
@@ -425,7 +425,7 @@ export default function TechResubmitPage() {
                   accept="image/*"
                   multiple
                   className="hidden"
-                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, 5, issuePhotoInputRef)}
+                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, 15, issuePhotoInputRef)}
                 />
               </CardContent>
             </Card>

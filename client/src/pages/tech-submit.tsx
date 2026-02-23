@@ -835,7 +835,7 @@ export default function TechSubmitPage() {
                   multiple
                   capture={undefined}
                   className="hidden"
-                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, setIssuePhotoUploadCount, 10, issuePhotoInputRef)}
+                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, setIssuePhotoUploadCount, 15, issuePhotoInputRef)}
                   data-testid="input-issue-photo-file"
                 />
                 {issuePhotoUrls.length > 0 && (
@@ -856,7 +856,7 @@ export default function TechSubmitPage() {
                     <span className="text-sm text-muted-foreground">Uploading {issuePhotoUploadCount.done}/{issuePhotoUploadCount.total} photos...</span>
                   </div>
                 )}
-                {issuePhotoUrls.length < 10 && !issuePhotoUploading && (
+                {issuePhotoUrls.length < 15 && !issuePhotoUploading && (
                   <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => issuePhotoInputRef.current?.click()} data-testid="button-add-issue-photos">
                     <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">{issuePhotoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}</p>
@@ -865,7 +865,7 @@ export default function TechSubmitPage() {
                         ? "Infestation evidence, unsafe conditions, appliance area"
                         : "Model/serial plate, error codes, damage, defective parts"}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{issuePhotoUrls.length}/10 photos</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{issuePhotoUrls.length}/15 photos</p>
                   </div>
                 )}
               </CardContent>
