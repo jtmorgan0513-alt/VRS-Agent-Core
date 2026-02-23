@@ -11,7 +11,7 @@ interface PhotoLightboxProps {
 }
 
 const MIN_ZOOM = 50;
-const MAX_ZOOM = 200;
+const MAX_ZOOM = 300;
 const ZOOM_STEP = 10;
 
 export default function PhotoLightbox({ photos, initialIndex, open, onClose }: PhotoLightboxProps) {
