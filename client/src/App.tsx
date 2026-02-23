@@ -21,6 +21,7 @@ import InstallPrompt from "@/components/install-prompt";
 import OnboardingWizard from "@/components/onboarding-wizard";
 import WhatsNewModal from "@/components/whats-new-modal";
 import HelpCenterPage from "@/pages/help-center";
+import TechResubmitPage from "@/pages/tech-resubmit";
 
 function LoadingScreen() {
   return (
@@ -143,6 +144,9 @@ function Router() {
       </Route>
       <Route path="/tech/submissions/:id">
         {() => <TechRoute component={SubmissionDetailPage} />}
+      </Route>
+      <Route path="/tech/resubmit/:id">
+        {() => <TechRoute component={TechResubmitPage} />}
       </Route>
       <Route path="/agent/dashboard" component={AgentRoute} />
       <Route path="/admin/dashboard" component={AdminRoute} />

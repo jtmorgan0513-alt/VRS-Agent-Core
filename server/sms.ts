@@ -86,8 +86,23 @@ export function buildStage1ApprovedMessage(serviceOrder: string): string {
   return `Your VRS submission has been approved for SO# ${serviceOrder} (Stage 1). Your authorization code will follow shortly. You may same-day reschedule and proceed to your next call while you wait. You'll receive an additional text and the code will also be available in the app once authorized.`;
 }
 
-export function buildStage1RejectedMessage(serviceOrder: string, reason: string): string {
-  return `VRS Authorization Update: Your submission for SO# ${serviceOrder} has been REJECTED. Reason: ${reason}. Please contact your supervisor if you have questions.`;
+export function buildStage1RejectedMessage(serviceOrder: string, reason: string, resubmitLink?: string): string {
+  let msg = `VRS Update for SO#${serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reason}`;
+  if (resubmitLink) {
+    msg += `\n\nTap to resubmit with your info saved:\n${resubmitLink}`;
+  } else {
+    msg += `\n\nPlease contact your supervisor if you have questions.`;
+  }
+  return msg;
+}
+
+export function buildStage2DeclinedMessage(serviceOrder: string, declineReason: string, instructions?: string): string {
+  let msg = `VRS Update for SO#${serviceOrder}\n\nStatus: REPAIR DECLINED\nReason: ${declineReason}`;
+  if (instructions) {
+    msg += `\n\nInstructions: ${instructions}`;
+  }
+  msg += `\n\nPlease follow the instructions above and close the order accordingly.`;
+  return msg;
 }
 
 export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null): string {

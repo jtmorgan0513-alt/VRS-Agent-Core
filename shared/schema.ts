@@ -94,12 +94,16 @@ export const submissions = pgTable("submissions", {
   stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
   stage1ReviewedAt: timestamp("stage1_reviewed_at"),
   stage1RejectionReason: text("stage1_rejection_reason"),
-  stage2Status: text("stage2_status").notNull().default("pending"), // 'pending', 'approved', 'not_applicable'
+  stage2Status: text("stage2_status").notNull().default("pending"), // 'pending', 'approved', 'declined', 'not_applicable'
   stage2ReviewedBy: integer("stage2_reviewed_by").references(() => users.id),
   stage2ReviewedAt: timestamp("stage2_reviewed_at"),
+  stage2Outcome: text("stage2_outcome"), // 'approved', 'declined'
+  declineReason: varchar("decline_reason", { length: 255 }),
+  declineInstructions: text("decline_instructions"),
   authCode: varchar("auth_code", { length: 50 }),
   rgcCode: varchar("rgc_code", { length: 50 }),
   assignedTo: integer("assigned_to").references(() => users.id),
+  resubmissionOf: integer("resubmission_of"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

@@ -17,7 +17,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage, buildStage2DeclinedMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -471,6 +471,7 @@ export async function registerRoutes(
     videoUrl: z.string().optional(),
     voiceNoteUrl: z.string().optional(),
     phone: z.string().min(1, "Phone number is required"),
+    resubmissionOf: z.number().optional(),
   });
 
   app.post("/api/submissions", authenticateToken, requireRole("technician"), async (req, res) => {
@@ -515,6 +516,7 @@ export async function registerRoutes(
         stage2ReviewedAt: null,
         authCode: null,
         rgcCode: null,
+        resubmissionOf: parsed.data.resubmissionOf || null,
       });
 
       return res.status(201).json({ submission });
@@ -717,10 +719,18 @@ export async function registerRoutes(
 
       const updated = await storage.updateSubmission(id, updateData as any);
 
-      const smsMessage = action === "approve"
-        ? buildStage1ApprovedMessage(submission.serviceOrder)
-        : buildStage1RejectedMessage(submission.serviceOrder, rejectionReason || "");
-      const smsType = action === "approve" ? "stage1_approved" : "stage1_rejected";
+      let smsMessage: string;
+      let smsType: string;
+      if (action === "approve") {
+        smsMessage = buildStage1ApprovedMessage(submission.serviceOrder);
+        smsType = "stage1_approved";
+      } else {
+        const host = req.get("host") || "";
+        const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
+        const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
+        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, rejectionReason || "", resubmitLink);
+        smsType = "stage1_rejected";
+      }
       await sendSms(submission.id, submission.phone, smsType, smsMessage);
 
       return res.status(200).json({ submission: updated });
@@ -764,7 +774,10 @@ export async function registerRoutes(
   // ========================================================================
 
   const stage2ActionSchema = z.object({
+    action: z.enum(["approve", "decline"]).default("approve"),
     authCode: z.string().optional(),
+    declineReason: z.string().optional(),
+    declineInstructions: z.string().optional(),
   });
 
   app.delete("/api/submissions/:id", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -854,7 +867,29 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Stage 2 already processed" });
       }
 
+      const { action, declineReason, declineInstructions } = parsed.data;
       let { authCode } = parsed.data;
+
+      if (action === "decline") {
+        if (!declineReason || !declineReason.trim()) {
+          return res.status(400).json({ error: "Decline reason is required" });
+        }
+
+        const updated = await storage.updateSubmission(id, {
+          stage2Status: "declined",
+          stage2Outcome: "declined",
+          declineReason: declineReason.trim(),
+          declineInstructions: declineInstructions?.trim() || null,
+          stage2ReviewedBy: authReq.user!.id,
+          stage2ReviewedAt: new Date(),
+          updatedAt: new Date(),
+        } as any);
+
+        const smsMessage = buildStage2DeclinedMessage(submission.serviceOrder, declineReason.trim(), declineInstructions?.trim());
+        await sendSms(submission.id, submission.phone, "stage2_declined", smsMessage);
+
+        return res.status(200).json({ submission: updated });
+      }
 
       const todayStr = new Date().toISOString().slice(0, 10);
       let rgcCode: string | null = null;
@@ -876,6 +911,7 @@ export async function registerRoutes(
         authCode,
         rgcCode,
         stage2Status: "approved",
+        stage2Outcome: "approved",
         stage2ReviewedBy: authReq.user!.id,
         stage2ReviewedAt: new Date(),
         updatedAt: new Date(),

@@ -73,6 +73,14 @@ export default function SubmissionDetailPage() {
   const hasAuthCode = !!sub.authCode;
 
   function getHeaderConfig() {
+    if (sub.stage2Status === "declined") {
+      return {
+        bgClass: "bg-destructive text-destructive-foreground",
+        icon: <XCircle className="w-10 h-10 mx-auto mb-2" />,
+        title: "Repair Declined",
+        subtitle: `Service Order #${sub.serviceOrder}`,
+      };
+    }
     if (stage1Status === "rejected") {
       return {
         bgClass: "bg-destructive text-destructive-foreground",
@@ -218,31 +226,31 @@ export default function SubmissionDetailPage() {
           return hasAny ? (
             <Card>
               <CardContent className="p-4 space-y-4">
-                {estimatePhotos.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      TechHub Estimate ({estimatePhotos.length})
-                    </p>
-                    <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-detail">
-                      {estimatePhotos.map((url: string, i: number) => (
-                        <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
-                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-detail-${i}`} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {issuePhotos.length > 0 && (
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <ImageIcon className="w-3.5 h-3.5" />
-                      Model/Serial & Issue Photos ({issuePhotos.length})
+                      Issue-Related Photos ({issuePhotos.length})
                     </p>
                     <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-detail">
                       {issuePhotos.map((url: string, i: number) => (
                         <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
                           <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-detail-${i}`} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {estimatePhotos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      Model, Serial & Estimate ({estimatePhotos.length})
+                    </p>
+                    <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-detail">
+                      {estimatePhotos.map((url: string, i: number) => (
+                        <div key={i} className="aspect-square bg-muted rounded-md overflow-hidden">
+                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-detail-${i}`} />
                         </div>
                       ))}
                     </div>
@@ -299,9 +307,23 @@ export default function SubmissionDetailPage() {
           </Card>
         )}
 
+        {sub.stage2Status === "declined" && (
+          <Card className="border-destructive">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-sm font-semibold text-destructive">Repair Declined</p>
+              {(sub as any).declineReason && (
+                <p className="text-sm" data-testid="text-decline-reason">Reason: {(sub as any).declineReason}</p>
+              )}
+              {(sub as any).declineInstructions && (
+                <p className="text-sm text-muted-foreground" data-testid="text-decline-instructions">{(sub as any).declineInstructions}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {stage1Status === "rejected" && (
           <div className="space-y-2">
-            <Link href="/tech/submit">
+            <Link href={`/tech/resubmit/${sub.id}`}>
               <Button className="w-full" data-testid="button-resubmit">Resubmit with Updates</Button>
             </Link>
           </div>
@@ -327,6 +349,7 @@ function DetailRow({ label, value, testId }: { label: string; value: React.React
 }
 
 function StatusBadge({ stage1, stage2, hasAuthCode }: { stage1: string; stage2: string; hasAuthCode: boolean }) {
+  if (stage2 === "declined") return <Badge variant="destructive">Repair Declined</Badge>;
   if (hasAuthCode) return <Badge className="bg-green-600 text-white border-green-600">Auth Code Issued</Badge>;
   if (stage1 === "approved" && stage2 === "pending") return <Badge className="bg-yellow-600 text-white border-yellow-600">Awaiting Auth Code</Badge>;
   if (stage1 === "approved") return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;

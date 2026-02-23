@@ -15,7 +15,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ### Database Tables
 - `users` - All users (technicians, vrs_agents, admins, super_admin) with role-based access, isActive toggle, isSystemAccount flag for protected accounts
 - `technicians` - Field technicians synced from Snowflake (ldapId, name, phone, district, managerName, techUnNo, isActive, lastSyncedAt)
-- `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride for LDAP techs)
+- `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride, stage2Outcome, declineReason, declineInstructions, resubmissionOf for linked resubmissions)
 - `vrs_agent_specializations` - Agent division assignments
 - `sms_notifications` - Twilio SMS notification log
 - `daily_rgc_codes` - Daily RGC codes for B2B (future)
@@ -35,7 +35,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/submissions - List submissions (division-filtered Stage 1 for agents, personal Stage 2, supports ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled: agent sees own + shared Stage 1 by division)
 - PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent, verifies division match, approval assigns ticket to agent)
-- PATCH /api/submissions/:id/stage2 - Send auth code + Twilio SMS (vrs_agent only, body: {authCode}), auto-populates rgcCode for sears_protect
+- PATCH /api/submissions/:id/stage2 - Approve (send auth code) or decline (send decline notice) + Twilio SMS (vrs_agent, body: {action, authCode?, declineReason?, declineInstructions?}), auto-populates rgcCode for sears_protect
 - PATCH /api/submissions/:id/reassign - Reassign Stage 2 ticket to another agent (admin only, body: {agentId})
 - GET /api/agent/stats - Division-based Stage 1 count, personal Stage 2 count, completed today count
 - GET /api/agent/warranty-counts - Warranty provider counts for agent's Stage 2 queue

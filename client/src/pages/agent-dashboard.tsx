@@ -86,6 +86,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import HelpTooltip from "@/components/help-tooltip";
+import PhotoLightbox from "@/components/photo-lightbox";
 
 type SubmissionWithTech = Submission & {
   technicianName: string;
@@ -150,6 +151,10 @@ export default function AgentDashboard() {
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [authCode, setAuthCode] = useState("");
+  const [stage2Action, setStage2Action] = useState<"approve" | "decline">("approve");
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineInstructions, setDeclineInstructions] = useState("");
+  const [declineConfirmOpen, setDeclineConfirmOpen] = useState(false);
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -159,7 +164,14 @@ export default function AgentDashboard() {
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignAgentId, setReassignAgentId] = useState<string>("");
-  const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
+  const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const openLightbox = (photos: string[], index: number) => {
+    setLightboxPhotos(photos);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
   const [shsaiVisible, setShsaiVisible] = useState(true);
   const [shsaiLoading, setShsaiLoading] = useState(false);
   const [shsaiError, setShsaiError] = useState<string | null>(null);
@@ -325,7 +337,9 @@ export default function AgentDashboard() {
   const stage2Mutation = useMutation({
     mutationFn: async (submissionId: number) => {
       const submission = submissions.find(s => s.id === submissionId);
-      const body = submission?.warrantyType === "sears_protect" ? {} : { authCode };
+      const body = submission?.warrantyType === "sears_protect"
+        ? { action: "approve" }
+        : { action: "approve", authCode };
       const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage2`, body);
       return res.json();
     },
@@ -333,6 +347,31 @@ export default function AgentDashboard() {
       toast({ title: "Code Sent", description: "Authorization code sent to technician." });
       setSelectedId(null);
       setAuthCode("");
+      setStage2Action("approve");
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/agent/warranty-counts") });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const stage2DeclineMutation = useMutation({
+    mutationFn: async (submissionId: number) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage2`, {
+        action: "decline",
+        declineReason: declineReason,
+        declineInstructions: declineInstructions || undefined,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Repair Declined", description: "Technician has been notified of the decline." });
+      setSelectedId(null);
+      setDeclineReason("");
+      setDeclineInstructions("");
+      setStage2Action("approve");
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/agent/warranty-counts") });
@@ -949,35 +988,36 @@ export default function AgentDashboard() {
                           const estimatePhotos: string[] = isNewFormat ? (parsed.estimate || []) : [];
                           const issuePhotos: string[] = isNewFormat ? (parsed.issue || []) : [];
                           const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
+                          const allPhotosS2 = [...issuePhotos, ...estimatePhotos, ...legacyPhotos];
 
                           return (
                             <div className="space-y-4">
-                              {estimatePhotos.length > 0 && (
+                              {issuePhotos.length > 0 && (
                                 <div>
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
                                     <ImageIcon className="w-3.5 h-3.5" />
-                                    TechHub Estimate ({estimatePhotos.length})
+                                    Issue-Related Photos ({issuePhotos.length})
                                   </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-s2">
-                                    {estimatePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-s2-${i}`} />
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-s2">
+                                    {issuePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS2, i)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-s2-${i}`} />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
                                 </div>
                               )}
-                              {issuePhotos.length > 0 && (
+                              {estimatePhotos.length > 0 && (
                                 <div>
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
                                     <ImageIcon className="w-3.5 h-3.5" />
-                                    Model/Serial & Issue Photos ({issuePhotos.length})
+                                    Model, Serial & Estimate ({estimatePhotos.length})
                                   </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-s2">
-                                    {issuePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-s2-${i}`} />
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-s2">
+                                    {estimatePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS2, issuePhotos.length + i)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-s2-${i}`} />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
@@ -992,7 +1032,7 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-photos-s2">
                                     {legacyPhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS2, issuePhotos.length + estimatePhotos.length + i)}>
                                         <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
@@ -1046,8 +1086,8 @@ export default function AgentDashboard() {
                       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                         <div className="flex items-center gap-2">
                           <Badge variant="default" className="text-xs">STAGE 2</Badge>
-                          <span className="text-sm font-semibold">Enter Authorization Code</span>
-                          <HelpTooltip content="Enter the authorization code from the warranty provider. The technician will receive this code via SMS." />
+                          <span className="text-sm font-semibold">Authorization Decision</span>
+                          <HelpTooltip content="Approve the repair and send an authorization code, or decline the repair and notify the technician." />
                         </div>
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Send className="w-3 h-3" />
@@ -1055,53 +1095,122 @@ export default function AgentDashboard() {
                         </span>
                       </div>
 
-                      {selectedSubmission.warrantyType === "sears_protect" ? (
-                        <div>
-                          {rgcMissing ? (
-                            <p className="text-sm text-destructive mb-3" data-testid="text-rgc-not-set">
-                              No RGC code has been set for today. Please contact an administrator.
-                            </p>
+                      <div className="flex gap-2 mb-4">
+                        <Button
+                          variant={stage2Action === "approve" ? "default" : "outline"}
+                          className={`flex-1 ${stage2Action === "approve" ? "" : "opacity-70"}`}
+                          onClick={() => setStage2Action("approve")}
+                          data-testid="button-stage2-approve-tab"
+                        >
+                          <CheckCircle2 className="w-4 h-4 mr-1" />
+                          Approve Repair
+                        </Button>
+                        <Button
+                          variant={stage2Action === "decline" ? "destructive" : "outline"}
+                          className={`flex-1 ${stage2Action === "decline" ? "" : "opacity-70"}`}
+                          onClick={() => setStage2Action("decline")}
+                          data-testid="button-stage2-decline-tab"
+                        >
+                          <ShieldX className="w-4 h-4 mr-1" />
+                          Decline Repair
+                        </Button>
+                      </div>
+
+                      {stage2Action === "approve" ? (
+                        <>
+                          {selectedSubmission.warrantyType === "sears_protect" ? (
+                            <div>
+                              {rgcMissing ? (
+                                <p className="text-sm text-destructive mb-3" data-testid="text-rgc-not-set">
+                                  No RGC code has been set for today. Please contact an administrator.
+                                </p>
+                              ) : (
+                                <div className="mb-3 space-y-2">
+                                  <Label className="text-xs text-muted-foreground">Today's RGC Code (Auth Code)</Label>
+                                  <Input
+                                    value={todaysRgcCode || ""}
+                                    readOnly
+                                    className="font-mono bg-muted"
+                                    data-testid="input-rgc-readonly"
+                                  />
+                                  <p className="text-xs text-muted-foreground">For Sears Protect, the RGC code is the authorization code.</p>
+                                </div>
+                              )}
+                              <Button
+                                onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
+                                disabled={stage2Mutation.isPending || rgcMissing || !todaysRgcCode}
+                                data-testid="button-send-code"
+                              >
+                                <Send className="w-4 h-4" />
+                                {stage2Mutation.isPending ? "Sending..." : "Send Authorization to Tech"}
+                              </Button>
+                            </div>
                           ) : (
-                            <div className="mb-3 space-y-2">
-                              <Label className="text-xs text-muted-foreground">Today's RGC Code (Auth Code)</Label>
-                              <Input
-                                value={todaysRgcCode || ""}
-                                readOnly
-                                className="font-mono bg-muted"
-                                data-testid="input-rgc-readonly"
-                              />
-                              <p className="text-xs text-muted-foreground">For Sears Protect, the RGC code is the authorization code.</p>
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-3">Authorization Code from {getWarrantyLabel(selectedSubmission)}</p>
+                              <div className="flex items-center gap-3">
+                                <Input
+                                  placeholder="WRN-000000"
+                                  value={authCode}
+                                  onChange={(e) => setAuthCode(e.target.value)}
+                                  data-testid="input-auth-code"
+                                  className="flex-1"
+                                />
+                                <Button
+                                  onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
+                                  disabled={!authCode.trim() || stage2Mutation.isPending}
+                                  data-testid="button-send-code"
+                                >
+                                  <Send className="w-4 h-4" />
+                                  {stage2Mutation.isPending ? "Sending..." : "Send Authorization to Tech"}
+                                </Button>
+                              </div>
                             </div>
                           )}
-                          <Button
-                            onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
-                            disabled={stage2Mutation.isPending || rgcMissing || !todaysRgcCode}
-                            data-testid="button-send-code"
-                          >
-                            <Send className="w-4 h-4" />
-                            {stage2Mutation.isPending ? "Sending..." : "Send RGC Code to Tech"}
-                          </Button>
-                        </div>
+                        </>
                       ) : (
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-3">Authorization Code from {getWarrantyLabel(selectedSubmission)}</p>
-                          <div className="flex items-center gap-3">
-                            <Input
-                              placeholder="WRN-000000"
-                              value={authCode}
-                              onChange={(e) => setAuthCode(e.target.value)}
-                              data-testid="input-auth-code"
-                              className="flex-1"
-                            />
-                            <Button
-                              onClick={() => stage2Mutation.mutate(selectedSubmission.id)}
-                              disabled={!authCode.trim() || stage2Mutation.isPending}
-                              data-testid="button-send-code"
-                            >
-                              <Send className="w-4 h-4" />
-                              {stage2Mutation.isPending ? "Sending..." : "Send Code to Tech"}
-                            </Button>
+                        <div className="space-y-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Decline Reason</Label>
+                            <Select value={declineReason} onValueChange={setDeclineReason}>
+                              <SelectTrigger data-testid="select-decline-reason">
+                                <SelectValue placeholder="Select a reason..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Warranty company declined repair">Warranty company declined repair</SelectItem>
+                                <SelectItem value="Customer declined repair">Customer declined repair</SelectItem>
+                                <SelectItem value="Unit not covered">Unit not covered</SelectItem>
+                                <SelectItem value="Pre-existing condition">Pre-existing condition</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Instructions for Technician</Label>
+                            <Textarea
+                              placeholder="Enter instructions for the technician... (e.g., B2B client declined repair. Uninstall part and take with you. Close order as 'B2B Client Declined Repair'.)"
+                              value={declineInstructions}
+                              onChange={(e) => setDeclineInstructions(e.target.value)}
+                              rows={4}
+                              className="resize-none"
+                              data-testid="input-decline-instructions"
+                            />
+                          </div>
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              if (!declineReason) {
+                                toast({ title: "Error", description: "Please select a decline reason", variant: "destructive" });
+                                return;
+                              }
+                              setDeclineConfirmOpen(true);
+                            }}
+                            disabled={stage2DeclineMutation.isPending || !declineReason}
+                            data-testid="button-send-decline"
+                          >
+                            <ShieldX className="w-4 h-4" />
+                            {stage2DeclineMutation.isPending ? "Sending..." : "Send Decline Notice to Tech"}
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1391,35 +1500,36 @@ export default function AgentDashboard() {
                           const estimatePhotos: string[] = isNewFormat ? (parsed.estimate || []) : [];
                           const issuePhotos: string[] = isNewFormat ? (parsed.issue || []) : [];
                           const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
+                          const allPhotosS1 = [...issuePhotos, ...estimatePhotos, ...legacyPhotos];
                           
                           return (
                             <div className="space-y-4">
-                              {estimatePhotos.length > 0 && (
+                              {issuePhotos.length > 0 && (
                                 <div>
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
                                     <ImageIcon className="w-3.5 h-3.5" />
-                                    TechHub Estimate ({estimatePhotos.length})
+                                    Issue-Related Photos ({issuePhotos.length})
                                   </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos">
-                                    {estimatePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-${i}`} />
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos">
+                                    {issuePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS1, i)}>
+                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-${i}`} />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
                                   </div>
                                 </div>
                               )}
-                              {issuePhotos.length > 0 && (
+                              {estimatePhotos.length > 0 && (
                                 <div>
                                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
                                     <ImageIcon className="w-3.5 h-3.5" />
-                                    Model/Serial & Issue Photos ({issuePhotos.length})
+                                    Model, Serial & Estimate ({estimatePhotos.length})
                                   </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos">
-                                    {issuePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
-                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-${i}`} />
+                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos">
+                                    {estimatePhotos.map((url: string, i: number) => (
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS1, issuePhotos.length + i)}>
+                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-${i}`} />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
                                     ))}
@@ -1434,7 +1544,7 @@ export default function AgentDashboard() {
                                   </p>
                                   <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
                                     {legacyPhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => setEnlargedPhoto(url)}>
+                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotosS1, issuePhotos.length + estimatePhotos.length + i)}>
                                         <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
                                       </div>
@@ -1627,13 +1737,38 @@ export default function AgentDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={!!enlargedPhoto} onOpenChange={() => setEnlargedPhoto(null)}>
-        <DialogContent className="max-w-4xl p-2 z-[100]">
-          {enlargedPhoto && (
-            <img src={enlargedPhoto} alt="Enlarged photo" className="w-full h-auto rounded-md max-h-[85vh] object-contain" data-testid="img-enlarged-photo" />
-          )}
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={declineConfirmOpen} onOpenChange={setDeclineConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-decline-confirm-title">Decline Repair</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to decline this repair? The technician will be notified via SMS with the reason and instructions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-decline">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedSubmission) {
+                  stage2DeclineMutation.mutate(selectedSubmission.id);
+                }
+                setDeclineConfirmOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-decline"
+            >
+              Decline & Notify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <PhotoLightbox
+        photos={lightboxPhotos}
+        initialIndex={lightboxIndex}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
       <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
         <DialogContent>
           <DialogHeader>
