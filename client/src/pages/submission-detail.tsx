@@ -230,7 +230,7 @@ export default function SubmissionDetailPage() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <ImageIcon className="w-3.5 h-3.5" />
-                      Issue-Related Photos ({issuePhotos.length})
+                      Issue Photos ({issuePhotos.length})
                     </p>
                     <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos-detail">
                       {issuePhotos.map((url: string, i: number) => (
@@ -245,7 +245,7 @@ export default function SubmissionDetailPage() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <ImageIcon className="w-3.5 h-3.5" />
-                      Model, Serial & Estimate ({estimatePhotos.length})
+                      Model, Serial & Estimate Screenshots ({estimatePhotos.length})
                     </p>
                     <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos-detail">
                       {estimatePhotos.map((url: string, i: number) => (

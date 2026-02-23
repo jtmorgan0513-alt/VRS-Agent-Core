@@ -749,74 +749,19 @@ export default function TechSubmitPage() {
               </CardContent>
             </Card>
 
-            {watchedRequestType === "authorization" && (
-              <Card>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      TechHub Estimate Screenshot(s) <span className="text-destructive">*</span>
-                    </p>
-                    <HelpTooltip content="Upload photos of your TechHub estimate screen showing part numbers, costs, labor, tax, and total." />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Upload photos of your TechHub estimate screen showing:</p>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-none">
-                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Part numbers visible</span></li>
-                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Part costs visible</span></li>
-                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Labor costs visible</span></li>
-                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Tax visible</span></li>
-                    <li className="flex items-center gap-2"><Square className="w-3.5 h-3.5 shrink-0" /><span>Total visible</span></li>
-                  </ul>
-                  <input
-                    ref={estimatePhotoInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    capture={undefined}
-                    className="hidden"
-                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, setEstimatePhotoUploadCount, 5, estimatePhotoInputRef)}
-                    data-testid="input-estimate-photo-file"
-                  />
-                  {estimatePhotoUrls.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2" data-testid="estimate-photo-previews">
-                      {estimatePhotoUrls.map((url, i) => (
-                        <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
-                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-estimate-preview-${i}`} />
-                          <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-estimate-${i}`}>
-                            <X className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {estimatePhotoUploading && (
-                    <div className="flex items-center justify-center gap-2 py-3" data-testid="estimate-photo-uploading">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">Uploading {estimatePhotoUploadCount.done}/{estimatePhotoUploadCount.total} photos...</span>
-                    </div>
-                  )}
-                  {estimatePhotoUrls.length < 5 && !estimatePhotoUploading && (
-                    <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => estimatePhotoInputRef.current?.click()} data-testid="button-add-estimate-photos">
-                      <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">{estimatePhotoUrls.length === 0 ? "Tap to add estimate photos" : "Tap to add more estimate photos"}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{estimatePhotoUrls.length}/5 photos</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
             <Card>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Model/Serial &amp; Issue Photos {watchedRequestType === "infestation_non_accessible" && <span className="text-destructive">*</span>}
+                    Issue Photos <span className="text-destructive">*</span>
                   </p>
                   <HelpTooltip content={
                     watchedRequestType === "infestation_non_accessible"
                       ? "You must upload clear photos documenting the infestation or unsafe conditions. These are required for claim review."
-                      : "Upload clear photos of the appliance issue, model/serial tags, and any relevant documentation."
+                      : "Photos showing the issue, diagnosis, defective parts, error codes, damage."
                   } />
                 </div>
+                <p className="text-sm text-muted-foreground">Photos showing the issue, diagnosis, defective parts, error codes, damage</p>
                 {watchedRequestType === "infestation_non_accessible" && (
                   <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2" data-testid="infestation-photo-requirements">
                     <p className="text-sm font-medium text-destructive">Photo evidence is required. Document the following:</p>
@@ -859,17 +804,61 @@ export default function TechSubmitPage() {
                 {issuePhotoUrls.length < 15 && !issuePhotoUploading && (
                   <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => issuePhotoInputRef.current?.click()} data-testid="button-add-issue-photos">
                     <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">{issuePhotoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {watchedRequestType === "infestation_non_accessible"
-                        ? "Infestation evidence, unsafe conditions, appliance area"
-                        : "Model/serial plate, error codes, damage, defective parts"}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{issuePhotoUrls.length === 0 ? "Tap to add issue photos" : "Tap to add more issue photos"}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{issuePhotoUrls.length}/15 photos</p>
                   </div>
                 )}
               </CardContent>
             </Card>
+
+            {watchedRequestType === "authorization" && (
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Model, Serial &amp; Estimate Screenshots <span className="text-destructive">*</span>
+                    </p>
+                    <HelpTooltip content="Model/serial plate and TechHub estimate screenshots showing part numbers, costs, labor, tax, and total." />
+                  </div>
+                  <p className="text-sm text-muted-foreground">Model/serial plate and TechHub estimate screenshots</p>
+                  <input
+                    ref={estimatePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture={undefined}
+                    className="hidden"
+                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, setEstimatePhotoUploadCount, 5, estimatePhotoInputRef)}
+                    data-testid="input-estimate-photo-file"
+                  />
+                  {estimatePhotoUrls.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2" data-testid="estimate-photo-previews">
+                      {estimatePhotoUrls.map((url, i) => (
+                        <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
+                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-estimate-preview-${i}`} />
+                          <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-estimate-${i}`}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {estimatePhotoUploading && (
+                    <div className="flex items-center justify-center gap-2 py-3" data-testid="estimate-photo-uploading">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">Uploading {estimatePhotoUploadCount.done}/{estimatePhotoUploadCount.total} photos...</span>
+                    </div>
+                  )}
+                  {estimatePhotoUrls.length < 5 && !estimatePhotoUploading && (
+                    <div className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate" onClick={() => estimatePhotoInputRef.current?.click()} data-testid="button-add-estimate-photos">
+                      <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">{estimatePhotoUrls.length === 0 ? "Tap to add photos" : "Tap to add more photos"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{estimatePhotoUrls.length}/5 photos</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardContent className="p-4 space-y-3">
@@ -1012,9 +1001,14 @@ export default function TechSubmitPage() {
               </CardContent>
             </Card>
 
+            {issuePhotoUrls.length === 0 && !issuePhotoUploading && (
+              <p className="text-sm text-destructive" data-testid="text-issue-photo-error">
+                Please upload at least one issue photo
+              </p>
+            )}
             {watchedRequestType === "authorization" && estimatePhotoUrls.length === 0 && !estimatePhotoUploading && (
               <p className="text-sm text-destructive" data-testid="text-estimate-photo-error">
-                Please upload at least one photo of your TechHub estimate screen
+                Please upload at least one model/serial & estimate screenshot
               </p>
             )}
 
@@ -1022,7 +1016,7 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
