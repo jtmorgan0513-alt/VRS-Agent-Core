@@ -82,6 +82,9 @@ export interface IStorage {
   getStage2QueueCount(agentId?: number): Promise<number>;
   getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]>;
 
+  getResubmissionChain(rootId: number): Promise<Submission[]>;
+  getSubmissionHistory(serviceOrder: string): Promise<Submission[]>;
+
   // SMS methods
   createSmsNotification(
     notification: InsertSmsNotification
@@ -479,6 +482,22 @@ export class DatabaseStorage implements IStorage {
       warrantyProvider: r.warrantyProvider,
       count: Number(r.count),
     }));
+  }
+
+  async getResubmissionChain(rootId: number): Promise<Submission[]> {
+    return await db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.resubmissionOf, rootId))
+      .orderBy(submissions.createdAt);
+  }
+
+  async getSubmissionHistory(serviceOrder: string): Promise<Submission[]> {
+    return await db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.serviceOrder, serviceOrder))
+      .orderBy(submissions.createdAt);
   }
 
   // SMS methods

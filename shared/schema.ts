@@ -90,10 +90,12 @@ export const submissions = pgTable("submissions", {
   voiceNoteUrl: varchar("voice_note_url", { length: 500 }),
   technicianLdapId: varchar("technician_ldap_id", { length: 50 }),
   phoneOverride: varchar("phone_override", { length: 20 }),
-  stage1Status: text("stage1_status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
+  stage1Status: text("stage1_status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'invalid'
   stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
   stage1ReviewedAt: timestamp("stage1_reviewed_at"),
   stage1RejectionReason: text("stage1_rejection_reason"),
+  invalidReason: varchar("invalid_reason", { length: 255 }),
+  invalidInstructions: text("invalid_instructions"),
   stage2Status: text("stage2_status").notNull().default("pending"), // 'pending', 'approved', 'declined', 'not_applicable'
   stage2ReviewedBy: integer("stage2_reviewed_by").references(() => users.id),
   stage2ReviewedAt: timestamp("stage2_reviewed_at"),
@@ -103,6 +105,7 @@ export const submissions = pgTable("submissions", {
   authCode: varchar("auth_code", { length: 50 }),
   rgcCode: varchar("rgc_code", { length: 50 }),
   assignedTo: integer("assigned_to").references(() => users.id),
+  appealNotes: text("appeal_notes"),
   resubmissionOf: integer("resubmission_of"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),

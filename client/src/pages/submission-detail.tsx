@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   Clock,
   CheckCircle,
@@ -11,10 +12,11 @@ import {
   AlertTriangle,
   Copy,
   ArrowLeft,
-  ExternalLink,
   ImageIcon,
   Video,
   Mic,
+  Ban,
+  ScrollText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -26,6 +28,17 @@ export default function SubmissionDetailPage() {
 
   const { data, isLoading, error } = useQuery<{ submission: Submission }>({
     queryKey: ["/api/submissions", id],
+    enabled: !!id,
+  });
+
+  const historyQuery = useQuery<{
+    history: Submission[];
+    reviewerNames: Record<number, string>;
+    technicianName: string;
+    resubmissionCount: number;
+    maxResubmissions: number;
+  }>({
+    queryKey: ["/api/submissions", id, "history"],
     enabled: !!id,
   });
 
@@ -73,6 +86,14 @@ export default function SubmissionDetailPage() {
   const hasAuthCode = !!sub.authCode;
 
   function getHeaderConfig() {
+    if (stage1Status === "invalid") {
+      return {
+        bgClass: "bg-gray-700 text-white",
+        icon: <Ban className="w-10 h-10 mx-auto mb-2" />,
+        title: "Not Applicable",
+        subtitle: `Service Order #${sub.serviceOrder}`,
+      };
+    }
     if (sub.stage2Status === "declined") {
       return {
         bgClass: "bg-destructive text-destructive-foreground",
@@ -122,6 +143,13 @@ export default function SubmissionDetailPage() {
     }
   }
 
+  const history = historyQuery.data?.history || [];
+  const reviewerNames = historyQuery.data?.reviewerNames || {};
+  const techName = historyQuery.data?.technicianName || "Technician";
+  const resubCount = historyQuery.data?.resubmissionCount ?? 0;
+  const maxResubs = historyQuery.data?.maxResubmissions ?? 3;
+  const hasHistory = history.length > 1;
+
   return (
     <div className="min-h-screen pb-20">
       <div className={`${headerConfig.bgClass} p-4 pb-8`}>
@@ -152,6 +180,11 @@ export default function SubmissionDetailPage() {
                 VRS needs additional information before they can proceed with authorization.
               </p>
             )}
+            {stage1Status === "invalid" && (
+              <p className="text-sm opacity-80 mt-1">
+                This request cannot be processed through VRS.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -179,6 +212,20 @@ export default function SubmissionDetailPage() {
             <CardContent className="p-4">
               <p className="text-sm font-semibold text-destructive mb-1">What's Missing:</p>
               <p className="text-sm" data-testid="text-rejection-reason">{sub.stage1RejectionReason}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {stage1Status === "invalid" && (
+          <Card className="border-gray-500">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-sm font-semibold">Not Applicable</p>
+              {(sub as any).invalidReason && (
+                <p className="text-sm" data-testid="text-invalid-reason">Reason: {(sub as any).invalidReason}</p>
+              )}
+              {(sub as any).invalidInstructions && (
+                <p className="text-sm text-muted-foreground" data-testid="text-invalid-instructions">{(sub as any).invalidInstructions}</p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -321,12 +368,127 @@ export default function SubmissionDetailPage() {
           </Card>
         )}
 
-        {stage1Status === "rejected" && (
+        {hasHistory && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <ScrollText className="w-3.5 h-3.5" />
+                Submission History
+              </p>
+              <div className="space-y-0">
+                {history.map((item, idx) => {
+                  const isOriginal = item.resubmissionOf == null;
+                  const resubNumber = isOriginal ? 0 : history.filter((h, hi) => h.resubmissionOf != null && hi <= idx).length;
+                  return (
+                    <div key={item.id}>
+                      {idx > 0 && <Separator className="my-3" />}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium" data-testid={`history-entry-${idx}`}>
+                            {isOriginal ? "Original Submission" : `Resubmission #${resubNumber}`}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.createdAt ? new Date(item.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tech: {techName}
+                        </p>
+                        {item.issueDescription && (
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            "{item.issueDescription.substring(0, 120)}{item.issueDescription.length > 120 ? "..." : ""}"
+                          </p>
+                        )}
+                        {(item as any).appealNotes && (
+                          <p className="text-xs text-blue-600">
+                            Appeal: {(item as any).appealNotes}
+                          </p>
+                        )}
+
+                        {item.stage1Status === "rejected" && item.stage1ReviewedAt && (
+                          <div className="mt-2 pl-3 border-l-2 border-destructive/50">
+                            <p className="text-xs font-medium text-destructive">
+                              Rejected {item.stage1ReviewedAt ? new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                            </p>
+                            {item.stage1RejectionReason && (
+                              <p className="text-xs text-muted-foreground">
+                                Reason: "{item.stage1RejectionReason}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {item.stage1Status === "invalid" && item.stage1ReviewedAt && (
+                          <div className="mt-2 pl-3 border-l-2 border-gray-400">
+                            <p className="text-xs font-medium text-gray-600">
+                              Invalid {item.stage1ReviewedAt ? new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                            </p>
+                            {(item as any).invalidReason && (
+                              <p className="text-xs text-muted-foreground">
+                                Reason: "{(item as any).invalidReason}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {item.stage1Status === "approved" && item.stage1ReviewedAt && (
+                          <div className="mt-2 pl-3 border-l-2 border-green-500/50">
+                            <p className="text-xs font-medium text-green-600">
+                              Approved {new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                            </p>
+                          </div>
+                        )}
+
+                        {item.stage2Status === "declined" && item.stage2ReviewedAt && (
+                          <div className="mt-1 pl-3 border-l-2 border-destructive/50">
+                            <p className="text-xs font-medium text-destructive">
+                              Declined {new Date(item.stage2ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {item.stage2ReviewedBy && reviewerNames[item.stage2ReviewedBy] ? ` by ${reviewerNames[item.stage2ReviewedBy]}` : ""}
+                            </p>
+                            {(item as any).declineReason && (
+                              <p className="text-xs text-muted-foreground">
+                                Reason: "{(item as any).declineReason}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {item.stage2Status === "approved" && item.authCode && (
+                          <div className="mt-1 pl-3 border-l-2 border-green-500/50">
+                            <p className="text-xs font-medium text-green-600">
+                              Auth Code Issued: {item.authCode}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {stage1Status === "rejected" && resubCount < maxResubs && (
           <div className="space-y-2">
             <Link href={`/tech/resubmit/${sub.id}`}>
               <Button className="w-full" data-testid="button-resubmit">Resubmit with Updates</Button>
             </Link>
           </div>
+        )}
+
+        {stage1Status === "rejected" && resubCount >= maxResubs && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="p-4 text-center">
+              <p className="text-sm font-semibold text-destructive" data-testid="text-max-resubmissions">Maximum resubmissions reached</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                You have reached the maximum of {maxResubs} resubmissions. Please call VRS directly for assistance.
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         <Link href="/tech">
@@ -349,6 +511,7 @@ function DetailRow({ label, value, testId }: { label: string; value: React.React
 }
 
 function StatusBadge({ stage1, stage2, hasAuthCode }: { stage1: string; stage2: string; hasAuthCode: boolean }) {
+  if (stage1 === "invalid") return <Badge variant="secondary">Not Applicable</Badge>;
   if (stage2 === "declined") return <Badge variant="destructive">Repair Declined</Badge>;
   if (hasAuthCode) return <Badge className="bg-green-600 text-white border-green-600">Auth Code Issued</Badge>;
   if (stage1 === "approved" && stage2 === "pending") return <Badge className="bg-yellow-600 text-white border-yellow-600">Awaiting Auth Code</Badge>;

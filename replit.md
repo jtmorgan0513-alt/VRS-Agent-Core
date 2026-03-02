@@ -15,7 +15,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ### Database Tables
 - `users` - All users (technicians, vrs_agents, admins, super_admin) with role-based access, isActive toggle, isSystemAccount flag for protected accounts
 - `technicians` - Field technicians synced from Snowflake (ldapId, name, phone, district, managerName, techUnNo, isActive, lastSyncedAt)
-- `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride, stage2Outcome, declineReason, declineInstructions, resubmissionOf for linked resubmissions)
+- `submissions` - Authorization requests with two-stage review workflow (technicianLdapId, phoneOverride, stage2Outcome, declineReason, declineInstructions, resubmissionOf for linked resubmissions, appealNotes for resubmission context, invalidReason/invalidInstructions for invalid Stage 1 tickets)
 - `vrs_agent_specializations` - Agent division assignments
 - `sms_notifications` - Twilio SMS notification log
 - `daily_rgc_codes` - Daily RGC codes for B2B (future)
@@ -34,7 +34,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - POST /api/submissions - Create submission (technician only, assignedTo=null, enters shared division queue)
 - GET /api/submissions - List submissions (division-filtered Stage 1 for agents, personal Stage 2, supports ?completedToday=true, ?stage1Status, ?stage2Status, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled: agent sees own + shared Stage 1 by division)
-- PATCH /api/submissions/:id/stage1 - Approve/reject Stage 1 + Twilio SMS (vrs_agent, verifies division match, approval assigns ticket to agent)
+- PATCH /api/submissions/:id/stage1 - Approve/reject/invalid Stage 1 + Twilio SMS (vrs_agent, verifies division match, approval assigns ticket to agent)
+- GET /api/submissions/:id/history - Get submission history chain with reviewer names, resubmission count
 - PATCH /api/submissions/:id/stage2 - Approve (send auth code) or decline (send decline notice) + Twilio SMS (vrs_agent, body: {action, authCode?, declineReason?, declineInstructions?}), auto-populates rgcCode for sears_protect
 - PATCH /api/submissions/:id/reassign - Reassign Stage 2 ticket to another agent (admin only, body: {agentId})
 - GET /api/agent/stats - Division-based Stage 1 count, personal Stage 2 count, completed today count
@@ -126,3 +127,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-19: SHSAI direct API integration - replaced iframe with direct API calls to SHSAI service (init session + prompt), auto-queries on Stage 2 ticket selection, follow-up chat input, retry on error, fresh session per ticket
 - 2026-02-19: Password reset features - Admin permission check (admins can only reset agent/tech passwords, super_admin can reset anyone), self-service forgot password via SMS (6-digit code, 15-min expiry, Twilio), forgot password UI on agent/admin login pages, passwordResetToken/passwordResetExpires columns added to users
 - 2026-02-19: Shared division queue workflow - Tickets submit unassigned (assignedTo=null), Stage 1 is shared division queue filtered by agent specializations, Stage 1 approval assigns ticket to approving agent, Stage 2 is personal queue, removed My Assignments toggle, admin reassign endpoint for Stage 2 tickets, division-based stats counting, multi-agent division assignments in admin dashboard, ticket deletion restricted to admin/super_admin only
+- 2026-03-02: VRS team feedback batch - Video on resubmit (persist original, allow replace/remove), appeal notes field on resubmit form, submission history thread view (chronological timeline on tech detail page), resubmission limit (max 3, enforced server-side), "Invalid" Stage 1 status (reason dropdown, instructions textarea, SMS notification, no resubmit allowed), invalid status display across agent dashboard and tech views

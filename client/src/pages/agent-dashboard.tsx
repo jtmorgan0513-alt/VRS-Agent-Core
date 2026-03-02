@@ -83,6 +83,8 @@ import {
   MessageSquare,
   ArrowLeft,
   ZoomIn,
+  Ban,
+  ScrollText,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import HelpTooltip from "@/components/help-tooltip";
@@ -157,6 +159,9 @@ export default function AgentDashboard() {
   const [declineConfirmOpen, setDeclineConfirmOpen] = useState(false);
   const [warrantyFilter, setWarrantyFilter] = useState<string | null>(null);
   const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
+  const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
+  const [invalidReason, setInvalidReason] = useState("");
+  const [invalidInstructions, setInvalidInstructions] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
   const [rgcMissing, setRgcMissing] = useState(false);
@@ -295,6 +300,17 @@ export default function AgentDashboard() {
 
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
 
+  const submissionHistoryQuery = useQuery<{
+    history: any[];
+    reviewerNames: Record<number, string>;
+    technicianName: string;
+    resubmissionCount: number;
+    maxResubmissions: number;
+  }>({
+    queryKey: ["/api/submissions", selectedId, "history"],
+    enabled: !!selectedId,
+  });
+
   const approveMutation = useMutation({
     mutationFn: async (submissionId: number) => {
       const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage1`, {
@@ -326,6 +342,28 @@ export default function AgentDashboard() {
       toast({ title: "Rejected", description: "Submission rejected and technician will be notified." });
       setSelectedId(null);
       setRejectionReason("");
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const invalidMutation = useMutation({
+    mutationFn: async ({ submissionId, reason, instructions }: { submissionId: number; reason: string; instructions: string }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/stage1`, {
+        action: "invalid",
+        invalidReason: reason,
+        invalidInstructions: instructions || undefined,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Marked Invalid", description: "Submission marked as invalid and technician notified." });
+      setSelectedId(null);
+      setInvalidReason("");
+      setInvalidInstructions("");
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     },
@@ -1591,10 +1629,79 @@ export default function AgentDashboard() {
                       </CardContent>
                     </Card>
 
+                    {submissionHistoryQuery.data && submissionHistoryQuery.data.history.length > 1 && (
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base flex items-center gap-1.5">
+                            <ScrollText className="w-4 h-4" />
+                            Submission History
+                          </CardTitle>
+                          <p className="text-xs text-muted-foreground">
+                            Resubmission {submissionHistoryQuery.data.resubmissionCount} of {submissionHistoryQuery.data.maxResubmissions}
+                          </p>
+                        </CardHeader>
+                        <CardContent className="space-y-0">
+                          {submissionHistoryQuery.data.history.map((item: any, idx: number) => {
+                            const isOriginal = item.resubmissionOf == null;
+                            const resubNumber = isOriginal ? 0 : submissionHistoryQuery.data!.history.filter((h: any, hi: number) => h.resubmissionOf != null && hi <= idx).length;
+                            return (
+                              <div key={item.id}>
+                                {idx > 0 && <Separator className="my-2" />}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-medium">
+                                      {isOriginal ? "Original Submission" : `Resubmission #${resubNumber}`}
+                                      {item.id === selectedId && <Badge variant="outline" className="ml-2 text-[10px] py-0">Current</Badge>}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                                    </p>
+                                  </div>
+                                  {item.appealNotes && (
+                                    <p className="text-xs text-blue-600">
+                                      Appeal: {item.appealNotes}
+                                    </p>
+                                  )}
+                                  {item.stage1Status === "rejected" && item.stage1RejectionReason && (
+                                    <p className="text-xs text-destructive">
+                                      Rejected: "{item.stage1RejectionReason}"
+                                    </p>
+                                  )}
+                                  {item.stage1Status === "invalid" && item.invalidReason && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Invalid: "{item.invalidReason}"
+                                    </p>
+                                  )}
+                                  {item.stage1Status === "approved" && (
+                                    <p className="text-xs text-green-600">Approved</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    )}
+
                     {activeView === "stage1" && selectedSubmission.stage1Status === "pending" && (
                       <Card>
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base">Review Actions</CardTitle>
+                          {selectedSubmission.resubmissionOf && (
+                            <p className="text-xs text-blue-600" data-testid="text-resubmission-indicator">
+                              This is a resubmission
+                            </p>
+                          )}
+                          {(selectedSubmission as any).appealNotes && (
+                            <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-950 rounded-md border border-blue-200 dark:border-blue-800">
+                              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                                <ScrollText className="w-3 h-3" /> Appeal Notes
+                              </p>
+                              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1" data-testid="text-appeal-notes">
+                                {(selectedSubmission as any).appealNotes}
+                              </p>
+                            </div>
+                          )}
                         </CardHeader>
                         <CardContent className="space-y-4">
                           <div>
@@ -1621,7 +1728,7 @@ export default function AgentDashboard() {
                                   }
                                   setRejectConfirmOpen(true);
                                 }}
-                                disabled={rejectMutation.isPending || approveMutation.isPending}
+                                disabled={rejectMutation.isPending || approveMutation.isPending || invalidMutation.isPending}
                                 data-testid="button-reject"
                               >
                                 <ShieldX className="w-4 h-4 mr-1" />
@@ -1632,7 +1739,7 @@ export default function AgentDashboard() {
                             <div className="flex items-center gap-1.5">
                               <Button
                                 onClick={() => approveMutation.mutate(selectedSubmission.id)}
-                                disabled={approveMutation.isPending || rejectMutation.isPending}
+                                disabled={approveMutation.isPending || rejectMutation.isPending || invalidMutation.isPending}
                                 data-testid="button-approve"
                               >
                                 <ShieldCheck className="w-4 h-4 mr-1" />
@@ -1640,6 +1747,48 @@ export default function AgentDashboard() {
                               </Button>
                               <HelpTooltip content="Confirms you have enough info to proceed. Tech will receive SMS and can leave the job site." />
                             </div>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  if (!invalidReason) {
+                                    toast({ title: "Error", description: "Select an invalid reason first", variant: "destructive" });
+                                    return;
+                                  }
+                                  setInvalidConfirmOpen(true);
+                                }}
+                                disabled={invalidMutation.isPending || approveMutation.isPending || rejectMutation.isPending}
+                                data-testid="button-invalid"
+                              >
+                                <Ban className="w-4 h-4 mr-1" />
+                                {invalidMutation.isPending ? "Processing..." : "Invalid"}
+                              </Button>
+                              <HelpTooltip content="For submissions VRS doesn't handle: wrong warranty type, product not covered, etc." />
+                            </div>
+                          </div>
+                          <Separator />
+                          <div className="space-y-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Mark as Invalid (if not VRS-eligible)</p>
+                            <Select value={invalidReason} onValueChange={setInvalidReason}>
+                              <SelectTrigger data-testid="select-invalid-reason">
+                                <SelectValue placeholder="Select invalid reason..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Not a VRS-eligible warranty">Not a VRS-eligible warranty</SelectItem>
+                                <SelectItem value="Product not covered">Product not covered</SelectItem>
+                                <SelectItem value="Use standard authorization process">Use standard authorization process</SelectItem>
+                                <SelectItem value="Contact B2B support directly">Contact B2B support directly</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Textarea
+                              placeholder="Instructions for the technician (what they should do instead)..."
+                              value={invalidInstructions}
+                              onChange={(e) => setInvalidInstructions(e.target.value)}
+                              className="resize-none"
+                              rows={2}
+                              data-testid="input-invalid-instructions"
+                            />
                           </div>
                         </CardContent>
                       </Card>
@@ -1676,6 +1825,27 @@ export default function AgentDashboard() {
                         </CardContent>
                       </Card>
                     )}
+
+                    {selectedSubmission.stage1Status === "invalid" && (
+                      <Card>
+                        <CardContent className="pt-6 space-y-2">
+                          <div className="flex items-center gap-2 text-sm">
+                            <Ban className="w-5 h-5 text-muted-foreground" />
+                            <span className="font-medium" data-testid="text-stage1-invalid">Marked Invalid</span>
+                          </div>
+                          {(selectedSubmission as any).invalidReason && (
+                            <p className="text-sm text-muted-foreground bg-muted/50 rounded-md p-3" data-testid="text-invalid-reason">
+                              {(selectedSubmission as any).invalidReason}
+                            </p>
+                          )}
+                          {(selectedSubmission as any).invalidInstructions && (
+                            <p className="text-sm text-muted-foreground" data-testid="text-invalid-instructions">
+                              Instructions: {(selectedSubmission as any).invalidInstructions}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
                 </ScrollArea>
               )}
@@ -1705,6 +1875,35 @@ export default function AgentDashboard() {
               data-testid="button-confirm-reject"
             >
               Reject & Notify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={invalidConfirmOpen} onOpenChange={setInvalidConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-invalid-confirm-title">Mark as Invalid</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to mark this submission as invalid? The technician will be notified via SMS that this request cannot be processed through VRS.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-invalid">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedSubmission) {
+                  invalidMutation.mutate({
+                    submissionId: selectedSubmission.id,
+                    reason: invalidReason,
+                    instructions: invalidInstructions,
+                  });
+                }
+                setInvalidConfirmOpen(false);
+              }}
+              data-testid="button-confirm-invalid"
+            >
+              Mark Invalid & Notify
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

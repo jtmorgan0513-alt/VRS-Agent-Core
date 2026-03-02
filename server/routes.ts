@@ -17,7 +17,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildAuthCodeMessage, buildStage2DeclinedMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildStage2DeclinedMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -471,6 +471,7 @@ export async function registerRoutes(
     videoUrl: z.string().optional(),
     voiceNoteUrl: z.string().optional(),
     phone: z.string().min(1, "Phone number is required"),
+    appealNotes: z.string().optional(),
     resubmissionOf: z.number().optional(),
   });
 
@@ -485,6 +486,26 @@ export async function registerRoutes(
       const user = await storage.getUser(authReq.user!.id);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
+      }
+
+      if (parsed.data.resubmissionOf) {
+        const originalSub = await storage.getSubmission(parsed.data.resubmissionOf);
+        if (!originalSub) {
+          return res.status(400).json({ error: "Original submission not found" });
+        }
+        if (originalSub.stage1Status === "invalid") {
+          return res.status(400).json({ error: "Invalid submissions cannot be resubmitted" });
+        }
+        const MAX_RESUBMISSIONS = 3;
+        let rootId = parsed.data.resubmissionOf;
+        if (originalSub.resubmissionOf) {
+          rootId = originalSub.resubmissionOf;
+        }
+        const chain = await storage.getResubmissionChain(rootId);
+        const validResubmissions = chain.filter(s => s.stage1Status !== "invalid");
+        if (validResubmissions.length >= MAX_RESUBMISSIONS) {
+          return res.status(400).json({ error: `Maximum ${MAX_RESUBMISSIONS} resubmissions reached. Please call VRS directly for assistance.` });
+        }
       }
 
       const submission = await storage.createSubmission({
@@ -516,6 +537,7 @@ export async function registerRoutes(
         stage2ReviewedAt: null,
         authCode: null,
         rgcCode: null,
+        appealNotes: parsed.data.appealNotes || null,
         resubmissionOf: parsed.data.resubmissionOf || null,
       });
 
@@ -656,12 +678,72 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // SUBMISSION HISTORY (for message thread view)
+  // ========================================================================
+
+  app.get("/api/submissions/:id/history", authenticateToken, async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      const user = authReq.user!;
+      if (user.role === "technician" && submission.technicianId !== user.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const allRelated = await storage.getSubmissionHistory(submission.serviceOrder);
+      const rootId = submission.resubmissionOf || submission.id;
+      const chain = allRelated.filter(s => s.id === rootId || s.resubmissionOf === rootId);
+      chain.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+
+      const reviewerIds = new Set<number>();
+      chain.forEach(s => {
+        if (s.stage1ReviewedBy) reviewerIds.add(s.stage1ReviewedBy);
+        if (s.stage2ReviewedBy) reviewerIds.add(s.stage2ReviewedBy);
+      });
+
+      const reviewerNames: Record<number, string> = {};
+      for (const rid of reviewerIds) {
+        const u = await storage.getUser(rid);
+        if (u) reviewerNames[rid] = u.name;
+      }
+
+      const techUser = await storage.getUser(submission.technicianId);
+      const techName = techUser?.name || "Technician";
+
+      const resubmissionCount = chain.filter(s => s.resubmissionOf != null && s.stage1Status !== "invalid").length;
+      const maxResubmissions = 3;
+
+      return res.status(200).json({
+        history: chain,
+        reviewerNames,
+        technicianName: techName,
+        resubmissionCount,
+        maxResubmissions,
+      });
+    } catch (error) {
+      console.error("Submission history error:", error);
+      return res.status(500).json({ error: "Failed to get submission history" });
+    }
+  });
+
+  // ========================================================================
   // STAGE 1 REVIEW ROUTES
   // ========================================================================
 
   const stage1ActionSchema = z.object({
-    action: z.enum(["approve", "reject"]),
+    action: z.enum(["approve", "reject", "invalid"]),
     rejectionReason: z.string().optional(),
+    invalidReason: z.string().optional(),
+    invalidInstructions: z.string().optional(),
   });
 
   app.patch("/api/submissions/:id/stage1", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
@@ -696,14 +778,23 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Submission already reviewed" });
       }
 
-      const { action, rejectionReason } = parsed.data;
+      const { action, rejectionReason, invalidReason, invalidInstructions } = parsed.data;
 
       if (action === "reject" && !rejectionReason) {
         return res.status(400).json({ error: "Rejection reason is required" });
       }
 
+      if (action === "invalid" && !invalidReason) {
+        return res.status(400).json({ error: "Invalid reason is required" });
+      }
+
+      let statusValue: string;
+      if (action === "approve") statusValue = "approved";
+      else if (action === "reject") statusValue = "rejected";
+      else statusValue = "invalid";
+
       const updateData: Record<string, unknown> = {
-        stage1Status: action === "approve" ? "approved" : "rejected",
+        stage1Status: statusValue,
         stage1ReviewedBy: authReq.user!.id,
         stage1ReviewedAt: new Date(),
         updatedAt: new Date(),
@@ -717,6 +808,12 @@ export async function registerRoutes(
         updateData.stage1RejectionReason = rejectionReason;
       }
 
+      if (action === "invalid") {
+        updateData.invalidReason = invalidReason;
+        updateData.invalidInstructions = invalidInstructions || null;
+        updateData.stage2Status = "not_applicable";
+      }
+
       const updated = await storage.updateSubmission(id, updateData as any);
 
       let smsMessage: string;
@@ -724,6 +821,9 @@ export async function registerRoutes(
       if (action === "approve") {
         smsMessage = buildStage1ApprovedMessage(submission.serviceOrder);
         smsType = "stage1_approved";
+      } else if (action === "invalid") {
+        smsMessage = buildStage1InvalidMessage(submission.serviceOrder, invalidReason || "", invalidInstructions);
+        smsType = "stage1_invalid";
       } else {
         const host = req.get("host") || "";
         const protocol = req.get("x-forwarded-proto") || req.protocol || "https";

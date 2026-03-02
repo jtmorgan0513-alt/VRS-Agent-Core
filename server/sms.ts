@@ -105,6 +105,15 @@ export function buildStage2DeclinedMessage(serviceOrder: string, declineReason: 
   return msg;
 }
 
+export function buildStage1InvalidMessage(serviceOrder: string, invalidReason: string, instructions?: string): string {
+  let msg = `VRS Update for SO#${serviceOrder}\n\nStatus: NOT APPLICABLE\nReason: ${invalidReason}`;
+  if (instructions) {
+    msg += `\n\nInstructions: ${instructions}`;
+  }
+  msg += `\n\nThis request cannot be processed through VRS. Please follow the instructions above.`;
+  return msg;
+}
+
 export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null): string {
   if (rgcCode) {
     return `VRS Authorization for SO#${serviceOrder}\nYour RGC/Auth Code: ${rgcCode}\nEnter this code in TechHub to complete the job.`;

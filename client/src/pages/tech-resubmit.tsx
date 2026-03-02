@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, X, AlertTriangle, ArrowLeft, Lock } from "lucide-react";
+import { Camera, Send, X, AlertTriangle, ArrowLeft, Lock, Video, Upload } from "lucide-react";
 import type { Submission } from "@shared/schema";
 
 const APPLIANCE_TYPES = [
@@ -51,6 +51,7 @@ const resubmitFormSchema = z.object({
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
+  appealNotes: z.string().max(2000, "Appeal notes must be 2000 characters or less").optional(),
 });
 
 type ResubmitFormData = z.infer<typeof resubmitFormSchema>;
@@ -65,9 +66,12 @@ export default function TechResubmitPage() {
   const [estimatePhotoUrls, setEstimatePhotoUrls] = useState<string[]>([]);
   const [issuePhotoUploading, setIssuePhotoUploading] = useState(false);
   const [estimatePhotoUploading, setEstimatePhotoUploading] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const issuePhotoInputRef = useRef<HTMLInputElement>(null);
   const estimatePhotoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ResubmitFormData>({
     resolver: zodResolver(resubmitFormSchema),
@@ -79,11 +83,23 @@ export default function TechResubmitPage() {
       warrantyType: "sears_protect",
       warrantyProvider: "",
       issueDescription: "",
+      appealNotes: "",
     },
   });
 
   const { data, isLoading, error } = useQuery<{ submission: Submission }>({
     queryKey: ["/api/submissions", originalId],
+    enabled: !!originalId,
+  });
+
+  const historyQuery = useQuery<{
+    history: Submission[];
+    reviewerNames: Record<number, string>;
+    technicianName: string;
+    resubmissionCount: number;
+    maxResubmissions: number;
+  }>({
+    queryKey: ["/api/submissions", originalId, "history"],
     enabled: !!originalId,
   });
 
@@ -97,6 +113,7 @@ export default function TechResubmitPage() {
       warrantyType: sub.warrantyType as any,
       warrantyProvider: sub.warrantyProvider || "",
       issueDescription: sub.issueDescription,
+      appealNotes: "",
     });
     try {
       const parsed = sub.photos ? JSON.parse(sub.photos) : null;
@@ -107,10 +124,11 @@ export default function TechResubmitPage() {
         setIssuePhotoUrls(parsed);
       }
     } catch {}
+    if (sub.videoUrl) setVideoUrl(sub.videoUrl);
     setInitialized(true);
   }
 
-  async function uploadSinglePhoto(file: File): Promise<string | null> {
+  async function uploadSingleFile(file: File): Promise<string | null> {
     const token = getToken();
     try {
       const urlRes = await fetch("/api/uploads/request-url", {
@@ -158,12 +176,37 @@ export default function TechResubmitPage() {
     setUploading(true);
     const newUrls: string[] = [];
     for (const file of filesToUpload) {
-      const url = await uploadSinglePhoto(file);
+      const url = await uploadSingleFile(file);
       if (url) newUrls.push(url);
     }
     setUrls((prev) => [...prev, ...newUrls]);
     setUploading(false);
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  async function handleVideoUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "File Too Large", description: "Video must be under 100MB.", variant: "destructive" });
+      if (videoInputRef.current) videoInputRef.current.value = "";
+      return;
+    }
+    if (!file.type.startsWith("video/")) {
+      toast({ title: "Invalid File", description: "Please select a video file.", variant: "destructive" });
+      if (videoInputRef.current) videoInputRef.current.value = "";
+      return;
+    }
+    setVideoUploading(true);
+    const url = await uploadSingleFile(file);
+    if (url) {
+      setVideoUrl(url);
+      toast({ title: "Video Uploaded", description: "New video uploaded successfully." });
+    } else {
+      toast({ title: "Upload Failed", description: "Failed to upload video.", variant: "destructive" });
+    }
+    setVideoUploading(false);
+    if (videoInputRef.current) videoInputRef.current.value = "";
   }
 
   const mutation = useMutation({
@@ -189,6 +232,10 @@ export default function TechResubmitPage() {
     if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
     if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;
     if (Object.keys(photosObj).length > 0) payload.photos = JSON.stringify(photosObj);
+    if (videoUrl) payload.videoUrl = videoUrl;
+    if (formData.appealNotes && formData.appealNotes.trim()) {
+      payload.appealNotes = formData.appealNotes.trim();
+    }
     payload.resubmissionOf = originalId;
     mutation.mutate(payload);
   }
@@ -233,6 +280,9 @@ export default function TechResubmitPage() {
   }
 
   const originalSub = data.submission;
+  const resubCount = historyQuery.data?.resubmissionCount ?? 0;
+  const maxResubs = historyQuery.data?.maxResubmissions ?? 3;
+  const isMaxReached = resubCount >= maxResubs;
 
   return (
     <div className="min-h-screen pb-20">
@@ -251,6 +301,22 @@ export default function TechResubmitPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+        {isMaxReached && (
+          <Card className="border-destructive bg-destructive/10">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-destructive" data-testid="text-max-resubmissions">Maximum resubmissions reached</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    You have reached the maximum of {maxResubs} resubmissions for this service order. Please call VRS directly for assistance.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
@@ -262,226 +328,306 @@ export default function TechResubmitPage() {
                     Reason: {originalSub.stage1RejectionReason}
                   </p>
                 )}
+                {resubCount > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Resubmission {resubCount + 1} of {maxResubs}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Service Order</p>
-                <div className="flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={originalSub.serviceOrder}
-                    disabled
-                    className="font-mono bg-muted"
-                    data-testid="input-service-order-locked"
+        {!isMaxReached && (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Service Order</p>
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-muted-foreground" />
+                    <Input
+                      value={originalSub.serviceOrder}
+                      disabled
+                      className="font-mono bg-muted"
+                      data-testid="input-service-order-locked"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Service order cannot be changed on resubmission</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appeal Notes</p>
+                  <FormField
+                    control={form.control}
+                    name="appealNotes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Additional Information</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Explain what was corrected or provide additional context..."
+                            rows={3}
+                            className="resize-none"
+                            {...field}
+                            data-testid="input-appeal-notes"
+                          />
+                        </FormControl>
+                        <div className="flex justify-between">
+                          <FormMessage />
+                          <span className="text-xs text-muted-foreground">{field.value?.length || 0}/2000</span>
+                        </div>
+                      </FormItem>
+                    )}
                   />
-                </div>
-                <p className="text-xs text-muted-foreground">Service order cannot be changed on resubmission</p>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Technician Info</p>
-                <div>
-                  <label className="text-sm font-medium">RAC ID</label>
-                  <Input value={user?.racId || ""} disabled className="mt-1" data-testid="input-rac-id-resubmit" />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone Number *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="(555) 555-0147" {...field} data-testid="input-phone-resubmit" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance Details</p>
-
-                <FormField
-                  control={form.control}
-                  name="applianceType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Appliance Type *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Technician Info</p>
+                  <div>
+                    <label className="text-sm font-medium">RAC ID</label>
+                    <Input value={user?.racId || ""} disabled className="mt-1" data-testid="input-rac-id-resubmit" />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number *</FormLabel>
                         <FormControl>
-                          <SelectTrigger data-testid="select-appliance-type-resubmit">
-                            <SelectValue placeholder="Select appliance type" />
-                          </SelectTrigger>
+                          <Input placeholder="(555) 555-0147" {...field} data-testid="input-phone-resubmit" />
                         </FormControl>
-                        <SelectContent>
-                          {APPLIANCE_TYPES.map((type) => (
-                            <SelectItem key={type.value} value={type.value}>
-                              {type.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="requestType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Request Type</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-request-type-resubmit">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="authorization">Authorization</SelectItem>
-                          <SelectItem value="infestation_non_accessible">Infestation / Non-Accessible</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issue Description</p>
-                <FormField
-                  control={form.control}
-                  name="issueDescription"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description *</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Describe the issue in detail..."
-                          rows={5}
-                          className="resize-none"
-                          {...field}
-                          data-testid="input-description-resubmit"
-                        />
-                      </FormControl>
-                      <div className="flex justify-between">
                         <FormMessage />
-                        <span className="text-xs text-muted-foreground">{field.value?.length || 0}/2000</span>
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance Details</p>
+
+                  <FormField
+                    control={form.control}
+                    name="applianceType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Appliance Type *</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-appliance-type-resubmit">
+                              <SelectValue placeholder="Select appliance type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {APPLIANCE_TYPES.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                {type.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="requestType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Request Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-request-type-resubmit">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="authorization">Authorization</SelectItem>
+                            <SelectItem value="infestation_non_accessible">Infestation / Non-Accessible</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issue Description</p>
+                  <FormField
+                    control={form.control}
+                    name="issueDescription"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description *</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Describe the issue in detail..."
+                            rows={5}
+                            className="resize-none"
+                            {...field}
+                            data-testid="input-description-resubmit"
+                          />
+                        </FormControl>
+                        <div className="flex justify-between">
+                          <FormMessage />
+                          <span className="text-xs text-muted-foreground">{field.value?.length || 0}/2000</span>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issue Photos</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {issuePhotoUrls.map((url, i) => (
+                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden">
+                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-resubmit-${i}`} />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center"
+                          onClick={() => setIssuePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))}
+                          data-testid={`button-remove-issue-photo-${i}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
                       </div>
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Issue Photos</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {issuePhotoUrls.map((url, i) => (
-                    <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden">
-                      <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-issue-resubmit-${i}`} />
+                    ))}
+                    {issuePhotoUrls.length < 15 && (
                       <button
                         type="button"
-                        className="absolute top-1 right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center"
-                        onClick={() => setIssuePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))}
-                        data-testid={`button-remove-issue-photo-${i}`}
+                        className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                        onClick={() => issuePhotoInputRef.current?.click()}
+                        disabled={issuePhotoUploading}
+                        data-testid="button-add-issue-photo-resubmit"
                       >
-                        <X className="w-3 h-3" />
+                        <Camera className="w-5 h-5" />
+                        <span className="text-xs mt-1">{issuePhotoUploading ? "..." : "Add"}</span>
                       </button>
-                    </div>
-                  ))}
-                  {issuePhotoUrls.length < 15 && (
-                    <button
-                      type="button"
-                      className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                      onClick={() => issuePhotoInputRef.current?.click()}
-                      disabled={issuePhotoUploading}
-                      data-testid="button-add-issue-photo-resubmit"
-                    >
-                      <Camera className="w-5 h-5" />
-                      <span className="text-xs mt-1">{issuePhotoUploading ? "..." : "Add"}</span>
-                    </button>
-                  )}
-                </div>
-                <input
-                  ref={issuePhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, 15, issuePhotoInputRef)}
-                />
-              </CardContent>
-            </Card>
+                    )}
+                  </div>
+                  <input
+                    ref={issuePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, 15, issuePhotoInputRef)}
+                  />
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model, Serial & Estimate Screenshots</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {estimatePhotoUrls.map((url, i) => (
-                    <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden">
-                      <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-resubmit-${i}`} />
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model, Serial & Estimate Screenshots</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {estimatePhotoUrls.map((url, i) => (
+                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden">
+                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover" data-testid={`img-estimate-resubmit-${i}`} />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center"
+                          onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))}
+                          data-testid={`button-remove-estimate-photo-${i}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {estimatePhotoUrls.length < 5 && (
                       <button
                         type="button"
-                        className="absolute top-1 right-1 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center"
-                        onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))}
-                        data-testid={`button-remove-estimate-photo-${i}`}
+                        className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                        onClick={() => estimatePhotoInputRef.current?.click()}
+                        disabled={estimatePhotoUploading}
+                        data-testid="button-add-estimate-photo-resubmit"
                       >
-                        <X className="w-3 h-3" />
+                        <Camera className="w-5 h-5" />
+                        <span className="text-xs mt-1">{estimatePhotoUploading ? "..." : "Add"}</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={estimatePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, 5, estimatePhotoInputRef)}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Video className="w-3.5 h-3.5" />
+                    Video
+                  </p>
+                  {videoUrl && (
+                    <div className="relative rounded-md overflow-hidden bg-muted">
+                      <video
+                        src={videoUrl}
+                        controls
+                        className="w-full max-h-[200px]"
+                        data-testid="video-player-resubmit"
+                      />
+                      <button
+                        type="button"
+                        className="absolute top-2 right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center"
+                        onClick={() => setVideoUrl(null)}
+                        data-testid="button-remove-video"
+                      >
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
-                  ))}
-                  {estimatePhotoUrls.length < 5 && (
-                    <button
-                      type="button"
-                      className="aspect-square border-2 border-dashed rounded-md flex flex-col items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                      onClick={() => estimatePhotoInputRef.current?.click()}
-                      disabled={estimatePhotoUploading}
-                      data-testid="button-add-estimate-photo-resubmit"
-                    >
-                      <Camera className="w-5 h-5" />
-                      <span className="text-xs mt-1">{estimatePhotoUploading ? "..." : "Add"}</span>
-                    </button>
                   )}
-                </div>
-                <input
-                  ref={estimatePhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, 5, estimatePhotoInputRef)}
-                />
-              </CardContent>
-            </Card>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => videoInputRef.current?.click()}
+                    disabled={videoUploading}
+                    data-testid="button-upload-video-resubmit"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {videoUploading ? "Uploading..." : videoUrl ? "Replace Video" : "Upload Video"}
+                  </Button>
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => handleVideoUpload(e.target.files)}
+                  />
+                </CardContent>
+              </Card>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={mutation.isPending}
-              data-testid="button-resubmit"
-            >
-              <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Resubmitting..." : "Resubmit to VRS"}
-            </Button>
-          </form>
-        </Form>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={mutation.isPending}
+                data-testid="button-resubmit"
+              >
+                <Send className="w-4 h-4 mr-2" />
+                {mutation.isPending ? "Resubmitting..." : "Resubmit to VRS"}
+              </Button>
+            </form>
+          </Form>
+        )}
       </div>
     </div>
   );
