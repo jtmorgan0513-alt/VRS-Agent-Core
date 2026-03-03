@@ -32,7 +32,7 @@ const registerSchema = z.object({
   name: z.string().min(1),
   role: z.enum(["technician", "vrs_agent", "admin", "super_admin"]),
   phone: z.string().optional(),
-  racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
+  racId: z.string().regex(/^[a-zA-Z]+[a-zA-Z0-9]*$/, "LDAP ID must be letters and numbers only (e.g., MTHOMA2)").optional().or(z.literal("")),
 });
 
 const loginSchema = z.object({
@@ -1192,9 +1192,9 @@ export async function registerRoutes(
 
   const updateUserSchema = z.object({
     name: z.string().min(1).optional(),
-    email: z.string().email().optional(),
-    phone: z.string().optional(),
-    racId: z.string().regex(/^[a-z]+[a-z0-9]*$/, "RAC ID must be lowercase letters and numbers only (e.g., jmorga1)").optional().or(z.literal("")),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    racId: z.string().regex(/^[a-zA-Z]+[a-zA-Z0-9]*$/, "LDAP ID must be letters and numbers only (e.g., MTHOMA2)").optional().nullable().or(z.literal("")),
     role: z.enum(["technician", "vrs_agent", "admin", "super_admin"]).optional(),
     isActive: z.boolean().optional(),
     password: z.string().min(6).optional(),

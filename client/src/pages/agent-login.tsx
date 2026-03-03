@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Redirect } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -25,9 +25,16 @@ export default function AgentLoginPage() {
   const [forgotNewPw, setForgotNewPw] = useState("");
   const [forgotConfirmPw, setForgotConfirmPw] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
-  const { user, isLoading: authLoading, login } = useAuth();
+  const { user, isLoading: authLoading, login, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (user && user.mustChangePassword && !mustChangePassword) {
+      setMustChangePassword(true);
+      setChangePasswordUser(user);
+    }
+  }, [user, mustChangePassword]);
 
   if (authLoading) {
     return (
@@ -40,8 +47,8 @@ export default function AgentLoginPage() {
     );
   }
 
-  if (user && (user.role === "vrs_agent" || user.role === "admin" || user.role === "super_admin")) return <Redirect to="/agent/dashboard" />;
-  if (user && user.role === "technician") return <Redirect to="/tech" />;
+  if (user && !user.mustChangePassword && (user.role === "vrs_agent" || user.role === "admin" || user.role === "super_admin")) return <Redirect to="/agent/dashboard" />;
+  if (user && !user.mustChangePassword && user.role === "technician") return <Redirect to="/tech" />;
 
   async function handleAgentSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +102,7 @@ export default function AgentLoginPage() {
         throw new Error(data.error || "Failed to change password");
       }
       toast({ title: "Password Changed", description: "Your password has been updated successfully." });
+      await refreshUser();
       setLocation("/agent/dashboard");
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });

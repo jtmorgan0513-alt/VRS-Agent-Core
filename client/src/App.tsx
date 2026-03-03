@@ -51,6 +51,7 @@ function AgentRoute() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/agent/login" />;
+  if (user.mustChangePassword) return <Redirect to="/agent/login" />;
   if (user.role === "technician") return <Redirect to="/tech" />;
   return <AgentDashboard />;
 }
@@ -59,6 +60,7 @@ function AdminRoute() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
   if (!user) return <Redirect to="/admin/login" />;
+  if (user.mustChangePassword) return <Redirect to="/admin/login" />;
   if (user.role === "technician") return <Redirect to="/tech" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
   return <AdminDashboard />;

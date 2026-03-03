@@ -511,7 +511,7 @@ export default function AdminDashboard() {
         name: formName,
         role: formRole,
         phone: formPhone || null,
-        racId: formRole === "technician" ? formRacId || null : null,
+        racId: formRacId || null,
       };
       if (formPassword) {
         data.password = formPassword;
@@ -523,7 +523,7 @@ export default function AdminDashboard() {
         password: formPassword,
         role: formRole,
         phone: formPhone || undefined,
-        racId: formRole === "technician" ? formRacId || undefined : undefined,
+        racId: formRacId || undefined,
       });
     }
   };
@@ -1352,6 +1352,9 @@ export default function AdminDashboard() {
                   <SelectItem value="technician">Technician</SelectItem>
                   <SelectItem value="vrs_agent">VRS Agent</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  {user?.role === "super_admin" && (
+                    <SelectItem value="super_admin">Super Admin</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -1367,18 +1370,16 @@ export default function AdminDashboard() {
               />
             </div>
 
-            {formRole === "technician" && (
-              <div className="space-y-2">
-                <Label htmlFor="user-racid">RAC ID</Label>
-                <Input
-                  id="user-racid"
-                  value={formRacId}
-                  onChange={(e) => setFormRacId(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
-                  placeholder="jmorga1"
-                  data-testid="input-user-racid"
-                />
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="user-racid">LDAP ID</Label>
+              <Input
+                id="user-racid"
+                value={formRacId}
+                onChange={(e) => setFormRacId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
+                placeholder="MTHOMA2"
+                data-testid="input-user-racid"
+              />
+            </div>
           </div>
 
           <DialogFooter>
