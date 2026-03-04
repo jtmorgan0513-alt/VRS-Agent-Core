@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useAuth } from "@/lib/auth";
+import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@shared/schema";
@@ -396,6 +396,7 @@ export default function AdminDashboard() {
   const [formRole, setFormRole] = useState("technician");
   const [formPhone, setFormPhone] = useState("");
   const [formRacId, setFormRacId] = useState("");
+  const [formDivisions, setFormDivisions] = useState<string[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
@@ -467,6 +468,13 @@ export default function AdminDashboard() {
     }
   }, [specData, selectedAgentIds]);
 
+  const saveDivisionsForUser = async (userId: number, divisions: string[]) => {
+    await apiRequest("PATCH", `/api/admin/users/${userId}/specializations`, { divisions });
+    queryClient.invalidateQueries({
+      predicate: (q) => (q.queryKey[0] as string)?.includes("/api/admin/users") && q.queryKey[2] === "specializations",
+    });
+  };
+
   const createUserMutation = useMutation({
     mutationFn: async (data: {
       name: string;
@@ -479,7 +487,14 @@ export default function AdminDashboard() {
       const res = await apiRequest("POST", "/api/admin/users", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (result: any) => {
+      if (formRole === "vrs_agent" && result?.user?.id) {
+        try {
+          await saveDivisionsForUser(result.user.id, formDivisions);
+        } catch {
+          toast({ title: "Warning", description: "User created but division assignment failed.", variant: "destructive" });
+        }
+      }
       toast({ title: "User Created", description: "New user has been created successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       closeDialog();
@@ -494,7 +509,14 @@ export default function AdminDashboard() {
       const res = await apiRequest("PATCH", `/api/admin/users/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (_result: any, variables: { id: number; data: Record<string, unknown> }) => {
+      if (formRole === "vrs_agent") {
+        try {
+          await saveDivisionsForUser(variables.id, formDivisions);
+        } catch {
+          toast({ title: "Warning", description: "User updated but division assignment failed.", variant: "destructive" });
+        }
+      }
       toast({ title: "User Updated", description: "User has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       closeDialog();
@@ -611,10 +633,11 @@ export default function AdminDashboard() {
     setFormRole("technician");
     setFormPhone("");
     setFormRacId("");
+    setFormDivisions([]);
     setDialogOpen(true);
   };
 
-  const openEditDialog = (u: SafeUser) => {
+  const openEditDialog = async (u: SafeUser) => {
     setEditingUser(u);
     setFormName(u.name);
     setFormEmail(u.email);
@@ -622,6 +645,23 @@ export default function AdminDashboard() {
     setFormRole(u.role);
     setFormPhone(u.phone || "");
     setFormRacId(u.racId || "");
+    if (u.role === "vrs_agent") {
+      try {
+        const res = await fetch(`/api/admin/users/${u.id}/specializations`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFormDivisions(data.specializations?.map((s: any) => s.division) || []);
+        } else {
+          toast({ title: "Warning", description: "Could not load division assignments.", variant: "destructive" });
+        }
+      } catch {
+        toast({ title: "Warning", description: "Could not load division assignments.", variant: "destructive" });
+      }
+    } else {
+      setFormDivisions([]);
+    }
     setDialogOpen(true);
   };
 
@@ -1445,7 +1485,7 @@ export default function AdminDashboard() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle data-testid="text-dialog-title">
               {editingUser ? "Edit User" : "Create User"}
@@ -1519,6 +1559,48 @@ export default function AdminDashboard() {
                 data-testid="input-user-racid"
               />
             </div>
+
+            {formRole === "vrs_agent" && (
+              <div className="space-y-2">
+                <Label>Division Assignments</Label>
+                <div className="border rounded-md p-3 space-y-2 max-h-48 overflow-y-auto">
+                  <div className="flex items-center space-x-2 pb-2 border-b">
+                    <Checkbox
+                      id="form-div-all"
+                      checked={formDivisions.length === DIVISION_KEYS.length}
+                      onCheckedChange={() => {
+                        if (formDivisions.length === DIVISION_KEYS.length) {
+                          setFormDivisions([]);
+                        } else {
+                          setFormDivisions([...DIVISION_KEYS]);
+                        }
+                      }}
+                      data-testid="checkbox-form-division-all"
+                    />
+                    <label htmlFor="form-div-all" className="text-sm font-medium cursor-pointer">
+                      Generalist (All Divisions)
+                    </label>
+                  </div>
+                  {DIVISION_KEYS.map((key) => (
+                    <div key={key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`form-div-${key}`}
+                        checked={formDivisions.includes(key)}
+                        onCheckedChange={() => {
+                          setFormDivisions((prev) =>
+                            prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]
+                          );
+                        }}
+                        data-testid={`checkbox-form-division-${key}`}
+                      />
+                      <label htmlFor={`form-div-${key}`} className="text-sm cursor-pointer">
+                        {DIVISION_LABELS[key]}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
