@@ -9,6 +9,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: JWT-based authentication with bcryptjs
 - **Routing**: wouter (frontend), Express (backend)
+- **Real-time**: WebSocket (ws library) for live push notifications
 
 ## Project Architecture
 
@@ -25,12 +26,20 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `server/storage.ts` - Database storage layer with IStorage interface
 - `server/routes.ts` - Express API routes
 - `server/middleware/auth.ts` - JWT authentication and role-based middleware
+- `server/websocket.ts` - WebSocket server with JWT auth, client tracking, broadcast helpers
 - `client/src/App.tsx` - React app entry with routing
+- `client/src/lib/websocket.ts` - Frontend WebSocket client with auto-reconnect, notification ding
+- `client/src/lib/auth.tsx` - AuthContext, AuthProvider, useAuth hook, getToken
+- `client/src/lib/queryClient.ts` - API request helpers with JWT auth headers
+- `client/src/components/bottom-nav.tsx` - Mobile bottom navigation
+- `client/src/pages/agent-dashboard.tsx` - VRS Agent dashboard with unified Queue/My Tickets/Completed workflow
+- `client/src/pages/admin-dashboard.tsx` - Admin dashboard with user management and division assignments
 
 ### API Endpoints (Implemented)
 - POST /api/auth/register - Create new user (technician self-registration only)
 - POST /api/auth/login - Authenticate and receive JWT (checks isActive)
 - GET /api/auth/me - Get current user (protected)
+- POST /api/auth/tech-login - LDAP technician passwordless login (body: {ldapId})
 - POST /api/submissions - Create submission (technician only, ticketStatus=queued, assignedTo=null, enters shared division queue)
 - GET /api/submissions - List submissions (division-filtered queue for agents, personal pending/completed, supports ?ticketStatus, ?completedToday=true, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled: agent sees own + shared queued by division)
@@ -38,9 +47,11 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - PATCH /api/submissions/:id/process - Unified approve/reject/invalid (body: {action, rejectionReasons?, agentNotes?, authCode?}), approve→completed, reject→rejected (tech resubmits new ticket), invalid→invalid, SMS sent, agent status→online
 - GET /api/submissions/:id/history - Get submission history chain with reviewer names, resubmission count
 - PATCH /api/submissions/:id/reassign - Release pending ticket back to queue (vrs_agent own ticket, body: {notes?}), ticketStatus→queued, assignedTo cleared
+- PATCH /api/submissions/:id/correct-division - Agent corrects appliance type mid-review (pending tickets only, body: {newDivision}). If agent has new division: keeps ticket. If not: releases to queue, broadcasts ticket_queued
 - GET /api/agent/stats - Queue count, personal pending count, completed today count
 - GET /api/agent/rgc-status - Check if agent needs to enter today's RGC code
 - POST /api/agent/verify-rgc - Verify agent's RGC code entry (body: {code: "5digits"})
+- PATCH /api/agent/status - Agent self-toggle online/offline (vrs_agent only, body: {status: "online"|"offline"})
 - POST /api/admin/rgc-code - Set daily RGC code (admin only, body: {code: "5digits", date: "YYYY-MM-DD"})
 - GET /api/admin/rgc-code?date=YYYY-MM-DD - Get RGC code for specific date (admin only)
 - POST /api/uploads/request-url - Get presigned upload URL (technician only, JSON body: {name, size, contentType})
@@ -51,15 +62,35 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/admin/users/:id/specializations - Get agent divisions (admin only)
 - PATCH /api/admin/users/:id/specializations - Set agent divisions (admin only, body: {divisions: string[]})
 - PATCH /api/users/me - Self-update firstLogin, lastSeenVersion (authenticated)
-- POST /api/auth/tech-login - LDAP technician passwordless login (body: {ldapId})
 - PATCH /api/tech/update-phone - Technician phone update
 - POST /api/admin/sync-technicians - Sync technicians from Snowflake (admin only)
 - GET /api/admin/technician-metrics - Get technician sync info (admin only)
 - POST /api/shsai/query - Query SHSAI service order history (vrs_agent only, body: {serviceOrder})
 - POST /api/shsai/followup - Send follow-up question to SHSAI session (vrs_agent only, body: {sessionId, trackId, threadId, message})
-- PATCH /api/agent/status - Agent self-toggle online/offline (vrs_agent only, body: {status: "online"|"offline"})
 - PATCH /api/admin/users/:id/status - Admin force agent status (admin/super_admin, body: {status: "online"|"working"|"offline"})
 - GET /api/admin/agent-status - Live list of all agents with name, LDAP ID, status, divisions (admin only)
+
+### WebSocket Architecture
+- **Server** (`server/websocket.ts`): Runs on `/ws` path, JWT token as URL query param for authentication
+- **Client tracking**: Map<userId, {ws, role, divisions[], agentStatus}> — updated on connect/disconnect
+- **Broadcast helpers**: `broadcastToAgent(userId, event)`, `broadcastToDivisionAgents(division, event)`, `broadcastToAdmins(event)`, `updateClientStatus(userId, status)`
+- **Events**:
+  - `new_ticket` — sent to online agents in matching division on ticket creation
+  - `ticket_claimed` — sent to all division agents when a ticket is claimed (removes from queue)
+  - `ticket_queued` — sent to division agents when ticket returns to queue (reject/reassign/division correction)
+  - `agent_status_changed` — sent to admins when agent status changes
+  - `pending_tickets` — sent to agent when going online if queue has matching unassigned tickets
+- **Frontend** (`client/src/lib/websocket.ts`): Auto-reconnect with exponential backoff, Web Audio API notification ding, `useWebSocket` hook
+- **Agent dashboard**: Toast notifications (8s) for new_ticket/ticket_claimed/ticket_queued/pending_tickets with query cache invalidation
+- **Admin dashboard**: Subscribes to `agent_status_changed` to auto-refresh agent status list
+- **Logout**: WebSocket disconnected via dynamic import of `disconnectWs()` in auth.tsx
+
+### Division Correction
+- Agent can correct appliance type (division) on pending tickets they own via "Correct" dropdown next to Appliance Type in ticket detail
+- Confirmation dialog before applying
+- If agent has the new division in their specializations: keeps ticket ownership
+- If agent does NOT have the new division: ticket released to queue (ticketStatus=queued, assignedTo=null), agent status→online, ticket_queued broadcast sent to agents in new division
+- Correction recorded in agentNotes with old/new division labels
 
 ### Frontend Pages
 - `/` - Landing page (choose user type: Field Technician, VRS Agent, Administrator)
@@ -71,8 +102,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `/tech/history` - Submission history list
 - `/tech/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
 - `/tech/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
-- `/agent/dashboard` - VRS Agent dashboard (sidebar nav, unified Queue/My Tickets/Completed tabs, claim-to-process workflow, large checkbox action UI, auth code by warranty type)
-- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics)
+- `/agent/dashboard` - VRS Agent dashboard (sidebar nav, unified Queue/My Tickets/Completed tabs, claim-to-process workflow, large checkbox action UI, auth code by warranty type, division correction)
+- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics, real-time agent status)
 
 ### Onboarding & Help System
 - First-login wizard: role-based step-by-step modal (5 slides tech, 5 agent, 4 admin)
@@ -89,6 +120,16 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - Role-based routing: technicians -> /tech, agents -> /agent/dashboard, admins -> /admin/dashboard
 - Bottom navigation (Home, Submit, History, Help) on technician pages only
 - Deactivated users (isActive=false) get 403 on login
+- Logout disconnects WebSocket
+
+### Unified Ticket Workflow
+- ticketStatus values: queued (unassigned, in shared division queue), pending (claimed by agent), completed (approved), rejected (terminal — tech resubmits new ticket), invalid (terminal)
+- Claim: queued→pending, agent status→working
+- Process: approve→completed, reject→rejected, invalid→invalid
+- Reject behavior: stays rejected (does NOT return to queued — tech must submit new ticket)
+- Auth code logic: Sears Protect/PA/Legacy = auto RGC read-only; AHS/First American = RGC + external code input; skip for non-authorization requestType
+- Reassign: agent releases own pending ticket back to queue
+- Division Correction: agent changes appliance type; keeps or releases ticket depending on specializations
 
 ### Seed Users
 - admin@vrs.com / admin123 (admin)
@@ -97,39 +138,15 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - agent2@vrs.com / agent123 (vrs_agent, generalist - all divisions)
 - VRS_MASTER / VRS!M@ster2026#Secure (super_admin, isSystemAccount=true, hidden from user list)
 
-### Key Files
-- `client/src/lib/auth.tsx` - AuthContext, AuthProvider, useAuth hook, getToken
-- `client/src/lib/queryClient.ts` - API request helpers with JWT auth headers
-- `client/src/components/bottom-nav.tsx` - Mobile bottom navigation
-- `client/src/pages/login.tsx` - Login page
-- `client/src/pages/tech-home.tsx` - Technician home dashboard
-- `client/src/pages/tech-submit.tsx` - Submission form
-- `client/src/pages/tech-history.tsx` - Submission history
-- `client/src/pages/submission-detail.tsx` - Submission detail/status
-- `client/src/pages/agent-dashboard.tsx` - VRS Agent dashboard with unified Queue/My Tickets/Completed workflow
-- `client/src/pages/admin-dashboard.tsx` - Admin dashboard with user management and division assignments
+## External Dependencies
+- **Twilio**: For sending SMS notifications to technicians and for password reset functionalities
+- **Snowflake**: Used for synchronizing technician data into the platform's database
+- **SHSAI Service**: An external AI service integrated via direct API calls for service order history queries and follow-up questions during the authorization process
+- **LDAP Service**: Used for passwordless authentication of technicians and for verifying agent/admin credentials
 
-## Build Phases
-- Phase 1: Database schema + Express server + Auth routes [COMPLETE]
-- Phase 2: Mobile submission form + submission API + auto-assignment [COMPLETE]
-- Phase 3: Desktop Stage 1 queue + approval flow [COMPLETE]
-- Phase 4: Desktop Stage 2 queue + auth code flow + Twilio integration [COMPLETE]
-- Phase 5: Admin user management + division assignments [COMPLETE]
-- Phase 6: Polish, PWA manifest, responsive refinements [COMPLETE]
-
-## Recent Changes
-- 2026-02-10: Phase 1 complete - Database schema, storage layer, JWT auth routes
-- 2026-02-10: Phase 2 complete - Mobile submission form, submission API with auto-assignment, technician home/history/detail pages, JWT auth context
-- 2026-02-11: Phase 3 complete - VRS Agent desktop dashboard with sidebar navigation, split-panel queue/detail layout, Stage 1 approve/reject workflow, role-based routing
-- 2026-02-11: Phase 4 complete - Stage 2 auth code queue with batch processing banner, warranty provider counts, Twilio SMS service, SMS triggers on Stage 1 and Stage 2 actions
-- 2026-02-11: Phase 5 complete - Admin dashboard with user management table (CRUD, status toggle), division assignment page with checkbox grid, separate /admin route, isActive field on users, deactivated login check
-- 2026-02-11: Phase 6 complete - PWA manifest (VRS Submit, Sears blue #003366), install prompt banner, admin analytics (submission counts, approval rates, processing times), confirmation modals for destructive actions (reject, deactivate), session expiration handling (401 redirect to login), user-facing 404 page
-- 2026-02-18: Snowflake technician sync + LDAP login - technicians table synced from Snowflake via key-pair auth, passwordless LDAP login flow with dual-tab login page, shadow user creation for FK compatibility, phone override support, admin technician sync dashboard section
-- 2026-02-19: Master admin account + super_admin role - isSystemAccount flag, VRS_MASTER account hidden from user list, protected from modification/deletion, super_admin bypasses all role checks, LDAP ID login with forced password change for CSV-imported users
-- 2026-02-19: SHSAI direct API integration - replaced iframe with direct API calls to SHSAI service (init session + prompt), auto-queries on Stage 2 ticket selection, follow-up chat input, retry on error, fresh session per ticket
-- 2026-02-19: Password reset features - Admin permission check (admins can only reset agent/tech passwords, super_admin can reset anyone), self-service forgot password via SMS (6-digit code, 15-min expiry, Twilio), forgot password UI on agent/admin login pages, passwordResetToken/passwordResetExpires columns added to users
-- 2026-02-19: Shared division queue workflow - Tickets submit unassigned (assignedTo=null), Stage 1 is shared division queue filtered by agent specializations, Stage 1 approval assigns ticket to approving agent, Stage 2 is personal queue, removed My Assignments toggle, admin reassign endpoint for Stage 2 tickets, division-based stats counting, multi-agent division assignments in admin dashboard, ticket deletion restricted to admin/super_admin only
-- 2026-03-02: VRS team feedback batch - Video on resubmit (persist original, allow replace/remove), appeal notes field on resubmit form, submission history thread view (chronological timeline on tech detail page), resubmission limit (max 3, enforced server-side), "Invalid" Stage 1 status (reason dropdown, instructions textarea, SMS notification, no resubmit allowed), invalid status display across agent dashboard and tech views
-- 2026-03-04: Agent Status System + Queue Filtering Fix - agentStatus column on users (online/working/offline, default offline), PATCH /api/agent/status (agent self-toggle online/offline), PATCH /api/admin/users/:id/status (admin force status), GET /api/admin/agent-status (live agent list with divisions), auto-set working on ticket open, auto-reset to online after Stage 1/2 review, login popup asking agent to go online, persistent offline banner, online/offline toggle in sidebar header with colored status dots, admin Agent Status tab with force-offline, division filtering enforced strictly (no divisions = empty queue, 403 on out-of-division ticket access), Dishwasher label updated to "Dishwasher / Compactor"
-- 2026-03-04: Inline division assignment in Create/Edit User dialog - Division checkboxes shown inside user dialog when role is VRS Agent, divisions auto-loaded when editing existing agent, saved alongside user create/update via chained API calls, Generalist (All Divisions) toggle, scrollable dialog for smaller screens
-- 2026-03-04: Unified single-stage ticket workflow - Replaced two-stage (Stage 1 + Stage 2) system with unified ticketStatus flow (queued→pending→completed/rejected/invalid). New columns: ticketStatus, rejectionReasons, agentNotes, reassignmentNotes, reviewedBy, reviewedAt. New endpoints: PATCH /claim (agent claims queued ticket), PATCH /process (unified approve/reject/invalid). Agent dashboard tabs: Queue/My Tickets/Completed. Large checkbox action UI (Approve/Reject/Invalid). Rejection reason checkboxes (No pictures sent, Picture doesn't show voltage, Need more pictures, Incomplete pictures, Video blurry). Auth code logic by warranty: Sears Protect/PA/Legacy = auto RGC read-only, AHS/First American = RGC + external code input, skip for non-authorization requests. Mid-ticket reassignment: agent can release own pending ticket back to queue. Rejected tickets stay rejected (tech resubmits new ticket). Tech pages updated for ticketStatus with backward compat.
+## User Preferences
+- I prefer clear and concise communication.
+- I appreciate explanations that are straightforward and to the point.
+- I value a structured and organized approach to development tasks.
+- I expect the agent to ask for clarification if instructions are ambiguous.
+- I prefer detailed explanations for complex solutions or significant changes.

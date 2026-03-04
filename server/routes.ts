@@ -21,6 +21,7 @@ import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1Rejecte
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
+import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel } from "./websocket";
 
 const execFileAsync = promisify(execFile);
 
@@ -542,6 +543,17 @@ export async function registerRoutes(
         resubmissionOf: parsed.data.resubmissionOf || null,
       });
 
+      broadcastToDivisionAgents(parsed.data.applianceType, {
+        type: "new_ticket",
+        payload: {
+          submissionId: submission.id,
+          serviceOrder: submission.serviceOrder,
+          applianceType: parsed.data.applianceType,
+          applianceLabel: getDivisionLabel(parsed.data.applianceType),
+          warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+        },
+      });
+
       return res.status(201).json({ submission });
     } catch (error) {
       console.error("Create submission error:", error);
@@ -783,7 +795,17 @@ export async function registerRoutes(
 
       if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus !== "working") {
         await storage.updateUser(authReq.user!.id, { agentStatus: "working", updatedAt: new Date() } as any);
+        updateClientStatus(authReq.user!.id, "working");
+        broadcastToAdmins({
+          type: "agent_status_changed",
+          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "working" },
+        });
       }
+
+      broadcastToDivisionAgents(submission.applianceType, {
+        type: "ticket_claimed",
+        payload: { submissionId: id },
+      }, authReq.user!.id);
 
       return res.status(200).json({ submission: updated });
     } catch (error) {
@@ -915,6 +937,24 @@ export async function registerRoutes(
 
       if (authReq.user!.role === "vrs_agent") {
         await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+        updateClientStatus(authReq.user!.id, "online");
+        broadcastToAdmins({
+          type: "agent_status_changed",
+          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
+        });
+      }
+
+      if (action === "reject") {
+        broadcastToDivisionAgents(submission.applianceType, {
+          type: "ticket_queued",
+          payload: {
+            submissionId: id,
+            serviceOrder: submission.serviceOrder,
+            applianceType: submission.applianceType,
+            applianceLabel: getDivisionLabel(submission.applianceType),
+            warrantyLabel: getWarrantyLabel(submission.warrantyType),
+          },
+        });
       }
 
       return res.status(200).json({ submission: updated });
@@ -1083,6 +1123,41 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateUser(authReq.user!.id, { agentStatus: parsed.data.status, updatedAt: new Date() } as any);
+      updateClientStatus(authReq.user!.id, parsed.data.status);
+      broadcastToAdmins({
+        type: "agent_status_changed",
+        payload: { userId: authReq.user!.id, name: authReq.user!.name, status: parsed.data.status },
+      });
+
+      if (parsed.data.status === "online") {
+        const specs = await storage.getSpecializations(authReq.user!.id);
+        const divisions = specs.map(s => s.division);
+        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+        const isGeneralist = divisions.length >= allDivisions.length;
+
+        const allSubmissions = await storage.getSubmissions({});
+        const queuedTickets = (allSubmissions as any[]).filter((s: any) => {
+          if (s.ticketStatus !== "queued") return false;
+          if (isGeneralist) return true;
+          return divisions.includes(s.applianceType);
+        });
+
+        if (queuedTickets.length > 0) {
+          for (const ticket of queuedTickets) {
+            broadcastToAgent(authReq.user!.id, {
+              type: "pending_tickets",
+              payload: {
+                submissionId: ticket.id,
+                serviceOrder: ticket.serviceOrder,
+                applianceType: ticket.applianceType,
+                applianceLabel: getDivisionLabel(ticket.applianceType),
+                warrantyLabel: getWarrantyLabel(ticket.warrantyType),
+              },
+            });
+          }
+        }
+      }
+
       return res.status(200).json({ agentStatus: updated?.agentStatus });
     } catch (error) {
       console.error("Agent status error:", error);
@@ -1104,6 +1179,11 @@ export async function registerRoutes(
         return res.status(400).json({ error: "User is not a VRS agent" });
       }
       const updated = await storage.updateUser(id, { agentStatus: parsed.data.status } as any);
+      updateClientStatus(id, parsed.data.status);
+      broadcastToAdmins({
+        type: "agent_status_changed",
+        payload: { userId: id, name: user.name, status: parsed.data.status },
+      });
       return res.status(200).json({ agentStatus: updated?.agentStatus });
     } catch (error) {
       console.error("Admin set agent status error:", error);
@@ -1188,6 +1268,22 @@ export async function registerRoutes(
         } as any);
 
         await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+        updateClientStatus(authReq.user!.id, "online");
+        broadcastToAdmins({
+          type: "agent_status_changed",
+          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
+        });
+
+        broadcastToDivisionAgents(submission.applianceType, {
+          type: "ticket_queued",
+          payload: {
+            submissionId: id,
+            serviceOrder: submission.serviceOrder,
+            applianceType: submission.applianceType,
+            applianceLabel: getDivisionLabel(submission.applianceType),
+            warrantyLabel: getWarrantyLabel(submission.warrantyType),
+          },
+        });
 
         return res.status(200).json({ submission: updated });
       }
@@ -1218,6 +1314,108 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Reassign submission error:", error);
       return res.status(500).json({ error: "Failed to reassign submission" });
+    }
+  });
+
+  // ========================================================================
+  // DIVISION CORRECTION ROUTE — Agent corrects ticket's appliance type
+  // ========================================================================
+
+  app.patch("/api/submissions/:id/correct-division", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const bodySchema = z.object({
+        newDivision: z.enum(["refrigeration", "laundry", "cooking", "dishwasher", "microwave", "hvac", "all_other"]),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid division" });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.ticketStatus !== "pending") {
+        return res.status(400).json({ error: "Can only correct division on pending tickets" });
+      }
+
+      if (authReq.user!.role === "vrs_agent" && submission.assignedTo !== authReq.user!.id) {
+        return res.status(403).json({ error: "You can only correct division on your own tickets" });
+      }
+
+      const oldDivision = submission.applianceType;
+      const newDivision = parsed.data.newDivision;
+
+      if (oldDivision === newDivision) {
+        return res.status(400).json({ error: "New division is the same as current" });
+      }
+
+      const DIVISION_LABELS: Record<string, string> = {
+        refrigeration: "Refrigeration", laundry: "Laundry", cooking: "Cooking",
+        dishwasher: "Dishwasher / Compactor", microwave: "Microwave", hvac: "HVAC", all_other: "All Other",
+      };
+      const correctionNote = `Division corrected from ${DIVISION_LABELS[oldDivision] || oldDivision} to ${DIVISION_LABELS[newDivision] || newDivision} by ${authReq.user!.name}`;
+
+      const existingNotes = submission.agentNotes ? submission.agentNotes + "\n" + correctionNote : correctionNote;
+
+      let agentHasNewDivision = false;
+      if (authReq.user!.role === "vrs_agent") {
+        const specs = await storage.getSpecializations(authReq.user!.id);
+        const divisions = specs.map(s => s.division);
+        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+        const isGeneralist = divisions.length >= allDivisions.length;
+        agentHasNewDivision = isGeneralist || divisions.includes(newDivision);
+      } else {
+        agentHasNewDivision = true;
+      }
+
+      if (agentHasNewDivision) {
+        const updated = await storage.updateSubmission(id, {
+          applianceType: newDivision,
+          agentNotes: existingNotes,
+          updatedAt: new Date(),
+        } as any);
+        return res.status(200).json({ submission: updated, agentKeepsTicket: true });
+      } else {
+        const updated = await storage.updateSubmission(id, {
+          applianceType: newDivision,
+          ticketStatus: "queued",
+          assignedTo: null,
+          agentNotes: existingNotes,
+          updatedAt: new Date(),
+        } as any);
+
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+        updateClientStatus(authReq.user!.id, "online");
+
+        broadcastToAdmins({
+          type: "agent_status_changed",
+          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
+        });
+
+        broadcastToDivisionAgents(newDivision, {
+          type: "ticket_queued",
+          payload: {
+            submissionId: id,
+            serviceOrder: submission.serviceOrder,
+            applianceType: newDivision,
+            applianceLabel: getDivisionLabel(newDivision),
+            warrantyLabel: getWarrantyLabel(submission.warrantyType),
+          },
+        });
+
+        return res.status(200).json({ submission: updated, agentKeepsTicket: false });
+      }
+    } catch (error) {
+      console.error("Correct division error:", error);
+      return res.status(500).json({ error: "Failed to correct division" });
     }
   });
 
@@ -1638,6 +1836,7 @@ export async function registerRoutes(
       }
 
       await storage.setSpecializations(id, parsed.data.divisions);
+      updateClientDivisions(id, parsed.data.divisions);
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("Admin set specializations error:", error);

@@ -98,7 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      const { disconnectWs } = await import("./websocket");
+      disconnectWs();
+    } catch {}
     localStorage.removeItem("vrs_token");
     setToken(null);
     setUser(null);

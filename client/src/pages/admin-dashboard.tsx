@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useWebSocket } from "@/lib/websocket";
 import type { User } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -405,6 +406,16 @@ export default function AdminDashboard() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
   const [rgcDate, setRgcDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rgcDigits, setRgcDigits] = useState("");
+
+  const { subscribe } = useWebSocket(user?.role);
+
+  useEffect(() => {
+    const unsub = subscribe("agent_status_changed", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    });
+    return () => unsub();
+  }, [subscribe]);
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: SafeUser[] }>({
     queryKey: ["/api/admin/users"],

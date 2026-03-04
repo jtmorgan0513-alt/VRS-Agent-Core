@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useWebSocket, playNotificationDing } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -160,6 +161,8 @@ export default function AgentDashboard() {
   const [rgcMissing, setRgcMissing] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignNotes, setReassignNotes] = useState("");
+  const [divisionCorrectionTarget, setDivisionCorrectionTarget] = useState<string | null>(null);
+  const [divisionCorrectionConfirmOpen, setDivisionCorrectionConfirmOpen] = useState(false);
   const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -197,6 +200,53 @@ export default function AgentDashboard() {
       setLocalAgentStatus(status);
     },
   });
+
+  const { subscribe } = useWebSocket(user?.role);
+
+  useEffect(() => {
+    const unsub1 = subscribe("new_ticket", (payload: any) => {
+      playNotificationDing();
+      toast({
+        title: `New ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`,
+        description: `SO #${payload.serviceOrder}`,
+        duration: 8000,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    });
+
+    const unsub2 = subscribe("ticket_claimed", () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    });
+
+    const unsub3 = subscribe("ticket_queued", (payload: any) => {
+      playNotificationDing();
+      toast({
+        title: `Ticket returned to queue`,
+        description: `${payload.applianceLabel} - ${payload.warrantyLabel} (SO #${payload.serviceOrder})`,
+        duration: 8000,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    });
+
+    const unsub4 = subscribe("pending_tickets", (payload: any) => {
+      playNotificationDing();
+      toast({
+        title: `Queued ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`,
+        description: `SO #${payload.serviceOrder} waiting in queue`,
+        duration: 8000,
+      });
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+      unsub4();
+    };
+  }, [subscribe, toast]);
 
   useEffect(() => {
     if (!statusChecked && user && !isAdminViewing && agentStatus === "offline") {
@@ -402,6 +452,30 @@ export default function AgentDashboard() {
       setLocalAgentStatus("online");
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const divisionCorrectionMutation = useMutation({
+    mutationFn: async ({ submissionId, newDivision }: { submissionId: number; newDivision: string }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/correct-division`, { newDivision });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.agentKeepsTicket) {
+        toast({ title: "Division Corrected", description: "Appliance type updated. You still own this ticket." });
+        queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      } else {
+        toast({ title: "Division Corrected", description: "Ticket re-routed to the correct division queue." });
+        setSelectedId(null);
+        setLocalAgentStatus("online");
+        queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+        queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+      }
+      setDivisionCorrectionTarget(null);
+      setDivisionCorrectionConfirmOpen(false);
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -952,9 +1026,32 @@ export default function AgentDashboard() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-xs text-muted-foreground">Appliance Type</p>
-                            <p className="text-sm font-medium" data-testid="text-detail-appliance">
-                              {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium" data-testid="text-detail-appliance">
+                                {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
+                              </p>
+                              {activeView === "mytickets" && selectedSubmission.ticketStatus === "pending" && selectedSubmission.assignedTo === user?.id && (
+                                <Select
+                                  value=""
+                                  onValueChange={(val) => {
+                                    if (val && val !== selectedSubmission.applianceType) {
+                                      setDivisionCorrectionTarget(val);
+                                      setDivisionCorrectionConfirmOpen(true);
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 w-auto px-2 text-xs gap-1" data-testid="button-correct-division">
+                                    <Wrench className="w-3 h-3" />
+                                    <span>Correct</span>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(DIVISION_LABELS).filter(([key]) => key !== selectedSubmission.applianceType).map(([key, label]) => (
+                                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">Warranty Provider</p>
@@ -1682,6 +1779,36 @@ export default function AgentDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={divisionCorrectionConfirmOpen} onOpenChange={setDivisionCorrectionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Correct Division?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Change appliance type from{" "}
+              <strong>{DIVISION_LABELS[selectedSubmission?.applianceType || ""] || selectedSubmission?.applianceType}</strong>{" "}
+              to <strong>{DIVISION_LABELS[divisionCorrectionTarget || ""] || divisionCorrectionTarget}</strong>.
+              {" "}If you don't handle this division, the ticket will be released back to the queue for another agent.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setDivisionCorrectionTarget(null); setDivisionCorrectionConfirmOpen(false); }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedId && divisionCorrectionTarget) {
+                  divisionCorrectionMutation.mutate({ submissionId: selectedId, newDivision: divisionCorrectionTarget });
+                }
+              }}
+              disabled={divisionCorrectionMutation.isPending}
+              data-testid="button-confirm-division-correction"
+            >
+              {divisionCorrectionMutation.isPending ? "Correcting..." : "Confirm Correction"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={showStatusPopup} onOpenChange={setShowStatusPopup}>
         <AlertDialogContent>
