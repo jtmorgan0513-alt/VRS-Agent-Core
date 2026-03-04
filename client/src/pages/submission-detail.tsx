@@ -82,11 +82,11 @@ export default function SubmissionDetailPage() {
   }
 
   const sub = data.submission;
-  const stage1Status = sub.stage1Status;
+  const status = sub.ticketStatus || sub.stage1Status;
   const hasAuthCode = !!sub.authCode;
 
   function getHeaderConfig() {
-    if (stage1Status === "invalid") {
+    if (status === "invalid" || sub.stage1Status === "invalid") {
       return {
         bgClass: "bg-gray-700 text-white",
         icon: <Ban className="w-10 h-10 mx-auto mb-2" />,
@@ -102,7 +102,7 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
-    if (stage1Status === "rejected") {
+    if (status === "rejected" || sub.stage1Status === "rejected") {
       return {
         bgClass: "bg-destructive text-destructive-foreground",
         icon: <AlertTriangle className="w-10 h-10 mx-auto mb-2" />,
@@ -110,7 +110,7 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
-    if (stage1Status === "approved" && hasAuthCode) {
+    if ((status === "completed" || sub.stage1Status === "approved") && hasAuthCode) {
       return {
         bgClass: "bg-green-700 text-white",
         icon: <CheckCircle className="w-10 h-10 mx-auto mb-2" />,
@@ -118,7 +118,7 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
-    if (stage1Status === "approved") {
+    if (status === "completed" || sub.stage1Status === "approved") {
       return {
         bgClass: "bg-green-700 text-white",
         icon: <CheckCircle className="w-10 h-10 mx-auto mb-2" />,
@@ -165,22 +165,22 @@ export default function SubmissionDetailPage() {
           <div className="text-center py-4">
             {headerConfig.icon}
             <h1 className="text-xl font-bold" data-testid="text-status-title">{headerConfig.title}</h1>
-            {stage1Status === "pending" && (
+            {(status === "queued" || status === "pending") && (
               <p className="text-sm opacity-80 mt-1">
                 Your submission is being reviewed by a VRS agent. You'll receive an SMS notification shortly.
               </p>
             )}
-            {stage1Status === "approved" && !hasAuthCode && (
+            {(status === "completed" || status === "approved") && !hasAuthCode && (
               <p className="text-sm opacity-80 mt-1">
                 You're Clear to Go! Your authorization code will arrive via SMS.
               </p>
             )}
-            {stage1Status === "rejected" && (
+            {status === "rejected" && (
               <p className="text-sm opacity-80 mt-1">
                 VRS needs additional information before they can proceed with authorization.
               </p>
             )}
-            {stage1Status === "invalid" && (
+            {status === "invalid" && (
               <p className="text-sm opacity-80 mt-1">
                 This request cannot be processed through VRS.
               </p>
@@ -207,16 +207,20 @@ export default function SubmissionDetailPage() {
           </Card>
         )}
 
-        {stage1Status === "rejected" && sub.stage1RejectionReason && (
+        {status === "rejected" && (sub.rejectionReasons || sub.stage1RejectionReason) && (
           <Card className="border-destructive">
             <CardContent className="p-4">
               <p className="text-sm font-semibold text-destructive mb-1">What's Missing:</p>
-              <p className="text-sm" data-testid="text-rejection-reason">{sub.stage1RejectionReason}</p>
+              <p className="text-sm" data-testid="text-rejection-reason">
+                {sub.rejectionReasons
+                  ? (typeof sub.rejectionReasons === 'string' ? JSON.parse(sub.rejectionReasons) : sub.rejectionReasons).join(', ')
+                  : sub.stage1RejectionReason}
+              </p>
             </CardContent>
           </Card>
         )}
 
-        {stage1Status === "invalid" && (
+        {status === "invalid" && (
           <Card className="border-gray-500">
             <CardContent className="p-4 space-y-2">
               <p className="text-sm font-semibold">Not Applicable</p>
@@ -237,7 +241,7 @@ export default function SubmissionDetailPage() {
             <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : "Infestation / Non-Accessible"} testId="text-detail-request-type" />
             <DetailRow label="Status" value={
               <StatusBadge
-                stage1={sub.stage1Status}
+                status={status}
                 stage2={sub.stage2Status}
                 hasAuthCode={hasAuthCode}
               />
@@ -249,10 +253,10 @@ export default function SubmissionDetailPage() {
                 testId="text-detail-submitted"
               />
             )}
-            {sub.stage1ReviewedAt && (
+            {(sub.reviewedAt || sub.stage1ReviewedAt) && (
               <DetailRow
-                label={stage1Status === "approved" ? "Approved At" : "Reviewed At"}
-                value={new Date(sub.stage1ReviewedAt).toLocaleString()}
+                label={(status === "completed" || status === "approved") ? "Approved At" : "Reviewed At"}
+                value={new Date((sub.reviewedAt || sub.stage1ReviewedAt)!).toLocaleString()}
                 testId="text-detail-reviewed"
               />
             )}
@@ -405,25 +409,27 @@ export default function SubmissionDetailPage() {
                           </p>
                         )}
 
-                        {item.stage1Status === "rejected" && item.stage1ReviewedAt && (
+                        {(item.ticketStatus === "rejected" || item.stage1Status === "rejected") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-destructive/50">
                             <p className="text-xs font-medium text-destructive">
-                              Rejected {item.stage1ReviewedAt ? new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
-                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                              Rejected {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
-                            {item.stage1RejectionReason && (
+                            {(item.rejectionReasons || item.stage1RejectionReason) && (
                               <p className="text-xs text-muted-foreground">
-                                Reason: "{item.stage1RejectionReason}"
+                                Reason: "{item.rejectionReasons
+                                  ? (typeof item.rejectionReasons === 'string' ? JSON.parse(item.rejectionReasons) : item.rejectionReasons).join(', ')
+                                  : item.stage1RejectionReason}"
                               </p>
                             )}
                           </div>
                         )}
 
-                        {item.stage1Status === "invalid" && item.stage1ReviewedAt && (
+                        {(item.ticketStatus === "invalid" || item.stage1Status === "invalid") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-gray-400">
                             <p className="text-xs font-medium text-gray-600">
-                              Invalid {item.stage1ReviewedAt ? new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
-                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                              Invalid {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
                             {(item as any).invalidReason && (
                               <p className="text-xs text-muted-foreground">
@@ -433,11 +439,11 @@ export default function SubmissionDetailPage() {
                           </div>
                         )}
 
-                        {item.stage1Status === "approved" && item.stage1ReviewedAt && (
+                        {(item.ticketStatus === "completed" || item.stage1Status === "approved") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-green-500/50">
                             <p className="text-xs font-medium text-green-600">
-                              Approved {new Date(item.stage1ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                              {item.stage1ReviewedBy && reviewerNames[item.stage1ReviewedBy] ? ` by ${reviewerNames[item.stage1ReviewedBy]}` : ""}
+                              Approved {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
                           </div>
                         )}
@@ -472,7 +478,7 @@ export default function SubmissionDetailPage() {
           </Card>
         )}
 
-        {stage1Status === "rejected" && resubCount < maxResubs && (
+        {status === "rejected" && resubCount < maxResubs && (
           <div className="space-y-2">
             <Link href={`/tech/resubmit/${sub.id}`}>
               <Button className="w-full" data-testid="button-resubmit">Resubmit with Updates</Button>
@@ -480,7 +486,7 @@ export default function SubmissionDetailPage() {
           </div>
         )}
 
-        {stage1Status === "rejected" && resubCount >= maxResubs && (
+        {status === "rejected" && resubCount >= maxResubs && (
           <Card className="border-destructive/50 bg-destructive/5">
             <CardContent className="p-4 text-center">
               <p className="text-sm font-semibold text-destructive" data-testid="text-max-resubmissions">Maximum resubmissions reached</p>
@@ -493,7 +499,7 @@ export default function SubmissionDetailPage() {
 
         <Link href="/tech">
           <Button variant="outline" className="w-full" data-testid="button-view-next">
-            {stage1Status === "approved" ? "View Next Job" : "Back to Home"}
+            {(status === "completed" || status === "approved") ? "View Next Job" : "Back to Home"}
           </Button>
         </Link>
       </div>
@@ -510,12 +516,11 @@ function DetailRow({ label, value, testId }: { label: string; value: React.React
   );
 }
 
-function StatusBadge({ stage1, stage2, hasAuthCode }: { stage1: string; stage2: string; hasAuthCode: boolean }) {
-  if (stage1 === "invalid") return <Badge variant="secondary">Not Applicable</Badge>;
+function StatusBadge({ status, stage2, hasAuthCode }: { status: string; stage2: string; hasAuthCode: boolean }) {
+  if (status === "invalid") return <Badge variant="secondary">Not Applicable</Badge>;
   if (stage2 === "declined") return <Badge variant="destructive">Repair Declined</Badge>;
   if (hasAuthCode) return <Badge className="bg-green-600 text-white border-green-600">Auth Code Issued</Badge>;
-  if (stage1 === "approved" && stage2 === "pending") return <Badge className="bg-yellow-600 text-white border-yellow-600">Awaiting Auth Code</Badge>;
-  if (stage1 === "approved") return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
-  if (stage1 === "rejected") return <Badge variant="destructive">Rejected</Badge>;
-  return <Badge variant="secondary">Stage 1 Review</Badge>;
+  if (status === "completed" || status === "approved") return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
+  if (status === "rejected") return <Badge variant="destructive">Rejected</Badge>;
+  return <Badge variant="secondary">Under Review</Badge>;
 }

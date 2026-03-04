@@ -91,21 +91,27 @@ export const submissions = pgTable("submissions", {
   voiceNoteUrl: varchar("voice_note_url", { length: 500 }),
   technicianLdapId: varchar("technician_ldap_id", { length: 50 }),
   phoneOverride: varchar("phone_override", { length: 20 }),
-  stage1Status: text("stage1_status").notNull().default("pending"), // 'pending', 'approved', 'rejected', 'invalid'
+  ticketStatus: text("ticket_status").notNull().default("queued"), // 'queued', 'pending', 'approved', 'rejected', 'invalid', 'completed'
+  stage1Status: text("stage1_status").notNull().default("pending"), // legacy - kept for migration compatibility
   stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
   stage1ReviewedAt: timestamp("stage1_reviewed_at"),
   stage1RejectionReason: text("stage1_rejection_reason"),
   invalidReason: varchar("invalid_reason", { length: 255 }),
   invalidInstructions: text("invalid_instructions"),
-  stage2Status: text("stage2_status").notNull().default("pending"), // 'pending', 'approved', 'declined', 'not_applicable'
+  stage2Status: text("stage2_status").notNull().default("pending"), // legacy - kept for migration compatibility
   stage2ReviewedBy: integer("stage2_reviewed_by").references(() => users.id),
   stage2ReviewedAt: timestamp("stage2_reviewed_at"),
-  stage2Outcome: text("stage2_outcome"), // 'approved', 'declined'
+  stage2Outcome: text("stage2_outcome"),
   declineReason: varchar("decline_reason", { length: 255 }),
   declineInstructions: text("decline_instructions"),
   authCode: varchar("auth_code", { length: 50 }),
   rgcCode: varchar("rgc_code", { length: 50 }),
   assignedTo: integer("assigned_to").references(() => users.id),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  agentNotes: text("agent_notes"),
+  rejectionReasons: text("rejection_reasons"), // JSON array of selected rejection reasons
+  reassignmentNotes: text("reassignment_notes"),
   appealNotes: text("appeal_notes"),
   resubmissionOf: integer("resubmission_of"),
   createdAt: timestamp("created_at").default(sql`now()`),

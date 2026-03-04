@@ -54,6 +54,7 @@ export interface IStorage {
   getSubmission(id: number): Promise<Submission | undefined>;
   getSubmissions(filters?: {
     technicianId?: number;
+    ticketStatus?: string;
     stage1Status?: string;
     stage2Status?: string;
     applianceType?: string;
@@ -62,6 +63,7 @@ export interface IStorage {
   }): Promise<Submission[]>;
   getSubmissionsWithTechnician(filters?: {
     technicianId?: number;
+    ticketStatus?: string;
     stage1Status?: string;
     stage2Status?: string;
     applianceType?: string;
@@ -78,6 +80,8 @@ export interface IStorage {
   getAgentQueueCount(agentId?: number): Promise<number>;
   getDivisionQueueCount(divisions: string[]): Promise<number>;
   getCompletedTodayCount(agentId?: number): Promise<number>;
+  getQueuedCount(divisions: string[]): Promise<number>;
+  getPendingCount(agentId: number): Promise<number>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
   getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]>;
@@ -251,6 +255,7 @@ export class DatabaseStorage implements IStorage {
 
   async getSubmissions(filters?: {
     technicianId?: number;
+    ticketStatus?: string;
     stage1Status?: string;
     stage2Status?: string;
     applianceType?: string;
@@ -261,6 +266,10 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.technicianId !== undefined) {
       conditions.push(eq(submissions.technicianId, filters.technicianId));
+    }
+
+    if (filters?.ticketStatus !== undefined) {
+      conditions.push(eq(submissions.ticketStatus, filters.ticketStatus));
     }
 
     if (filters?.stage1Status !== undefined) {
@@ -319,6 +328,7 @@ export class DatabaseStorage implements IStorage {
 
   async getSubmissionsWithTechnician(filters?: {
     technicianId?: number;
+    ticketStatus?: string;
     stage1Status?: string;
     stage2Status?: string;
     applianceType?: string;
@@ -330,6 +340,9 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.technicianId !== undefined) {
       conditions.push(eq(submissions.technicianId, filters.technicianId));
+    }
+    if (filters?.ticketStatus !== undefined) {
+      conditions.push(eq(submissions.ticketStatus, filters.ticketStatus));
     }
     if (filters?.stage1Status !== undefined) {
       conditions.push(eq(submissions.stage1Status, filters.stage1Status));
@@ -353,10 +366,10 @@ export class DatabaseStorage implements IStorage {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       conditions.push(
-        sql`${submissions.stage1ReviewedAt} >= ${today}` as any
+        sql`${submissions.reviewedAt} >= ${today}` as any
       );
       conditions.push(
-        sql`(${submissions.stage1Status} = 'approved' OR ${submissions.stage1Status} = 'rejected')` as any
+        sql`${submissions.ticketStatus} IN ('completed', 'approved', 'rejected', 'invalid')` as any
       );
     }
 
@@ -459,6 +472,33 @@ export class DatabaseStorage implements IStorage {
       .select({ count: sql<number>`count(*)` })
       .from(submissions)
       .where(and(...conditions));
+    return result[0]?.count || 0;
+  }
+
+  async getQueuedCount(divisions: string[]): Promise<number> {
+    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+    const isGeneralist = divisions.length >= allDivisions.length;
+    const conditions: any[] = [
+      eq(submissions.ticketStatus, "queued"),
+    ];
+    if (!isGeneralist && divisions.length > 0) {
+      conditions.push(inArray(submissions.applianceType, divisions));
+    }
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(...conditions));
+    return result[0]?.count || 0;
+  }
+
+  async getPendingCount(agentId: number): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(
+        eq(submissions.ticketStatus, "pending"),
+        eq(submissions.assignedTo, agentId)
+      ));
     return result[0]?.count || 0;
   }
 

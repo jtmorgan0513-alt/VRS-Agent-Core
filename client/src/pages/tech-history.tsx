@@ -40,7 +40,7 @@ export default function TechHistoryPage() {
                     <p className="text-sm font-medium" data-testid={`text-history-so-${sub.id}`}>
                       SO #{sub.serviceOrder}
                     </p>
-                    <StatusBadge status={sub.stage1Status} />
+                    <StatusBadge status={sub.ticketStatus || sub.stage1Status} />
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground capitalize">
@@ -65,8 +65,10 @@ export default function TechHistoryPage() {
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
+    case "queued":
     case "pending":
       return <Badge variant="secondary">Pending</Badge>;
+    case "completed":
     case "approved":
       return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
     case "rejected":

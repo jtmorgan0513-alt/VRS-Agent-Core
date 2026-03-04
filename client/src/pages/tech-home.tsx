@@ -20,9 +20,9 @@ export default function TechHomePage() {
   });
 
   const submissions = data?.submissions || [];
-  const pendingCount = submissions.filter((s) => s.stage1Status === "pending").length;
-  const approvedCount = submissions.filter((s) => s.stage1Status === "approved").length;
-  const rejectedCount = submissions.filter((s) => s.stage1Status === "rejected").length;
+  const pendingCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "pending" || (s.ticketStatus || s.stage1Status) === "queued").length;
+  const approvedCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "completed" || (s.ticketStatus || s.stage1Status) === "approved").length;
+  const rejectedCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "rejected").length;
   const recentSubmissions = submissions.slice(0, 3);
 
   return (
@@ -133,7 +133,7 @@ export default function TechHomePage() {
                             {sub.applianceType.replace("_", " ")} - {sub.requestType.replace("_", " ")}
                           </p>
                         </div>
-                        <StatusBadge status={sub.stage1Status} />
+                        <StatusBadge status={sub.ticketStatus || sub.stage1Status} />
                       </div>
                     </CardContent>
                   </Card>
@@ -149,12 +149,16 @@ export default function TechHomePage() {
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
+    case "queued":
     case "pending":
       return <Badge variant="secondary" data-testid="badge-pending">Pending</Badge>;
+    case "completed":
     case "approved":
       return <Badge className="bg-green-600 text-white border-green-600" data-testid="badge-approved">Approved</Badge>;
     case "rejected":
       return <Badge variant="destructive" data-testid="badge-rejected">Rejected</Badge>;
+    case "invalid":
+      return <Badge variant="outline" data-testid="badge-invalid">Invalid</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }

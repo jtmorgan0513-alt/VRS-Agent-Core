@@ -493,7 +493,7 @@ export async function registerRoutes(
         if (!originalSub) {
           return res.status(400).json({ error: "Original submission not found" });
         }
-        if (originalSub.stage1Status === "invalid") {
+        if (originalSub.ticketStatus === "invalid" || originalSub.stage1Status === "invalid") {
           return res.status(400).json({ error: "Invalid submissions cannot be resubmitted" });
         }
         const MAX_RESUBMISSIONS = 3;
@@ -502,7 +502,7 @@ export async function registerRoutes(
           rootId = originalSub.resubmissionOf;
         }
         const chain = await storage.getResubmissionChain(rootId);
-        const validResubmissions = chain.filter(s => s.stage1Status !== "invalid");
+        const validResubmissions = chain.filter(s => s.ticketStatus !== "invalid" && s.stage1Status !== "invalid");
         if (validResubmissions.length >= MAX_RESUBMISSIONS) {
           return res.status(400).json({ error: `Maximum ${MAX_RESUBMISSIONS} resubmissions reached. Please call VRS directly for assistance.` });
         }
@@ -528,6 +528,7 @@ export async function registerRoutes(
         videoUrl: parsed.data.videoUrl || null,
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
         assignedTo: null,
+        ticketStatus: "queued",
         stage1Status: "pending",
         stage2Status: "pending",
         stage1ReviewedBy: null,
@@ -557,6 +558,7 @@ export async function registerRoutes(
 
       let filters: {
         technicianId?: number;
+        ticketStatus?: string;
         stage1Status?: string;
         stage2Status?: string;
         assignedTo?: number;
@@ -569,10 +571,9 @@ export async function registerRoutes(
         filters.technicianId = user.id;
       } else if (user.role === "vrs_agent") {
         const isCompletedToday = req.query.completedToday === "true";
-        const isStage1 = req.query.stage1Status === "pending";
-        const isStage2 = req.query.stage1Status === "approved" && req.query.stage2Status === "pending";
+        const ticketStatusFilter = req.query.ticketStatus as string | undefined;
 
-        if (isStage1 && !isCompletedToday) {
+        if (ticketStatusFilter === "queued" && !isCompletedToday) {
           const specs = await storage.getSpecializations(user.id);
           const divisions = specs.map(s => s.division);
           if (divisions.length === 0) {
@@ -582,13 +583,18 @@ export async function registerRoutes(
           if (!isGeneralist) {
             filters.divisionFilter = divisions;
           }
-        } else if (isStage2 || isCompletedToday) {
+        } else if (ticketStatusFilter === "pending") {
+          filters.assignedTo = user.id;
+        } else if (isCompletedToday) {
           filters.assignedTo = user.id;
         } else {
           filters.assignedTo = user.id;
         }
       }
 
+      if (req.query.ticketStatus) {
+        filters.ticketStatus = req.query.ticketStatus as string;
+      }
       if (req.query.stage1Status) {
         filters.stage1Status = req.query.stage1Status as string;
       }
@@ -658,11 +664,11 @@ export async function registerRoutes(
       }
       if (user.role === "vrs_agent") {
         const isAssignedToAgent = submission.assignedTo === user.id;
-        const isUnassignedStage1 = submission.assignedTo === null && submission.stage1Status === "pending";
-        if (!isAssignedToAgent && !isUnassignedStage1) {
+        const isQueued = submission.ticketStatus === "queued";
+        if (!isAssignedToAgent && !isQueued) {
           return res.status(403).json({ error: "Access denied" });
         }
-        if (isUnassignedStage1) {
+        if (isQueued) {
           const specs = await storage.getSpecializations(user.id);
           const divisions = specs.map(s => s.division);
           const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
@@ -671,10 +677,6 @@ export async function registerRoutes(
             return res.status(403).json({ error: "Access denied" });
           }
         }
-      }
-
-      if (user.role === "vrs_agent" && user.agentStatus === "online") {
-        await storage.updateUser(user.id, { agentStatus: "working" } as any);
       }
 
       return res.status(200).json({ submission });
@@ -743,7 +745,187 @@ export async function registerRoutes(
   });
 
   // ========================================================================
-  // STAGE 1 REVIEW ROUTES
+  // TICKET CLAIM ROUTE — Agent claims a queued ticket
+  // ========================================================================
+
+  app.patch("/api/submissions/:id/claim", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.ticketStatus !== "queued") {
+        return res.status(400).json({ error: "Ticket is no longer available — it may have been claimed by another agent" });
+      }
+
+      if (authReq.user!.role === "vrs_agent") {
+        const specs = await storage.getSpecializations(authReq.user!.id);
+        const divisions = specs.map(s => s.division);
+        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+        const isGeneralist = divisions.length >= allDivisions.length;
+        if (!isGeneralist && !divisions.includes(submission.applianceType)) {
+          return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
+        }
+      }
+
+      const updated = await storage.updateSubmission(id, {
+        ticketStatus: "pending",
+        assignedTo: authReq.user!.id,
+        updatedAt: new Date(),
+      } as any);
+
+      if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus !== "working") {
+        await storage.updateUser(authReq.user!.id, { agentStatus: "working", updatedAt: new Date() } as any);
+      }
+
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("Claim ticket error:", error);
+      return res.status(500).json({ error: "Failed to claim ticket" });
+    }
+  });
+
+  // ========================================================================
+  // UNIFIED TICKET PROCESS ROUTE — Approve / Reject / Invalid
+  // ========================================================================
+
+  const processActionSchema = z.object({
+    action: z.enum(["approve", "reject", "invalid"]),
+    rejectionReasons: z.array(z.string()).optional(),
+    agentNotes: z.string().optional(),
+    authCode: z.string().optional(),
+    invalidReason: z.string().optional(),
+    invalidInstructions: z.string().optional(),
+  });
+
+  app.patch("/api/submissions/:id/process", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const parsed = processActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.ticketStatus !== "pending") {
+        return res.status(400).json({ error: "Ticket must be in pending status to process" });
+      }
+
+      if (submission.assignedTo !== authReq.user!.id && authReq.user!.role !== "admin" && authReq.user!.role !== "super_admin") {
+        return res.status(403).json({ error: "This ticket is not assigned to you" });
+      }
+
+      const { action, rejectionReasons, agentNotes, invalidReason, invalidInstructions } = parsed.data;
+      let { authCode } = parsed.data;
+
+      if (action === "invalid" && !invalidReason) {
+        return res.status(400).json({ error: "Invalid reason is required" });
+      }
+
+      const updateData: Record<string, unknown> = {
+        reviewedBy: authReq.user!.id,
+        reviewedAt: new Date(),
+        agentNotes: agentNotes || null,
+        updatedAt: new Date(),
+      };
+
+      let smsMessage: string;
+      let smsType: string;
+
+      if (action === "approve") {
+        const isNonPartsRequest = submission.requestType !== "authorization";
+        let rgcCode: string | null = null;
+
+        if (!isNonPartsRequest) {
+          const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();
+          const needsRgcOnly = ["sears_protect", "sears protect", "sears pa", "sears_pa", "legacy sears", "legacy_sears_cinch", "legacy sears / cinch", "cinch"].some(w => warrantyCompany.includes(w)) || submission.warrantyType === "sears_protect";
+          const needsExternalAuth = ["american home shield", "ahs", "first american"].some(w => warrantyCompany.includes(w));
+
+          const todayStr = new Date().toISOString().slice(0, 10);
+          const todayRgcCode = await storage.getDailyRgcCode(todayStr);
+          if (!todayRgcCode) {
+            return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
+          }
+          rgcCode = todayRgcCode.code;
+
+          if (needsExternalAuth) {
+            if (!authCode || !authCode.trim()) {
+              return res.status(400).json({ error: "External authorization code is required for this warranty provider" });
+            }
+          } else {
+            authCode = rgcCode;
+          }
+        }
+
+        updateData.ticketStatus = "completed";
+        updateData.authCode = authCode || null;
+        updateData.rgcCode = rgcCode;
+        updateData.stage1Status = "approved";
+        updateData.stage2Status = "approved";
+        updateData.stage2Outcome = "approved";
+
+        const authDisplay = authCode || rgcCode || "";
+        smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode);
+        smsType = "ticket_approved";
+
+      } else if (action === "reject") {
+        updateData.ticketStatus = "rejected";
+        updateData.assignedTo = null;
+        updateData.stage1Status = "rejected";
+        updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
+        updateData.stage1RejectionReason = rejectionReasons?.join(", ") || agentNotes || "More information needed";
+
+        const host = req.get("host") || "";
+        const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
+        const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
+        const reasonText = rejectionReasons?.join(", ") || agentNotes || "More information needed";
+        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, reasonText, resubmitLink);
+        smsType = "ticket_rejected";
+
+      } else {
+        updateData.ticketStatus = "invalid";
+        updateData.stage1Status = "invalid";
+        updateData.stage2Status = "not_applicable";
+        updateData.invalidReason = invalidReason;
+        updateData.invalidInstructions = invalidInstructions || null;
+
+        smsMessage = buildStage1InvalidMessage(submission.serviceOrder, invalidReason || "", invalidInstructions);
+        smsType = "ticket_invalid";
+      }
+
+      const updated = await storage.updateSubmission(id, updateData as any);
+
+      await sendSms(submission.id, submission.phone, smsType, smsMessage);
+
+      if (authReq.user!.role === "vrs_agent") {
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+      }
+
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("Process ticket error:", error);
+      return res.status(500).json({ error: "Failed to process ticket" });
+    }
+  });
+
+  // ========================================================================
+  // LEGACY STAGE 1 REVIEW ROUTE (kept for backward compatibility)
   // ========================================================================
 
   const stage1ActionSchema = z.object({
@@ -863,17 +1045,17 @@ export async function registerRoutes(
       if (userRole === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
-        const queueCount = await storage.getDivisionQueueCount(divisions);
-        const stage2Count = await storage.getStage2QueueCount(authReq.user!.id);
+        const queueCount = await storage.getQueuedCount(divisions);
+        const pendingCount = await storage.getPendingCount(authReq.user!.id);
         const completedToday = await storage.getCompletedTodayCount(authReq.user!.id);
-        return res.status(200).json({ queueCount, completedToday, stage2Count });
+        return res.status(200).json({ queueCount, pendingCount, completedToday });
       }
 
-      const queueCount = await storage.getAgentQueueCount();
+      const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+      const queueCount = await storage.getQueuedCount(allDivisions);
       const completedToday = await storage.getCompletedTodayCount();
-      const stage2Count = await storage.getStage2QueueCount();
 
-      return res.status(200).json({ queueCount, completedToday, stage2Count });
+      return res.status(200).json({ queueCount, pendingCount: 0, completedToday });
     } catch (error) {
       console.error("Agent stats error:", error);
       return res.status(500).json({ error: "Failed to get agent stats" });
@@ -892,6 +1074,14 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: "Status must be 'online' or 'offline'" });
       }
+
+      if (parsed.data.status === "offline") {
+        const pendingCount = await storage.getPendingCount(authReq.user!.id);
+        if (pendingCount > 0) {
+          return res.status(400).json({ error: "You have an open ticket. Please request reassignment before going offline.", hasPendingTicket: true });
+        }
+      }
+
       const updated = await storage.updateUser(authReq.user!.id, { agentStatus: parsed.data.status, updatedAt: new Date() } as any);
       return res.status(200).json({ agentStatus: updated?.agentStatus });
     } catch (error) {
@@ -960,14 +1150,18 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/submissions/:id/reassign", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+  app.patch("/api/submissions/:id/reassign", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
     try {
+      const authReq = req as AuthenticatedRequest;
       const id = parseInt(req.params.id as string);
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid submission ID" });
       }
 
-      const bodySchema = z.object({ agentId: z.number() });
+      const bodySchema = z.object({
+        agentId: z.number().optional(),
+        notes: z.string().optional(),
+      });
       const parsed = bodySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors[0].message });
@@ -978,17 +1172,45 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Submission not found" });
       }
 
-      if (submission.stage1Status !== "approved" || submission.stage2Status !== "pending") {
-        return res.status(400).json({ error: "Can only reassign tickets in Stage 2 (stage1=approved, stage2=pending)" });
+      if (submission.ticketStatus !== "pending") {
+        return res.status(400).json({ error: "Can only reassign pending tickets" });
       }
 
-      const agent = await storage.getUser(parsed.data.agentId);
-      if (!agent || agent.role !== "vrs_agent") {
-        return res.status(400).json({ error: "Invalid agent - must be a VRS agent" });
+      if (authReq.user!.role === "vrs_agent") {
+        if (submission.assignedTo !== authReq.user!.id) {
+          return res.status(403).json({ error: "You can only reassign your own tickets" });
+        }
+        const updated = await storage.updateSubmission(id, {
+          ticketStatus: "queued",
+          assignedTo: null,
+          reassignmentNotes: parsed.data.notes || null,
+          updatedAt: new Date(),
+        } as any);
+
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+
+        return res.status(200).json({ submission: updated });
+      }
+
+      if (parsed.data.agentId) {
+        const agent = await storage.getUser(parsed.data.agentId);
+        if (!agent || agent.role !== "vrs_agent") {
+          return res.status(400).json({ error: "Invalid agent - must be a VRS agent" });
+        }
+
+        const updated = await storage.updateSubmission(id, {
+          assignedTo: parsed.data.agentId,
+          reassignmentNotes: parsed.data.notes || null,
+          updatedAt: new Date(),
+        } as any);
+
+        return res.status(200).json({ submission: updated });
       }
 
       const updated = await storage.updateSubmission(id, {
-        assignedTo: parsed.data.agentId,
+        ticketStatus: "queued",
+        assignedTo: null,
+        reassignmentNotes: parsed.data.notes || null,
         updatedAt: new Date(),
       } as any);
 
