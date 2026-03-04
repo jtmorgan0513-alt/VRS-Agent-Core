@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   isSystemAccount: boolean("is_system_account").notNull().default(false),
   passwordResetToken: varchar("password_reset_token", { length: 100 }),
   passwordResetExpires: timestamp("password_reset_expires"),
+  agentStatus: text("agent_status").notNull().default("offline"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

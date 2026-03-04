@@ -117,13 +117,13 @@ function formatDuration(ms: number | null): string {
 
 type SafeUser = Omit<User, "password">;
 
-type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians";
+type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status";
 
 const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"] as const;
 
 const DIVISION_LABELS: Record<string, string> = {
   cooking: "Cooking",
-  dishwasher: "Dishwasher",
+  dishwasher: "Dishwasher / Compactor",
   microwave: "Microwave",
   laundry: "Laundry",
   refrigeration: "Refrigeration",
@@ -144,6 +144,131 @@ const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
   super_admin: "Super Admin",
 };
+
+type AgentStatusInfo = {
+  id: number;
+  name: string;
+  racId: string | null;
+  agentStatus: string;
+  divisions: string[];
+  updatedAt: string | null;
+};
+
+function AgentStatusSection() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<{ agents: AgentStatusInfo[] }>({
+    queryKey: ["/api/admin/agent-status"],
+    refetchInterval: 10000,
+  });
+
+  const forceOfflineMutation = useMutation({
+    mutationFn: async (agentId: number) => {
+      const res = await apiRequest("PATCH", `/api/admin/users/${agentId}/status`, { status: "offline" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-status"] });
+      toast({ title: "Agent set to offline" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const agents = data?.agents || [];
+
+  const statusDot = (status: string) => {
+    if (status === "online") return "bg-green-500";
+    if (status === "working") return "bg-yellow-500";
+    return "bg-gray-400";
+  };
+
+  const statusLabel = (status: string) => {
+    if (status === "online") return "Online";
+    if (status === "working") return "Working";
+    return "Offline";
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Live Agent Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : agents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active agents found.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>LDAP ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Divisions</TableHead>
+                  <TableHead>Last Seen</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {agents.map((agent) => (
+                  <TableRow key={agent.id} data-testid={`agent-status-row-${agent.id}`}>
+                    <TableCell className="font-medium">{agent.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{agent.racId || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-block w-2.5 h-2.5 rounded-full ${statusDot(agent.agentStatus)}`} />
+                        <span className="text-sm">{statusLabel(agent.agentStatus)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {agent.divisions.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">None</span>
+                        ) : agent.divisions.length >= DIVISION_KEYS.length ? (
+                          <Badge variant="outline" className="text-xs">All Divisions</Badge>
+                        ) : (
+                          agent.divisions.map((d) => (
+                            <Badge key={d} variant="outline" className="text-xs">
+                              {DIVISION_LABELS[d] || d}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {agent.agentStatus !== "offline" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => forceOfflineMutation.mutate(agent.id)}
+                          disabled={forceOfflineMutation.isPending}
+                          data-testid={`button-force-offline-${agent.id}`}
+                        >
+                          Force Offline
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function TechnicianSyncSection() {
   const { toast } = useToast();
@@ -617,6 +742,16 @@ export default function AdminDashboard() {
                       <span>Technician Sync</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => setActiveView("agent-status")}
+                      data-active={activeView === "agent-status"}
+                      data-testid="nav-agent-status"
+                    >
+                      <Users className="w-4 h-4" />
+                      <span>Agent Status</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -685,6 +820,7 @@ export default function AdminDashboard() {
                 {activeView === "rgc" && "Daily RGC Code"}
                 {activeView === "analytics" && "Analytics"}
                 {activeView === "technicians" && "Technician Sync"}
+                {activeView === "agent-status" && "Agent Status"}
               </h1>
             </div>
             {activeView === "users" && (
@@ -1300,6 +1436,9 @@ export default function AdminDashboard() {
 
             {activeView === "technicians" && (
               <TechnicianSyncSection />
+            )}
+            {activeView === "agent-status" && (
+              <AgentStatusSection />
             )}
           </ScrollArea>
         </div>

@@ -105,6 +105,8 @@ export interface IStorage {
   deactivateTechniciansNotIn(ldapIds: string[]): Promise<number>;
   getTechnicianSyncInfo(): Promise<{ activeCount: number; lastSyncedAt: Date | null }>;
 
+  getAgentsWithStatus(): Promise<{ id: number; name: string; racId: string | null; agentStatus: string; divisions: string[]; updatedAt: Date | null }[]>;
+
   getAnalytics(): Promise<{
     submissionsToday: number;
     submissionsThisWeek: number;
@@ -622,6 +624,31 @@ export class DatabaseStorage implements IStorage {
       activeCount: Number(countResult[0]?.count) || 0,
       lastSyncedAt: lastSyncResult[0]?.lastSynced || null,
     };
+  }
+
+  async getAgentsWithStatus(): Promise<{ id: number; name: string; racId: string | null; agentStatus: string; divisions: string[]; updatedAt: Date | null }[]> {
+    const agents = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "vrs_agent"), eq(users.isActive, true)))
+      .orderBy(users.name);
+
+    const result = [];
+    for (const agent of agents) {
+      const specs = await db
+        .select()
+        .from(vrsAgentSpecializations)
+        .where(eq(vrsAgentSpecializations.userId, agent.id));
+      result.push({
+        id: agent.id,
+        name: agent.name,
+        racId: agent.racId,
+        agentStatus: agent.agentStatus,
+        divisions: specs.map(s => s.division),
+        updatedAt: agent.updatedAt,
+      });
+    }
+    return result;
   }
 
   async getAnalytics(): Promise<{

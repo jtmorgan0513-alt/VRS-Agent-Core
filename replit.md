@@ -58,6 +58,9 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/admin/technician-metrics - Get technician sync info (admin only)
 - POST /api/shsai/query - Query SHSAI service order history (vrs_agent only, body: {serviceOrder})
 - POST /api/shsai/followup - Send follow-up question to SHSAI session (vrs_agent only, body: {sessionId, trackId, threadId, message})
+- PATCH /api/agent/status - Agent self-toggle online/offline (vrs_agent only, body: {status: "online"|"offline"})
+- PATCH /api/admin/users/:id/status - Admin force agent status (admin/super_admin, body: {status: "online"|"working"|"offline"})
+- GET /api/admin/agent-status - Live list of all agents with name, LDAP ID, status, divisions (admin only)
 
 ### Frontend Pages
 - `/` - Landing page (choose user type: Field Technician, VRS Agent, Administrator)
@@ -128,3 +131,4 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - 2026-02-19: Password reset features - Admin permission check (admins can only reset agent/tech passwords, super_admin can reset anyone), self-service forgot password via SMS (6-digit code, 15-min expiry, Twilio), forgot password UI on agent/admin login pages, passwordResetToken/passwordResetExpires columns added to users
 - 2026-02-19: Shared division queue workflow - Tickets submit unassigned (assignedTo=null), Stage 1 is shared division queue filtered by agent specializations, Stage 1 approval assigns ticket to approving agent, Stage 2 is personal queue, removed My Assignments toggle, admin reassign endpoint for Stage 2 tickets, division-based stats counting, multi-agent division assignments in admin dashboard, ticket deletion restricted to admin/super_admin only
 - 2026-03-02: VRS team feedback batch - Video on resubmit (persist original, allow replace/remove), appeal notes field on resubmit form, submission history thread view (chronological timeline on tech detail page), resubmission limit (max 3, enforced server-side), "Invalid" Stage 1 status (reason dropdown, instructions textarea, SMS notification, no resubmit allowed), invalid status display across agent dashboard and tech views
+- 2026-03-04: Agent Status System + Queue Filtering Fix - agentStatus column on users (online/working/offline, default offline), PATCH /api/agent/status (agent self-toggle online/offline), PATCH /api/admin/users/:id/status (admin force status), GET /api/admin/agent-status (live agent list with divisions), auto-set working on ticket open, auto-reset to online after Stage 1/2 review, login popup asking agent to go online, persistent offline banner, online/offline toggle in sidebar header with colored status dots, admin Agent Status tab with force-offline, division filtering enforced strictly (no divisions = empty queue, 403 on out-of-division ticket access), Dishwasher label updated to "Dishwasher / Compactor"

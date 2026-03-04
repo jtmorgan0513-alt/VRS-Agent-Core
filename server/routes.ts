@@ -575,8 +575,11 @@ export async function registerRoutes(
         if (isStage1 && !isCompletedToday) {
           const specs = await storage.getSpecializations(user.id);
           const divisions = specs.map(s => s.division);
+          if (divisions.length === 0) {
+            return res.status(200).json({ submissions: [] });
+          }
           const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
-          if (!isGeneralist && divisions.length > 0) {
+          if (!isGeneralist) {
             filters.divisionFilter = divisions;
           }
         } else if (isStage2 || isCompletedToday) {
@@ -668,6 +671,10 @@ export async function registerRoutes(
             return res.status(403).json({ error: "Access denied" });
           }
         }
+      }
+
+      if (user.role === "vrs_agent" && user.agentStatus === "online") {
+        await storage.updateUser(user.id, { agentStatus: "working" } as any);
       }
 
       return res.status(200).json({ submission });
@@ -833,6 +840,10 @@ export async function registerRoutes(
       }
       await sendSms(submission.id, submission.phone, smsType, smsMessage);
 
+      if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
+      }
+
       return res.status(200).json({ submission: updated });
     } catch (error) {
       console.error("Stage 1 review error:", error);
@@ -866,6 +877,57 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Agent stats error:", error);
       return res.status(500).json({ error: "Failed to get agent stats" });
+    }
+  });
+
+  // ========================================================================
+  // AGENT STATUS ROUTES
+  // ========================================================================
+
+  app.patch("/api/agent/status", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const statusSchema = z.object({ status: z.enum(["online", "offline"]) });
+      const parsed = statusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Status must be 'online' or 'offline'" });
+      }
+      const updated = await storage.updateUser(authReq.user!.id, { agentStatus: parsed.data.status, updatedAt: new Date() } as any);
+      return res.status(200).json({ agentStatus: updated?.agentStatus });
+    } catch (error) {
+      console.error("Agent status error:", error);
+      return res.status(500).json({ error: "Failed to update status" });
+    }
+  });
+
+  app.patch("/api/admin/users/:id/status", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid user ID" });
+      const statusSchema = z.object({ status: z.enum(["online", "working", "offline"]) });
+      const parsed = statusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid status value" });
+      }
+      const user = await storage.getUser(id);
+      if (!user || user.role !== "vrs_agent") {
+        return res.status(400).json({ error: "User is not a VRS agent" });
+      }
+      const updated = await storage.updateUser(id, { agentStatus: parsed.data.status } as any);
+      return res.status(200).json({ agentStatus: updated?.agentStatus });
+    } catch (error) {
+      console.error("Admin set agent status error:", error);
+      return res.status(500).json({ error: "Failed to update agent status" });
+    }
+  });
+
+  app.get("/api/admin/agent-status", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const agents = await storage.getAgentsWithStatus();
+      return res.status(200).json({ agents });
+    } catch (error) {
+      console.error("Agent status list error:", error);
+      return res.status(500).json({ error: "Failed to get agent status" });
     }
   });
 
@@ -988,6 +1050,10 @@ export async function registerRoutes(
         const smsMessage = buildStage2DeclinedMessage(submission.serviceOrder, declineReason.trim(), declineInstructions?.trim());
         await sendSms(submission.id, submission.phone, "stage2_declined", smsMessage);
 
+        if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
+          await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
+        }
+
         return res.status(200).json({ submission: updated });
       }
 
@@ -1019,6 +1085,10 @@ export async function registerRoutes(
 
       const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode!, rgcCode);
       await sendSms(submission.id, submission.phone, "auth_code_sent", smsMessage);
+
+      if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
+      }
 
       return res.status(200).json({ submission: updated });
     } catch (error) {

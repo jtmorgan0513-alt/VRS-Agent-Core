@@ -100,7 +100,7 @@ const DIVISION_LABELS: Record<string, string> = {
   refrigeration: "Refrigeration",
   laundry: "Laundry",
   cooking: "Cooking",
-  dishwasher: "Dishwasher",
+  dishwasher: "Dishwasher / Compactor",
   microwave: "Microwave",
   hvac: "HVAC",
   all_other: "All Other",
@@ -110,7 +110,7 @@ const APPLIANCE_LABELS: Record<string, string> = {
   refrigeration: "Refrigerator",
   laundry: "Laundry",
   cooking: "Cooking",
-  dishwasher: "Dishwasher",
+  dishwasher: "Dishwasher / Compactor",
   microwave: "Microwave",
   hvac: "HVAC",
   all_other: "All Other",
@@ -185,6 +185,42 @@ export default function AgentDashboard() {
   const [shsaiFollowup, setShsaiFollowup] = useState("");
   const [shsaiFollowupLoading, setShsaiFollowupLoading] = useState(false);
   const [lastQueriedSubmissionId, setLastQueriedSubmissionId] = useState<number | null>(null);
+  const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [statusChecked, setStatusChecked] = useState(false);
+  const [localAgentStatus, setLocalAgentStatus] = useState<string>(user?.agentStatus || "offline");
+
+  useEffect(() => {
+    if (user?.agentStatus) {
+      setLocalAgentStatus(user.agentStatus);
+    }
+  }, [user?.agentStatus]);
+
+  const agentStatus = localAgentStatus;
+
+  const statusMutation = useMutation({
+    mutationFn: async (status: "online" | "offline") => {
+      const res = await apiRequest("PATCH", "/api/agent/status", { status });
+      return res.json();
+    },
+    onSuccess: (_data, status) => {
+      setLocalAgentStatus(status);
+    },
+  });
+
+  useEffect(() => {
+    if (!statusChecked && user && !isAdminViewing && agentStatus === "offline") {
+      setShowStatusPopup(true);
+      setStatusChecked(true);
+    } else if (!statusChecked && user) {
+      setStatusChecked(true);
+    }
+  }, [user, agentStatus, statusChecked, isAdminViewing]);
+
+  useEffect(() => {
+    if (selectedId === null && !isAdminViewing && agentStatus === "working") {
+      statusMutation.mutate("online");
+    }
+  }, [selectedId]);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -473,7 +509,42 @@ export default function AgentDashboard() {
               <img src={searsLogo} alt="Sears Home Services" className="h-7" data-testid="img-logo" />
               <span className="font-semibold text-sm" data-testid="text-sidebar-title">VRS Agent</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1" data-testid="text-agent-name">{user?.name}</p>
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    agentStatus === "online" ? "bg-green-500" :
+                    agentStatus === "working" ? "bg-yellow-500" :
+                    "bg-gray-400"
+                  }`}
+                  data-testid="indicator-agent-status"
+                />
+                <span className="text-xs text-muted-foreground" data-testid="text-agent-name">{user?.name}</span>
+              </div>
+              {!isAdminViewing && (
+                <button
+                  onClick={() => {
+                    if (agentStatus === "offline") {
+                      statusMutation.mutate("online");
+                    } else if (agentStatus === "online") {
+                      statusMutation.mutate("offline");
+                    }
+                  }}
+                  disabled={agentStatus === "working"}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    agentStatus === "online" || agentStatus === "working"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                  }`}
+                  data-testid="toggle-agent-status"
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full ${
+                    agentStatus === "online" || agentStatus === "working" ? "bg-green-500" : "bg-gray-400 ring-1 ring-gray-500"
+                  }`} />
+                  {agentStatus === "online" ? "Online" : agentStatus === "working" ? "Working" : "Offline"}
+                </button>
+              )}
+            </div>
           </SidebarHeader>
 
           <SidebarContent>
@@ -684,6 +755,16 @@ export default function AgentDashboard() {
         </Sidebar>
 
         <div className="flex flex-col flex-1 min-w-0">
+          {!isAdminViewing && agentStatus === "offline" && (
+            <button
+              onClick={() => statusMutation.mutate("online")}
+              className="w-full px-4 py-2 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-sm font-medium text-center hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors flex items-center justify-center gap-2"
+              data-testid="banner-offline"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              You are offline and not receiving tickets. Click here to go online.
+            </button>
+          )}
           <header className="flex items-center justify-between gap-2 p-3 border-b sticky top-0 z-50 bg-background">
             <div className="flex items-center gap-2">
               {selectedId ? (
@@ -2010,6 +2091,31 @@ export default function AgentDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showStatusPopup} onOpenChange={setShowStatusPopup}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-status-popup-title">You're currently offline</AlertDialogTitle>
+            <AlertDialogDescription>
+              Go online to start receiving tickets?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowStatusPopup(false)} data-testid="button-stay-offline">
+              Stay Offline
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                statusMutation.mutate("online");
+                setShowStatusPopup(false);
+              }}
+              data-testid="button-go-online"
+            >
+              Go Online
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

@@ -35,7 +35,7 @@ const APPLIANCE_TYPES = [
   { value: "refrigeration", label: "Refrigerator" },
   { value: "laundry", label: "Laundry" },
   { value: "cooking", label: "Cooking" },
-  { value: "dishwasher", label: "Dishwasher" },
+  { value: "dishwasher", label: "Dishwasher / Compactor" },
   { value: "microwave", label: "Microwave" },
   { value: "hvac", label: "HVAC" },
   { value: "all_other", label: "All Other" },
