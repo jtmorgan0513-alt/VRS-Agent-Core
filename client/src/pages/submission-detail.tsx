@@ -126,6 +126,14 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
+    if ((sub as any).submissionApproved && status === "pending") {
+      return {
+        bgClass: "bg-blue-600 text-white",
+        icon: <CheckCircle className="w-10 h-10 mx-auto mb-2" />,
+        title: "Submission Approved",
+        subtitle: `Service Order #${sub.serviceOrder}`,
+      };
+    }
     return {
       bgClass: "bg-primary text-primary-foreground",
       icon: <Clock className="w-10 h-10 mx-auto mb-2 opacity-80" />,
@@ -165,9 +173,14 @@ export default function SubmissionDetailPage() {
           <div className="text-center py-4">
             {headerConfig.icon}
             <h1 className="text-xl font-bold" data-testid="text-status-title">{headerConfig.title}</h1>
-            {(status === "queued" || status === "pending") && (
+            {(status === "queued" || status === "pending") && !(sub as any).submissionApproved && (
               <p className="text-sm opacity-80 mt-1">
                 Your submission is being reviewed by a VRS agent. You'll receive an SMS notification shortly.
+              </p>
+            )}
+            {status === "pending" && (sub as any).submissionApproved && (
+              <p className="text-sm opacity-80 mt-1">
+                Your submission has been approved! VRS is now obtaining your authorization code. You can pack up and tidy your workspace while you wait.
               </p>
             )}
             {(status === "completed" || status === "approved") && !hasAuthCode && (

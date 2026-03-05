@@ -819,7 +819,7 @@ export async function registerRoutes(
   // ========================================================================
 
   const processActionSchema = z.object({
-    action: z.enum(["approve", "reject", "invalid"]),
+    action: z.enum(["approve", "reject", "invalid", "approve_submission"]),
     rejectionReasons: z.array(z.string()).optional(),
     agentNotes: z.string().optional(),
     authCode: z.string().optional(),
@@ -856,6 +856,10 @@ export async function registerRoutes(
       const { action, rejectionReasons, agentNotes, invalidReason, invalidInstructions } = parsed.data;
       let { authCode } = parsed.data;
 
+      if (submission.submissionApproved && (action === "reject" || action === "invalid" || action === "approve_submission")) {
+        return res.status(400).json({ error: "Submission has already been approved. Only authorization (approve) is allowed at this stage." });
+      }
+
       if (action === "invalid" && !invalidReason) {
         return res.status(400).json({ error: "Invalid reason is required" });
       }
@@ -869,6 +873,20 @@ export async function registerRoutes(
 
       let smsMessage: string;
       let smsType: string;
+
+      if (action === "approve_submission") {
+        updateData.submissionApproved = true;
+        updateData.submissionApprovedAt = new Date();
+        updateData.stage1Status = "approved";
+
+        smsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+        smsType = "submission_approved";
+
+        const updated = await storage.updateSubmission(id, updateData as any);
+        await sendSms(submission.id, submission.phone, smsType, smsMessage);
+
+        return res.status(200).json({ submission: updated });
+      }
 
       if (action === "approve") {
         const isNonPartsRequest = submission.requestType !== "authorization";

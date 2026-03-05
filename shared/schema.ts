@@ -104,6 +104,8 @@ export const submissions = pgTable("submissions", {
   stage2Outcome: text("stage2_outcome"),
   declineReason: varchar("decline_reason", { length: 255 }),
   declineInstructions: text("decline_instructions"),
+  submissionApproved: boolean("submission_approved").notNull().default(false),
+  submissionApprovedAt: timestamp("submission_approved_at"),
   authCode: varchar("auth_code", { length: 50 }),
   rgcCode: varchar("rgc_code", { length: 50 }),
   assignedTo: integer("assigned_to").references(() => users.id),

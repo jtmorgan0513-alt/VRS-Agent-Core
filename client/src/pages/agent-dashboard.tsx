@@ -159,7 +159,7 @@ export default function AgentDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
 
-  const [selectedAction, setSelectedAction] = useState<"approve" | "reject" | "invalid" | null>(null);
+  const [selectedAction, setSelectedAction] = useState<"approve" | "reject" | "invalid" | "approve_submission" | null>(null);
   const [selectedRejectionReasons, setSelectedRejectionReasons] = useState<string[]>([]);
   const [agentNotes, setAgentNotes] = useState("");
   const [authCode, setAuthCode] = useState("");
@@ -429,11 +429,14 @@ export default function AgentDashboard() {
       return res.json();
     },
     onSuccess: () => {
-      const actionLabel = selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : "Marked Invalid";
-      toast({ title: actionLabel, description: "Technician has been notified." });
-      setSelectedId(null);
+      const actionLabel = selectedAction === "approve_submission" ? "Submission Approved" : selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : "Marked Invalid";
+      const actionDesc = selectedAction === "approve_submission" ? "Technician has been notified. Enter the authorization code to complete this ticket." : "Technician has been notified.";
+      toast({ title: actionLabel, description: actionDesc });
+      if (selectedAction !== "approve_submission") {
+        setSelectedId(null);
+        setLocalAgentStatus("online");
+      }
       resetActionState();
-      setLocalAgentStatus("online");
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     },
@@ -525,6 +528,17 @@ export default function AgentDashboard() {
     }
     processMutation.mutate({ submissionId: selectedSubmission.id, body });
     setConfirmOpen(false);
+  };
+
+  const isTwoStageWarranty = (sub: SubmissionWithTech | null): boolean => {
+    if (!sub) return false;
+    if (sub.requestType !== "authorization") return false;
+    return needsExternalAuth(sub);
+  };
+
+  const isSubmissionApprovedStage = (sub: SubmissionWithTech | null): boolean => {
+    if (!sub) return false;
+    return (sub as any).submissionApproved === true;
   };
 
   const needsExternalAuth = (sub: SubmissionWithTech | null): boolean => {
@@ -1289,8 +1303,28 @@ export default function AgentDashboard() {
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2">
                             <Layers className="w-4 h-4" />
-                            Review Actions
+                            {isTwoStageWarranty(selectedSubmission) && !isSubmissionApprovedStage(selectedSubmission)
+                              ? "Stage 1: Submission Review"
+                              : isTwoStageWarranty(selectedSubmission) && isSubmissionApprovedStage(selectedSubmission)
+                              ? "Stage 2: Authorization"
+                              : "Review Actions"}
                           </CardTitle>
+                          {isTwoStageWarranty(selectedSubmission) && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-green-500" : "bg-blue-500"}`} />
+                              <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-blue-500" : "bg-muted"}`} />
+                            </div>
+                          )}
+                          {isTwoStageWarranty(selectedSubmission) && isSubmissionApprovedStage(selectedSubmission) && (
+                            <div className="mt-2 p-2 bg-green-50 dark:bg-green-950 rounded-md border border-green-200 dark:border-green-800">
+                              <p className="text-xs font-medium text-green-700 dark:text-green-300 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Submission Approved
+                              </p>
+                              <p className="text-xs text-green-600 dark:text-green-400 mt-1" data-testid="text-submission-approved">
+                                Technician has been notified. Enter the authorization code to complete this ticket.
+                              </p>
+                            </div>
+                          )}
                           {selectedSubmission.resubmissionOf && (
                             <p className="text-xs text-blue-600" data-testid="text-resubmission-indicator">
                               This is a resubmission
@@ -1308,197 +1342,283 @@ export default function AgentDashboard() {
                           )}
                         </CardHeader>
                         <CardContent className="space-y-5">
-                          <div className="grid grid-cols-3 gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedAction(selectedAction === "approve" ? null : "approve")}
-                              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
-                                selectedAction === "approve"
-                                  ? "border-green-500 bg-green-50 dark:bg-green-950/30"
-                                  : "border-border hover:border-green-300"
-                              }`}
-                              data-testid="action-approve"
-                            >
-                              {selectedAction === "approve" ? (
-                                <CheckSquare className="w-8 h-8 text-green-600" />
-                              ) : (
-                                <Square className="w-8 h-8 text-muted-foreground" />
-                              )}
-                              <span className={`text-sm font-medium ${selectedAction === "approve" ? "text-green-700 dark:text-green-400" : ""}`}>
-                                Approve
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedAction(selectedAction === "reject" ? null : "reject")}
-                              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
-                                selectedAction === "reject"
-                                  ? "border-red-500 bg-red-50 dark:bg-red-950/30"
-                                  : "border-border hover:border-red-300"
-                              }`}
-                              data-testid="action-reject"
-                            >
-                              {selectedAction === "reject" ? (
-                                <CheckSquare className="w-8 h-8 text-red-600" />
-                              ) : (
-                                <Square className="w-8 h-8 text-muted-foreground" />
-                              )}
-                              <span className={`text-sm font-medium ${selectedAction === "reject" ? "text-red-700 dark:text-red-400" : ""}`}>
-                                Reject
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedAction(selectedAction === "invalid" ? null : "invalid")}
-                              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
-                                selectedAction === "invalid"
-                                  ? "border-gray-500 bg-gray-50 dark:bg-gray-950/30"
-                                  : "border-border hover:border-gray-300"
-                              }`}
-                              data-testid="action-invalid"
-                            >
-                              {selectedAction === "invalid" ? (
-                                <CheckSquare className="w-8 h-8 text-gray-600" />
-                              ) : (
-                                <Square className="w-8 h-8 text-muted-foreground" />
-                              )}
-                              <span className={`text-sm font-medium ${selectedAction === "invalid" ? "text-gray-700 dark:text-gray-400" : ""}`}>
-                                Invalid
-                              </span>
-                            </button>
-                          </div>
-
-                          {selectedAction === "reject" && (
-                            <div className="space-y-3 border rounded-lg p-4 bg-red-50/50 dark:bg-red-950/10">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rejection Reasons</p>
-                              <div className="space-y-2">
-                                {REJECTION_SUGGESTIONS.map((reason) => (
-                                  <label key={reason} className="flex items-center gap-2 cursor-pointer" data-testid={`checkbox-reason-${reason.replace(/\s+/g, '-').toLowerCase()}`}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedRejectionReasons((prev) =>
-                                          prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
-                                        );
-                                      }}
-                                      className="shrink-0"
-                                    >
-                                      {selectedRejectionReasons.includes(reason) ? (
-                                        <CheckSquare className="w-5 h-5 text-red-600" />
-                                      ) : (
-                                        <Square className="w-5 h-5 text-muted-foreground" />
-                                      )}
-                                    </button>
-                                    <span className="text-sm">{reason}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedAction === "invalid" && (
-                            <div className="space-y-3 border rounded-lg p-4 bg-gray-50/50 dark:bg-gray-950/10">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Invalid Reason</p>
-                              <Select value={invalidReason} onValueChange={setInvalidReason}>
-                                <SelectTrigger data-testid="select-invalid-reason">
-                                  <SelectValue placeholder="Select reason..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="Not a VRS-eligible warranty">Not a VRS-eligible warranty</SelectItem>
-                                  <SelectItem value="Product not covered">Product not covered</SelectItem>
-                                  <SelectItem value="Use standard authorization process">Use standard authorization process</SelectItem>
-                                  <SelectItem value="Contact B2B support directly">Contact B2B support directly</SelectItem>
-                                  <SelectItem value="Other">Other</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <Textarea
-                                placeholder="Instructions for the technician..."
-                                value={invalidInstructions}
-                                onChange={(e) => setInvalidInstructions(e.target.value)}
-                                className="resize-none"
-                                rows={2}
-                                data-testid="input-invalid-instructions"
-                              />
-                            </div>
-                          )}
-
-                          {selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && (
-                            <div className="space-y-3 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Authorization Code</p>
-                              {rgcMissing ? (
-                                <p className="text-sm text-destructive" data-testid="text-rgc-not-set">
-                                  No RGC code set for today. Contact an administrator.
-                                </p>
-                              ) : (
-                                <div className="space-y-3">
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground">Today's RGC Code</Label>
-                                    <Input
-                                      value={todaysRgcCode || ""}
-                                      readOnly
-                                      className="font-mono bg-muted mt-1"
-                                      data-testid="input-rgc-readonly"
-                                    />
-                                  </div>
-                                  {needsExternalAuth(selectedSubmission) && (
+                          {isTwoStageWarranty(selectedSubmission) && isSubmissionApprovedStage(selectedSubmission) ? (
+                            <>
+                              <div className="space-y-3 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Authorization Code</p>
+                                {rgcMissing ? (
+                                  <p className="text-sm text-destructive" data-testid="text-rgc-not-set">
+                                    No RGC code set for today. Contact an administrator.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <div>
+                                      <Label className="text-xs text-muted-foreground">Today's RGC Code</Label>
+                                      <Input
+                                        value={todaysRgcCode || ""}
+                                        readOnly
+                                        className="font-mono bg-muted mt-1"
+                                        data-testid="input-rgc-readonly"
+                                      />
+                                    </div>
                                     <div>
                                       <Label className="text-xs text-muted-foreground">{getProviderAuthLabel(selectedSubmission)}</Label>
                                       <Input
-                                        placeholder="Enter auth code..."
+                                        placeholder="Enter auth code from warranty provider..."
                                         value={authCode}
                                         onChange={(e) => setAuthCode(e.target.value)}
                                         className="mt-1"
                                         data-testid="input-auth-code"
                                       />
                                     </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Agent Notes (optional)</Label>
+                                <Textarea
+                                  placeholder="Add any notes for this ticket..."
+                                  value={agentNotes}
+                                  onChange={(e) => setAgentNotes(e.target.value)}
+                                  className="resize-none"
+                                  rows={3}
+                                  data-testid="input-agent-notes"
+                                />
+                              </div>
+
+                              <Button
+                                className="w-full"
+                                size="lg"
+                                onClick={() => {
+                                  if (!authCode.trim()) {
+                                    toast({ title: "Error", description: `Enter the ${getProviderAuthLabel(selectedSubmission)}`, variant: "destructive" });
+                                    return;
+                                  }
+                                  if (rgcMissing) {
+                                    toast({ title: "Error", description: "RGC code not set for today", variant: "destructive" });
+                                    return;
+                                  }
+                                  setSelectedAction("approve");
+                                  setConfirmOpen(true);
+                                }}
+                                disabled={processMutation.isPending}
+                                data-testid="button-authorize-submit"
+                              >
+                                <Send className="w-4 h-4 mr-2" />
+                                {processMutation.isPending ? "Processing..." : "Authorize & Send"}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <div className={`grid ${isTwoStageWarranty(selectedSubmission) ? "grid-cols-3" : "grid-cols-3"} gap-3`}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isTwoStageWarranty(selectedSubmission)) {
+                                      setSelectedAction(selectedAction === "approve_submission" ? null : "approve_submission");
+                                    } else {
+                                      setSelectedAction(selectedAction === "approve" ? null : "approve");
+                                    }
+                                  }}
+                                  className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                                    selectedAction === "approve" || selectedAction === "approve_submission"
+                                      ? "border-green-500 bg-green-50 dark:bg-green-950/30"
+                                      : "border-border hover:border-green-300"
+                                  }`}
+                                  data-testid="action-approve"
+                                >
+                                  {selectedAction === "approve" || selectedAction === "approve_submission" ? (
+                                    <CheckSquare className="w-8 h-8 text-green-600" />
+                                  ) : (
+                                    <Square className="w-8 h-8 text-muted-foreground" />
+                                  )}
+                                  <span className={`text-sm font-medium ${selectedAction === "approve" || selectedAction === "approve_submission" ? "text-green-700 dark:text-green-400" : ""}`}>
+                                    {isTwoStageWarranty(selectedSubmission) ? "Approve Submission" : "Approve"}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAction(selectedAction === "reject" ? null : "reject")}
+                                  className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                                    selectedAction === "reject"
+                                      ? "border-red-500 bg-red-50 dark:bg-red-950/30"
+                                      : "border-border hover:border-red-300"
+                                  }`}
+                                  data-testid="action-reject"
+                                >
+                                  {selectedAction === "reject" ? (
+                                    <CheckSquare className="w-8 h-8 text-red-600" />
+                                  ) : (
+                                    <Square className="w-8 h-8 text-muted-foreground" />
+                                  )}
+                                  <span className={`text-sm font-medium ${selectedAction === "reject" ? "text-red-700 dark:text-red-400" : ""}`}>
+                                    Reject
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAction(selectedAction === "invalid" ? null : "invalid")}
+                                  className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                                    selectedAction === "invalid"
+                                      ? "border-gray-500 bg-gray-50 dark:bg-gray-950/30"
+                                      : "border-border hover:border-gray-300"
+                                  }`}
+                                  data-testid="action-invalid"
+                                >
+                                  {selectedAction === "invalid" ? (
+                                    <CheckSquare className="w-8 h-8 text-gray-600" />
+                                  ) : (
+                                    <Square className="w-8 h-8 text-muted-foreground" />
+                                  )}
+                                  <span className={`text-sm font-medium ${selectedAction === "invalid" ? "text-gray-700 dark:text-gray-400" : ""}`}>
+                                    Invalid
+                                  </span>
+                                </button>
+                              </div>
+
+                              {selectedAction === "reject" && (
+                                <div className="space-y-3 border rounded-lg p-4 bg-red-50/50 dark:bg-red-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rejection Reasons</p>
+                                  <div className="space-y-2">
+                                    {REJECTION_SUGGESTIONS.map((reason) => (
+                                      <label key={reason} className="flex items-center gap-2 cursor-pointer" data-testid={`checkbox-reason-${reason.replace(/\s+/g, '-').toLowerCase()}`}>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedRejectionReasons((prev) =>
+                                              prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                            );
+                                          }}
+                                          className="shrink-0"
+                                        >
+                                          {selectedRejectionReasons.includes(reason) ? (
+                                            <CheckSquare className="w-5 h-5 text-red-600" />
+                                          ) : (
+                                            <Square className="w-5 h-5 text-muted-foreground" />
+                                          )}
+                                        </button>
+                                        <span className="text-sm">{reason}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {selectedAction === "invalid" && (
+                                <div className="space-y-3 border rounded-lg p-4 bg-gray-50/50 dark:bg-gray-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Invalid Reason</p>
+                                  <Select value={invalidReason} onValueChange={setInvalidReason}>
+                                    <SelectTrigger data-testid="select-invalid-reason">
+                                      <SelectValue placeholder="Select reason..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Not a VRS-eligible warranty">Not a VRS-eligible warranty</SelectItem>
+                                      <SelectItem value="Product not covered">Product not covered</SelectItem>
+                                      <SelectItem value="Use standard authorization process">Use standard authorization process</SelectItem>
+                                      <SelectItem value="Contact B2B support directly">Contact B2B support directly</SelectItem>
+                                      <SelectItem value="Other">Other</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Textarea
+                                    placeholder="Instructions for the technician..."
+                                    value={invalidInstructions}
+                                    onChange={(e) => setInvalidInstructions(e.target.value)}
+                                    className="resize-none"
+                                    rows={2}
+                                    data-testid="input-invalid-instructions"
+                                  />
+                                </div>
+                              )}
+
+                              {selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && (
+                                <div className="space-y-3 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Authorization Code</p>
+                                  {rgcMissing ? (
+                                    <p className="text-sm text-destructive" data-testid="text-rgc-not-set">
+                                      No RGC code set for today. Contact an administrator.
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      <div>
+                                        <Label className="text-xs text-muted-foreground">Today's RGC Code</Label>
+                                        <Input
+                                          value={todaysRgcCode || ""}
+                                          readOnly
+                                          className="font-mono bg-muted mt-1"
+                                          data-testid="input-rgc-readonly"
+                                        />
+                                      </div>
+                                      {needsExternalAuth(selectedSubmission) && (
+                                        <div>
+                                          <Label className="text-xs text-muted-foreground">{getProviderAuthLabel(selectedSubmission)}</Label>
+                                          <Input
+                                            placeholder="Enter auth code..."
+                                            value={authCode}
+                                            onChange={(e) => setAuthCode(e.target.value)}
+                                            className="mt-1"
+                                            data-testid="input-auth-code"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               )}
-                            </div>
+
+                              {selectedAction === "approve_submission" && (
+                                <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Submission Approval</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Approving the submission will notify the technician that their photos and information meet the requirements. You will then need to obtain the authorization code from the warranty provider to complete this ticket.
+                                  </p>
+                                </div>
+                              )}
+
+                              <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Agent Notes (optional)</Label>
+                                <Textarea
+                                  placeholder="Add any notes for this ticket..."
+                                  value={agentNotes}
+                                  onChange={(e) => setAgentNotes(e.target.value)}
+                                  className="resize-none"
+                                  rows={3}
+                                  data-testid="input-agent-notes"
+                                />
+                              </div>
+
+                              <Button
+                                className="w-full"
+                                size="lg"
+                                variant={selectedAction === "reject" ? "destructive" : selectedAction === "invalid" ? "outline" : "default"}
+                                onClick={() => {
+                                  if (!selectedAction) return;
+                                  if (selectedAction === "reject" && selectedRejectionReasons.length === 0) {
+                                    toast({ title: "Error", description: "Select at least one rejection reason", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "invalid" && !invalidReason) {
+                                    toast({ title: "Error", description: "Select an invalid reason", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && needsExternalAuth(selectedSubmission) && !authCode.trim()) {
+                                    toast({ title: "Error", description: `Enter the ${getProviderAuthLabel(selectedSubmission)}`, variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && rgcMissing) {
+                                    toast({ title: "Error", description: "RGC code not set for today", variant: "destructive" });
+                                    return;
+                                  }
+                                  setConfirmOpen(true);
+                                }}
+                                disabled={!selectedAction || processMutation.isPending}
+                                data-testid="button-process-submit"
+                              >
+                                <Send className="w-4 h-4 mr-2" />
+                                {processMutation.isPending ? "Processing..." : selectedAction === "approve_submission" ? "Approve Submission & Notify" : "Process & Send"}
+                              </Button>
+                            </>
                           )}
-
-                          <div>
-                            <Label className="text-xs text-muted-foreground mb-1 block">Agent Notes (optional)</Label>
-                            <Textarea
-                              placeholder="Add any notes for this ticket..."
-                              value={agentNotes}
-                              onChange={(e) => setAgentNotes(e.target.value)}
-                              className="resize-none"
-                              rows={3}
-                              data-testid="input-agent-notes"
-                            />
-                          </div>
-
-                          <Button
-                            className="w-full"
-                            size="lg"
-                            variant={selectedAction === "reject" ? "destructive" : selectedAction === "invalid" ? "outline" : "default"}
-                            onClick={() => {
-                              if (!selectedAction) return;
-                              if (selectedAction === "reject" && selectedRejectionReasons.length === 0) {
-                                toast({ title: "Error", description: "Select at least one rejection reason", variant: "destructive" });
-                                return;
-                              }
-                              if (selectedAction === "invalid" && !invalidReason) {
-                                toast({ title: "Error", description: "Select an invalid reason", variant: "destructive" });
-                                return;
-                              }
-                              if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && needsExternalAuth(selectedSubmission) && !authCode.trim()) {
-                                toast({ title: "Error", description: `Enter the ${getProviderAuthLabel(selectedSubmission)}`, variant: "destructive" });
-                                return;
-                              }
-                              if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && rgcMissing) {
-                                toast({ title: "Error", description: "RGC code not set for today", variant: "destructive" });
-                                return;
-                              }
-                              setConfirmOpen(true);
-                            }}
-                            disabled={!selectedAction || processMutation.isPending}
-                            data-testid="button-process-submit"
-                          >
-                            <Send className="w-4 h-4 mr-2" />
-                            {processMutation.isPending ? "Processing..." : "Process & Send"}
-                          </Button>
                         </CardContent>
                       </Card>
                     )}
@@ -1688,9 +1808,12 @@ export default function AgentDashboard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle data-testid="text-confirm-title">
-              {selectedAction === "approve" ? "Approve Ticket" : selectedAction === "reject" ? "Reject Ticket" : "Mark as Invalid"}
+              {selectedAction === "approve_submission" ? "Approve Submission" : selectedAction === "approve" ? "Approve Ticket" : selectedAction === "reject" ? "Reject Ticket" : "Mark as Invalid"}
             </AlertDialogTitle>
             <AlertDialogDescription>
+              {selectedAction === "approve_submission" && (
+                <>The technician will be notified via SMS that their submission has been approved and VRS is working on obtaining authorization. The ticket will remain pending for you to enter the authorization code.</>
+              )}
               {selectedAction === "approve" && (
                 <>The technician will be notified via SMS with the authorization code. This action completes the ticket.</>
               )}
@@ -1725,7 +1848,7 @@ export default function AgentDashboard() {
               className={selectedAction === "reject" ? "bg-destructive text-destructive-foreground" : ""}
               data-testid="button-confirm-process"
             >
-              {selectedAction === "approve" ? "Approve & Notify" : selectedAction === "reject" ? "Reject & Notify" : "Mark Invalid & Notify"}
+              {selectedAction === "approve_submission" ? "Approve Submission & Notify" : selectedAction === "approve" ? "Approve & Notify" : selectedAction === "reject" ? "Reject & Notify" : "Mark Invalid & Notify"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

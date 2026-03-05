@@ -16,7 +16,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ### Database Tables
 - `users` - All users (technicians, vrs_agents, admins, super_admin) with role-based access, isActive toggle, isSystemAccount flag for protected accounts
 - `technicians` - Field technicians synced from Snowflake (ldapId, name, phone, district, managerName, techUnNo, isActive, lastSyncedAt)
-- `submissions` - Authorization requests with unified single-stage review workflow (ticketStatus: queued/pending/completed/rejected/invalid, technicianLdapId, phoneOverride, rejectionReasons JSON array, agentNotes, reassignmentNotes, reviewedBy, reviewedAt, resubmissionOf for linked resubmissions, appealNotes for resubmission context, invalidReason/invalidInstructions, legacy stage1Status/stage2Status for backward compat)
+- `submissions` - Authorization requests with two-stage review for AHS/First American warranties (ticketStatus: queued/pending/completed/rejected/invalid, submissionApproved bool + submissionApprovedAt for Stage 1 tracking, technicianLdapId, phoneOverride, rejectionReasons JSON array, agentNotes, reassignmentNotes, reviewedBy, reviewedAt, resubmissionOf for linked resubmissions, appealNotes for resubmission context, invalidReason/invalidInstructions, legacy stage1Status/stage2Status for backward compat)
 - `vrs_agent_specializations` - Agent division assignments
 - `sms_notifications` - Twilio SMS notification log
 - `daily_rgc_codes` - Daily RGC codes for B2B (future)
@@ -44,7 +44,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/submissions - List submissions (division-filtered queue for agents, personal pending/completed, supports ?ticketStatus, ?completedToday=true, ?applianceType)
 - GET /api/submissions/:id - Get submission detail (access-controlled: agent sees own + shared queued by division)
 - PATCH /api/submissions/:id/claim - Claim queued ticket: ticketStatus queued→pending, assignedTo=agent, agent status→working
-- PATCH /api/submissions/:id/process - Unified approve/reject/invalid (body: {action, rejectionReasons?, agentNotes?, authCode?}), approve→completed, reject→rejected (tech resubmits new ticket), invalid→invalid, SMS sent, agent status→online
+- PATCH /api/submissions/:id/process - Unified approve/reject/invalid/approve_submission (body: {action, rejectionReasons?, agentNotes?, authCode?}), approve→completed, reject→rejected (tech resubmits new ticket), invalid→invalid, approve_submission→sets submissionApproved=true (ticket stays pending for Stage 2 auth code entry), SMS sent, agent status→online (except approve_submission keeps agent working)
 - GET /api/submissions/:id/history - Get submission history chain with reviewer names, resubmission count
 - PATCH /api/submissions/:id/reassign - Release pending ticket back to queue (vrs_agent own ticket, body: {notes?}), ticketStatus→queued, assignedTo cleared
 - PATCH /api/submissions/:id/correct-division - Agent corrects appliance type mid-review (pending tickets only, body: {newDivision}). If agent has new division: keeps ticket. If not: releases to queue, broadcasts ticket_queued
@@ -127,8 +127,10 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 ### Unified Ticket Workflow
 - ticketStatus values: queued (unassigned, in shared division queue), pending (claimed by agent), completed (approved), rejected (terminal — tech resubmits new ticket), invalid (terminal)
 - Claim: queued→pending, agent status→working
-- Process: approve→completed, reject→rejected, invalid→invalid
+- Process: approve→completed, reject→rejected, invalid→invalid, approve_submission→submission approved (ticket stays pending)
 - Reject behavior: stays rejected (does NOT return to queued — tech must submit new ticket)
+- **Two-stage review (AHS/First American)**: Stage 1 = submission review (approve_submission/reject/invalid); Stage 2 = authorization code entry (approve with external auth code). Agent stays in "working" status between stages. Progress bar shown in UI.
+- **Single-stage review (Sears Protect/PA/Legacy)**: Approve with auto RGC code in one step
 - Auth code logic: Sears Protect/PA/Legacy = auto RGC read-only; AHS/First American = RGC + external code input; skip for non-authorization requestType
 - Reassign: agent releases own pending ticket back to queue
 - Division Correction: agent changes appliance type; keeps or releases ticket depending on specializations
