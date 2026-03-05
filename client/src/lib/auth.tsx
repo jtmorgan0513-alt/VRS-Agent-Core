@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { User } from "@shared/schema";
+import { queryClient } from "./queryClient";
 
 type SafeUser = Omit<User, "password">;
 
@@ -106,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("vrs_token");
     setToken(null);
     setUser(null);
+    queryClient.clear();
   }, []);
 
   return (
