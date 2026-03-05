@@ -59,6 +59,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/admin/users - List all users (admin only)
 - POST /api/admin/users - Admin create any user type
 - PATCH /api/admin/users/:id - Update user details (admin only, supports name, email, password, role, phone, racId, isActive)
+- GET /api/agent/specializations - Get own divisions (vrs_agent only)
+- PATCH /api/agent/specializations - Set own divisions (vrs_agent only, body: {divisions: string[]})
 - GET /api/admin/users/:id/specializations - Get agent divisions (admin only)
 - PATCH /api/admin/users/:id/specializations - Set agent divisions (admin only, body: {divisions: string[]})
 - PATCH /api/users/me - Self-update firstLogin, lastSeenVersion (authenticated)

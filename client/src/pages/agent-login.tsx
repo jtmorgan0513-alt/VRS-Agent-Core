@@ -6,9 +6,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Check, X, ArrowLeft } from "lucide-react";
+import { Loader2, Check, X, ArrowLeft, Wrench } from "lucide-react";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
+
+const DIVISION_OPTIONS: { key: string; label: string }[] = [
+  { key: "refrigeration", label: "Refrigeration" },
+  { key: "laundry", label: "Laundry" },
+  { key: "cooking", label: "Cooking" },
+  { key: "dishwasher", label: "Dishwasher / Compactor" },
+  { key: "microwave", label: "Microwave" },
+  { key: "hvac", label: "HVAC" },
+  { key: "all_other", label: "All Other" },
+];
 
 export default function AgentLoginPage() {
   const [agentLdapId, setAgentLdapId] = useState("");
@@ -25,6 +36,9 @@ export default function AgentLoginPage() {
   const [forgotNewPw, setForgotNewPw] = useState("");
   const [forgotConfirmPw, setForgotConfirmPw] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [selectDivisionsStep, setSelectDivisionsStep] = useState(false);
+  const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
+  const [divisionsSaving, setDivisionsSaving] = useState(false);
   const { user, isLoading: authLoading, login, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -103,7 +117,8 @@ export default function AgentLoginPage() {
       }
       toast({ title: "Password Changed", description: "Your password has been updated successfully." });
       await refreshUser();
-      setLocation("/agent/dashboard");
+      setMustChangePassword(false);
+      setSelectDivisionsStep(true);
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
@@ -286,6 +301,112 @@ export default function AgentLoginPage() {
               </button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (selectDivisionsStep) {
+    const allSelected = selectedDivisions.length === DIVISION_OPTIONS.length;
+    const toggleAll = () => {
+      if (allSelected) {
+        setSelectedDivisions([]);
+      } else {
+        setSelectedDivisions(DIVISION_OPTIONS.map((d) => d.key));
+      }
+    };
+    const toggleDivision = (key: string) => {
+      setSelectedDivisions((prev) =>
+        prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]
+      );
+    };
+    const handleSaveDivisions = async () => {
+      if (selectedDivisions.length === 0) {
+        toast({ title: "Required", description: "Please select at least one division.", variant: "destructive" });
+        return;
+      }
+      setDivisionsSaving(true);
+      try {
+        const token = localStorage.getItem("vrs_token");
+        const res = await fetch("/api/agent/specializations", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ divisions: selectedDivisions }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to save divisions");
+        }
+        toast({ title: "Divisions Saved", description: "Your division assignments have been saved." });
+        setLocation("/agent/dashboard");
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } finally {
+        setDivisionsSaving(false);
+      }
+    };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-6">
+            <img src={searsLogo} alt="Sears Home Services" className="h-10 mx-auto mb-3" data-testid="img-logo-divisions" />
+            <h1 className="text-2xl font-bold" data-testid="text-divisions-title">
+              Select Your Divisions
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Choose the appliance divisions you handle. You'll only receive tickets for these divisions.
+            </p>
+          </div>
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              <div className="flex items-center space-x-2 pb-2 border-b">
+                <Checkbox
+                  id="all-divisions"
+                  checked={allSelected}
+                  onCheckedChange={toggleAll}
+                  data-testid="checkbox-all-divisions"
+                />
+                <label htmlFor="all-divisions" className="text-sm font-medium cursor-pointer">
+                  Generalist (All Divisions)
+                </label>
+              </div>
+              <div className="space-y-3">
+                {DIVISION_OPTIONS.map((div) => (
+                  <div key={div.key} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`div-${div.key}`}
+                      checked={selectedDivisions.includes(div.key)}
+                      onCheckedChange={() => toggleDivision(div.key)}
+                      data-testid={`checkbox-div-${div.key}`}
+                    />
+                    <label htmlFor={`div-${div.key}`} className="text-sm cursor-pointer flex items-center gap-2">
+                      <Wrench className="w-3.5 h-3.5 text-muted-foreground" />
+                      {div.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <Button
+                className="w-full"
+                onClick={handleSaveDivisions}
+                disabled={divisionsSaving || selectedDivisions.length === 0}
+                data-testid="button-save-divisions"
+              >
+                {divisionsSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  `Continue (${selectedDivisions.length} selected)`
+                )}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );

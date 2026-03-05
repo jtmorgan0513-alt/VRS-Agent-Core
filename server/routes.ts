@@ -1806,6 +1806,25 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/agent/specializations", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const parsed = setSpecializationsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+      if (parsed.data.divisions.length === 0) {
+        return res.status(400).json({ error: "You must select at least one division" });
+      }
+      await storage.setSpecializations(authReq.user!.id, parsed.data.divisions);
+      updateClientDivisions(authReq.user!.id, parsed.data.divisions);
+      return res.status(200).json({ success: true, divisions: parsed.data.divisions });
+    } catch (error) {
+      console.error("Agent set own specializations error:", error);
+      return res.status(500).json({ error: "Failed to set specializations" });
+    }
+  });
+
   app.get("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
