@@ -400,6 +400,7 @@ export default function AdminDashboard() {
   const [formDivisions, setFormDivisions] = useState<string[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
+  const [userSearchQuery, setUserSearchQuery] = useState("");
   const [selectedDivisions, setSelectedDivisions] = useState<string[]>([]);
   const [deactivateConfirm, setDeactivateConfirm] = useState<{ id: number; name: string; isActive: boolean } | null>(null);
   const [resetPwConfirm, setResetPwConfirm] = useState<{ id: number; name: string } | null>(null);
@@ -900,6 +901,25 @@ export default function AdminDashboard() {
           <ScrollArea className="flex-1">
             {activeView === "users" && (
               <div className="p-4">
+                <div className="relative mb-4">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search users by name, LDAP ID, role, or phone..."
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    className="pl-9 pr-9"
+                    data-testid="input-user-search"
+                  />
+                  {userSearchQuery && (
+                    <button
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setUserSearchQuery("")}
+                      data-testid="button-clear-user-search"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 {usersLoading ? (
                   <div className="space-y-3">
                     {[1, 2, 3, 4, 5].map((i) => (
@@ -925,7 +945,17 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((u) => (
+                      {users.filter((u) => {
+                        if (!userSearchQuery) return true;
+                        const q = userSearchQuery.toLowerCase();
+                        return (
+                          u.name?.toLowerCase().includes(q) ||
+                          u.racId?.toLowerCase().includes(q) ||
+                          u.role?.toLowerCase().includes(q) ||
+                          u.phone?.toLowerCase().includes(q) ||
+                          u.email?.toLowerCase().includes(q)
+                        );
+                      }).map((u) => (
                         <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                           <TableCell data-testid={`text-user-name-${u.id}`}>{u.name}</TableCell>
                           <TableCell>
