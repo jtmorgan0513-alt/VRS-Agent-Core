@@ -1794,6 +1794,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/agent/specializations", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const specializations = await storage.getSpecializations(authReq.user!.id);
+      const divisions = specializations.map(s => s.division);
+      return res.status(200).json({ divisions });
+    } catch (error) {
+      console.error("Agent get own specializations error:", error);
+      return res.status(500).json({ error: "Failed to get specializations" });
+    }
+  });
+
   app.get("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);

@@ -191,6 +191,13 @@ export default function AgentDashboard() {
 
   const agentStatus = localAgentStatus;
 
+  const { data: specsData } = useQuery<{ divisions: string[] }>({
+    queryKey: ["/api/agent/specializations"],
+  });
+  const agentDivisions = specsData?.divisions || [];
+  const allDivisionKeys = Object.keys(DIVISION_LABELS);
+  const isGeneralist = agentDivisions.length >= allDivisionKeys.length;
+
   const statusMutation = useMutation({
     mutationFn: async (status: "online" | "offline") => {
       const res = await apiRequest("PATCH", "/api/agent/status", { status });
@@ -650,7 +657,9 @@ export default function AgentDashboard() {
                       <span>All Divisions</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {Object.entries(DIVISION_LABELS).map(([key, label]) => (
+                  {Object.entries(DIVISION_LABELS)
+                    .filter(([key]) => isGeneralist || agentDivisions.includes(key))
+                    .map(([key, label]) => (
                     <SidebarMenuItem key={key}>
                       <SidebarMenuButton
                         onClick={() => setDivisionFilter(key)}
