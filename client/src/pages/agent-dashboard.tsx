@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useWebSocket, playNotificationDing } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, disconnectWs } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -144,6 +144,16 @@ export default function AgentDashboard() {
   const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed">("queue");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
+
+  useEffect(() => {
+    if (isAdminViewing) return;
+    const handleBeforeUnload = () => {
+      disconnectWs();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isAdminViewing]);
+
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");

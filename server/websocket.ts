@@ -95,11 +95,24 @@ export function setupWebSocket(server: Server) {
       clients.set(decoded.id, client);
       log(`WebSocket connected: ${client.name} (${client.role}, id=${client.userId})`, "ws");
 
-      ws.on("close", () => {
+      ws.on("close", async () => {
         const current = clients.get(decoded.id);
         if (current && current.ws === ws) {
           clients.delete(decoded.id);
           log(`WebSocket disconnected: ${client.name} (id=${client.userId})`, "ws");
+
+          if (client.role === "vrs_agent" && client.agentStatus !== "offline") {
+            try {
+              await storage.updateUser(client.userId, { agentStatus: "offline", updatedAt: new Date() } as any);
+              broadcastToAdmins({
+                type: "agent_status_changed",
+                payload: { userId: client.userId, name: client.name, status: "offline" },
+              });
+              log(`Agent ${client.name} auto-set offline on disconnect`, "ws");
+            } catch (err) {
+              log(`Failed to auto-offline agent ${client.name}: ${err}`, "ws");
+            }
+          }
         }
       });
 
