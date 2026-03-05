@@ -115,16 +115,21 @@ export default function TechResubmitPage() {
       issueDescription: sub.issueDescription,
       appealNotes: "",
     });
+    let rejMedia: any = null;
+    try { rejMedia = sub.rejectedMedia ? JSON.parse(sub.rejectedMedia) : null; } catch {}
+    const rejectedPhotoUrls = new Set((rejMedia?.photos || []).map((p: any) => p.url));
+    const isVideoRejected = rejMedia?.video?.rejected === true;
+
     try {
       const parsed = sub.photos ? JSON.parse(sub.photos) : null;
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        if (parsed.issue) setIssuePhotoUrls(parsed.issue);
-        if (parsed.estimate) setEstimatePhotoUrls(parsed.estimate);
+        if (parsed.issue) setIssuePhotoUrls(parsed.issue.filter((url: string) => !rejectedPhotoUrls.has(url)));
+        if (parsed.estimate) setEstimatePhotoUrls(parsed.estimate.filter((url: string) => !rejectedPhotoUrls.has(url)));
       } else if (Array.isArray(parsed)) {
-        setIssuePhotoUrls(parsed);
+        setIssuePhotoUrls(parsed.filter((url: string) => !rejectedPhotoUrls.has(url)));
       }
     } catch {}
-    if (sub.videoUrl) setVideoUrl(sub.videoUrl);
+    if (sub.videoUrl && !isVideoRejected) setVideoUrl(sub.videoUrl);
     setInitialized(true);
   }
 

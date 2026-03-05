@@ -835,7 +835,13 @@ export async function registerRoutes(
   const processActionSchema = z.object({
     action: z.enum(["approve", "reject", "invalid", "approve_submission"]),
     rejectionReasons: z.array(z.string()).optional(),
+    rejectedMedia: z.object({
+      photos: z.array(z.object({ url: z.string(), reason: z.string() })).optional(),
+      video: z.object({ rejected: z.boolean(), reason: z.string().optional() }).optional(),
+      voiceNote: z.object({ rejected: z.boolean(), reason: z.string().optional() }).optional(),
+    }).optional(),
     agentNotes: z.string().optional(),
+    technicianMessage: z.string().optional(),
     authCode: z.string().optional(),
     invalidReason: z.string().optional(),
     invalidInstructions: z.string().optional(),
@@ -867,7 +873,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "This ticket is not assigned to you" });
       }
 
-      const { action, rejectionReasons, agentNotes, invalidReason, invalidInstructions } = parsed.data;
+      const { action, rejectionReasons, rejectedMedia, agentNotes, technicianMessage, invalidReason, invalidInstructions } = parsed.data;
       let { authCode } = parsed.data;
 
       if (submission.submissionApproved && (action === "reject" || action === "invalid" || action === "approve_submission")) {
@@ -943,13 +949,34 @@ export async function registerRoutes(
         updateData.assignedTo = null;
         updateData.stage1Status = "rejected";
         updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
-        updateData.stage1RejectionReason = rejectionReasons?.join(", ") || agentNotes || "More information needed";
+        updateData.rejectedMedia = rejectedMedia ? JSON.stringify(rejectedMedia) : null;
+        updateData.technicianMessage = technicianMessage || null;
+        updateData.stage1RejectionReason = rejectionReasons?.join(", ") || "More information needed";
 
         const host = req.get("host") || "";
         const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
         const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
-        const reasonText = rejectionReasons?.join(", ") || agentNotes || "More information needed";
-        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, reasonText, resubmitLink);
+
+        const rejectionParts: string[] = [];
+        if (rejectionReasons && rejectionReasons.length > 0) {
+          rejectionParts.push(rejectionReasons.join(", "));
+        }
+        if (rejectedMedia) {
+          const mediaIssues: string[] = [];
+          if (rejectedMedia.photos && rejectedMedia.photos.length > 0) {
+            mediaIssues.push(`${rejectedMedia.photos.length} photo(s) rejected`);
+          }
+          if (rejectedMedia.video?.rejected) {
+            mediaIssues.push("Video rejected" + (rejectedMedia.video.reason ? `: ${rejectedMedia.video.reason}` : ""));
+          }
+          if (rejectedMedia.voiceNote?.rejected) {
+            mediaIssues.push("Voice note rejected" + (rejectedMedia.voiceNote.reason ? `: ${rejectedMedia.voiceNote.reason}` : ""));
+          }
+          if (mediaIssues.length > 0) rejectionParts.push(mediaIssues.join("; "));
+        }
+        const reasonText = rejectionParts.length > 0 ? rejectionParts.join(". ") : "More information needed";
+        const fullMessage = technicianMessage ? `${reasonText}\n\nAgent message: ${technicianMessage}` : reasonText;
+        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, fullMessage, resubmitLink);
         smsType = "ticket_rejected";
 
       } else {

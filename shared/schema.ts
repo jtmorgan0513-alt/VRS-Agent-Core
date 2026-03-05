@@ -112,7 +112,9 @@ export const submissions = pgTable("submissions", {
   reviewedBy: integer("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at"),
   agentNotes: text("agent_notes"),
-  rejectionReasons: text("rejection_reasons"), // JSON array of selected rejection reasons
+  technicianMessage: text("technician_message"),
+  rejectionReasons: text("rejection_reasons"),
+  rejectedMedia: text("rejected_media"),
   reassignmentNotes: text("reassignment_notes"),
   appealNotes: text("appeal_notes"),
   resubmissionOf: integer("resubmission_of"),

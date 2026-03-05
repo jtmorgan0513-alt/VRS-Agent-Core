@@ -81,6 +81,7 @@ import {
   ZoomIn,
   Ban,
   ScrollText,
+  XCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -161,6 +162,10 @@ export default function AgentDashboard() {
 
   const [selectedAction, setSelectedAction] = useState<"approve" | "reject" | "invalid" | "approve_submission" | null>(null);
   const [selectedRejectionReasons, setSelectedRejectionReasons] = useState<string[]>([]);
+  const [rejectedPhotos, setRejectedPhotos] = useState<{url: string; reason: string}[]>([]);
+  const [rejectedVideo, setRejectedVideo] = useState<{rejected: boolean; reason: string}>({rejected: false, reason: ""});
+  const [rejectedVoiceNote, setRejectedVoiceNote] = useState<{rejected: boolean; reason: string}>({rejected: false, reason: ""});
+  const [technicianMessage, setTechnicianMessage] = useState("");
   const [agentNotes, setAgentNotes] = useState("");
   const [authCode, setAuthCode] = useState("");
   const [invalidReason, setInvalidReason] = useState("");
@@ -279,6 +284,10 @@ export default function AgentDashboard() {
   const resetActionState = () => {
     setSelectedAction(null);
     setSelectedRejectionReasons([]);
+    setRejectedPhotos([]);
+    setRejectedVideo({rejected: false, reason: ""});
+    setRejectedVoiceNote({rejected: false, reason: ""});
+    setTechnicianMessage("");
     setAgentNotes("");
     setAuthCode("");
     setInvalidReason("");
@@ -400,11 +409,34 @@ export default function AgentDashboard() {
   });
 
   const REJECTION_SUGGESTIONS = [
-    "No pictures sent",
-    "Picture doesn't show voltage",
-    "Need more pictures",
-    "Incomplete pictures",
-    "Video blurry",
+    "Photos do not meet submission criteria",
+    "Missing required photos",
+    "Photo does not show voltage/reading",
+    "Photo is blurry or unreadable",
+    "Model/serial number not visible",
+    "Estimate screenshot missing or incomplete",
+    "Issue description does not match photos",
+    "Missing appliance information",
+    "Incomplete submission",
+  ];
+
+  const PHOTO_REJECTION_REASONS = [
+    "Blurry or out of focus",
+    "Does not show required information",
+    "Wrong angle — cannot verify issue",
+    "Too dark / overexposed",
+    "Duplicate photo",
+    "Does not match description",
+    "Model/serial not readable",
+  ];
+
+  const MEDIA_REJECTION_REASONS = [
+    "Too much background noise",
+    "Cannot hear audio clearly",
+    "No image / blank screen",
+    "Video is too short",
+    "Video does not show the issue",
+    "Corrupted or won't play",
   ];
 
   const claimMutation = useMutation({
@@ -516,8 +548,16 @@ export default function AgentDashboard() {
       action: selectedAction,
       agentNotes: agentNotes || undefined,
     };
-    if (selectedAction === "reject" && selectedRejectionReasons.length > 0) {
-      body.rejectionReasons = selectedRejectionReasons;
+    if (selectedAction === "reject") {
+      if (selectedRejectionReasons.length > 0) {
+        body.rejectionReasons = selectedRejectionReasons;
+      }
+      const mediaRejections: Record<string, unknown> = {};
+      if (rejectedPhotos.length > 0) mediaRejections.photos = rejectedPhotos;
+      if (rejectedVideo.rejected) mediaRejections.video = rejectedVideo;
+      if (rejectedVoiceNote.rejected) mediaRejections.voiceNote = rejectedVoiceNote;
+      if (Object.keys(mediaRejections).length > 0) body.rejectedMedia = mediaRejections;
+      if (technicianMessage) body.technicianMessage = technicianMessage;
     }
     if (selectedAction === "invalid") {
       body.invalidReason = invalidReason;
@@ -1140,6 +1180,9 @@ export default function AgentDashboard() {
                         <CardTitle className="text-base flex items-center gap-2">
                           <ImageIcon className="w-4 h-4" />
                           Photos & Media
+                          {selectedAction === "reject" && (
+                            <Badge variant="outline" className="ml-auto text-[10px] text-red-600 border-red-300">Click media to reject</Badge>
+                          )}
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
@@ -1154,56 +1197,81 @@ export default function AgentDashboard() {
                           const legacyPhotos: string[] = Array.isArray(parsed) ? parsed : [];
                           const allPhotos = [...issuePhotos, ...estimatePhotos, ...legacyPhotos];
 
+                          const isPhotoRejected = (url: string) => rejectedPhotos.some(rp => rp.url === url);
+                          const getPhotoRejection = (url: string) => rejectedPhotos.find(rp => rp.url === url);
+
+                          const togglePhotoRejection = (url: string) => {
+                            if (isPhotoRejected(url)) {
+                              setRejectedPhotos(prev => prev.filter(rp => rp.url !== url));
+                            } else {
+                              setRejectedPhotos(prev => [...prev, {url, reason: PHOTO_REJECTION_REASONS[0]}]);
+                            }
+                          };
+
+                          const updatePhotoRejectionReason = (url: string, reason: string) => {
+                            setRejectedPhotos(prev => prev.map(rp => rp.url === url ? {...rp, reason} : rp));
+                          };
+
+                          const renderPhotoGrid = (photos: string[], label: string, icon: any, offset: number, testIdPrefix: string) => {
+                            if (photos.length === 0) return null;
+                            return (
+                              <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                  {label} ({photos.length})
+                                </p>
+                                <div className="grid grid-cols-3 gap-2" data-testid={`media-${testIdPrefix}`}>
+                                  {photos.map((url: string, i: number) => {
+                                    const rejected = isPhotoRejected(url);
+                                    const rejection = getPhotoRejection(url);
+                                    return (
+                                      <div key={i} className="space-y-1">
+                                        <div
+                                          className={`relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group ${rejected ? "ring-2 ring-red-500" : ""}`}
+                                          onClick={() => selectedAction === "reject" ? togglePhotoRejection(url) : openLightbox(allPhotos, offset + i)}
+                                          data-testid={`${testIdPrefix}-photo-${i}`}
+                                        >
+                                          <img src={url} alt={`${label} ${i + 1}`} className={`w-full h-full object-cover pointer-events-none ${rejected ? "opacity-40" : ""}`} />
+                                          {selectedAction === "reject" && (
+                                            <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${rejected ? "bg-red-500/30 opacity-100" : "opacity-0 group-hover:opacity-100 bg-red-500/20"}`}>
+                                              {rejected ? (
+                                                <XCircle className="w-8 h-8 text-red-600" />
+                                              ) : (
+                                                <XCircle className="w-8 h-8 text-red-400" />
+                                              )}
+                                            </div>
+                                          )}
+                                          {selectedAction !== "reject" && (
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                              <ZoomIn className="w-6 h-6 text-white" />
+                                            </div>
+                                          )}
+                                        </div>
+                                        {rejected && (
+                                          <Select value={rejection?.reason || ""} onValueChange={(val) => updatePhotoRejectionReason(url, val)}>
+                                            <SelectTrigger className="h-7 text-[10px] border-red-300">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {PHOTO_REJECTION_REASONS.map(r => (
+                                                <SelectItem key={r} value={r}>{r}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          };
+
                           return (
                             <div className="space-y-4">
-                              {issuePhotos.length > 0 && (
-                                <div>
-                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
-                                    <ImageIcon className="w-3.5 h-3.5" />
-                                    Issue Photos ({issuePhotos.length})
-                                  </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-issue-photos">
-                                    {issuePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotos, i)}>
-                                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-issue-photo-${i}`} />
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {estimatePhotos.length > 0 && (
-                                <div>
-                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
-                                    <ImageIcon className="w-3.5 h-3.5" />
-                                    Model, Serial & Estimate Screenshots ({estimatePhotos.length})
-                                  </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-estimate-photos">
-                                    {estimatePhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotos, issuePhotos.length + i)}>
-                                        <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover pointer-events-none" data-testid={`img-estimate-photo-${i}`} />
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {legacyPhotos.length > 0 && (
-                                <div>
-                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-2 flex items-center gap-1.5">
-                                    <ImageIcon className="w-3.5 h-3.5" />
-                                    Photos ({legacyPhotos.length})
-                                  </p>
-                                  <div className="grid grid-cols-3 gap-2" data-testid="media-photos">
-                                    {legacyPhotos.map((url: string, i: number) => (
-                                      <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group" onClick={() => openLightbox(allPhotos, issuePhotos.length + estimatePhotos.length + i)}>
-                                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><ZoomIn className="w-6 h-6 text-white" /></div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                              {renderPhotoGrid(issuePhotos, "Issue Photos", ImageIcon, 0, "issue-photos")}
+                              {renderPhotoGrid(estimatePhotos, "Model, Serial & Estimate Screenshots", ImageIcon, issuePhotos.length, "estimate-photos")}
+                              {renderPhotoGrid(legacyPhotos, "Photos", ImageIcon, issuePhotos.length + estimatePhotos.length, "photos")}
                               {estimatePhotos.length === 0 && issuePhotos.length === 0 && legacyPhotos.length === 0 && (
                                 <p className="text-sm text-muted-foreground" data-testid="text-no-photos">No photos attached</p>
                               )}
@@ -1217,13 +1285,40 @@ export default function AgentDashboard() {
                             Video
                           </p>
                           {selectedSubmission.videoUrl ? (
-                            <div className="rounded-md overflow-hidden bg-muted" data-testid="media-video">
-                              <video
-                                src={selectedSubmission.videoUrl}
-                                controls
-                                className="w-full max-h-[300px]"
-                                data-testid="video-player"
-                              />
+                            <div className="space-y-2">
+                              <div className={`rounded-md overflow-hidden bg-muted ${rejectedVideo.rejected ? "ring-2 ring-red-500" : ""}`} data-testid="media-video">
+                                <video
+                                  src={selectedSubmission.videoUrl}
+                                  controls
+                                  className={`w-full max-h-[300px] ${rejectedVideo.rejected ? "opacity-40" : ""}`}
+                                  data-testid="video-player"
+                                />
+                              </div>
+                              {selectedAction === "reject" && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRejectedVideo(prev => ({...prev, rejected: !prev.rejected}))}
+                                    className="shrink-0"
+                                    data-testid="button-reject-video"
+                                  >
+                                    {rejectedVideo.rejected ? <CheckSquare className="w-5 h-5 text-red-600" /> : <Square className="w-5 h-5 text-muted-foreground" />}
+                                  </button>
+                                  <span className="text-xs text-red-600 font-medium">Reject Video</span>
+                                </div>
+                              )}
+                              {rejectedVideo.rejected && (
+                                <Select value={rejectedVideo.reason || ""} onValueChange={(val) => setRejectedVideo(prev => ({...prev, reason: val}))}>
+                                  <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-video-reject-reason">
+                                    <SelectValue placeholder="Select reason..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {MEDIA_REJECTION_REASONS.map(r => (
+                                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
                             </div>
                           ) : (
                             <p className="text-sm text-muted-foreground" data-testid="text-no-video">No video attached</p>
@@ -1236,7 +1331,34 @@ export default function AgentDashboard() {
                             Voice Note
                           </p>
                           {selectedSubmission.voiceNoteUrl ? (
-                            <audio src={selectedSubmission.voiceNoteUrl} controls className="w-full" data-testid="audio-player" />
+                            <div className="space-y-2">
+                              <audio src={selectedSubmission.voiceNoteUrl} controls className={`w-full ${rejectedVoiceNote.rejected ? "opacity-40" : ""}`} data-testid="audio-player" />
+                              {selectedAction === "reject" && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRejectedVoiceNote(prev => ({...prev, rejected: !prev.rejected}))}
+                                    className="shrink-0"
+                                    data-testid="button-reject-voice-note"
+                                  >
+                                    {rejectedVoiceNote.rejected ? <CheckSquare className="w-5 h-5 text-red-600" /> : <Square className="w-5 h-5 text-muted-foreground" />}
+                                  </button>
+                                  <span className="text-xs text-red-600 font-medium">Reject Voice Note</span>
+                                </div>
+                              )}
+                              {rejectedVoiceNote.rejected && (
+                                <Select value={rejectedVoiceNote.reason || ""} onValueChange={(val) => setRejectedVoiceNote(prev => ({...prev, reason: val}))}>
+                                  <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-voice-reject-reason">
+                                    <SelectValue placeholder="Select reason..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {MEDIA_REJECTION_REASONS.map(r => (
+                                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
                           ) : (
                             <p className="text-sm text-muted-foreground" data-testid="text-no-voice-note">No voice note attached</p>
                           )}
@@ -1376,13 +1498,15 @@ export default function AgentDashboard() {
                               </div>
 
                               <div>
-                                <Label className="text-xs text-muted-foreground mb-1 block">Agent Notes (optional)</Label>
+                                <Label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1.5">
+                                  Internal Agent Notes (not sent to technician)
+                                </Label>
                                 <Textarea
-                                  placeholder="Add any notes for this ticket..."
+                                  placeholder="Internal notes — saved to ticket history only..."
                                   value={agentNotes}
                                   onChange={(e) => setAgentNotes(e.target.value)}
                                   className="resize-none"
-                                  rows={3}
+                                  rows={2}
                                   data-testid="input-agent-notes"
                                 />
                               </div>
@@ -1478,29 +1602,72 @@ export default function AgentDashboard() {
                               </div>
 
                               {selectedAction === "reject" && (
-                                <div className="space-y-3 border rounded-lg p-4 bg-red-50/50 dark:bg-red-950/10">
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rejection Reasons</p>
-                                  <div className="space-y-2">
-                                    {REJECTION_SUGGESTIONS.map((reason) => (
-                                      <label key={reason} className="flex items-center gap-2 cursor-pointer" data-testid={`checkbox-reason-${reason.replace(/\s+/g, '-').toLowerCase()}`}>
+                                <div className="space-y-4">
+                                  <div className="space-y-3 border rounded-lg p-4 bg-red-50/50 dark:bg-red-950/10">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rejection Reasons</p>
+                                    <div className="space-y-2">
+                                      {REJECTION_SUGGESTIONS.map((reason) => (
                                         <button
+                                          key={reason}
                                           type="button"
+                                          className="flex items-center gap-2 cursor-pointer w-full text-left"
                                           onClick={() => {
                                             setSelectedRejectionReasons((prev) =>
                                               prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
                                             );
                                           }}
-                                          className="shrink-0"
+                                          data-testid={`checkbox-reason-${reason.replace(/\s+/g, '-').toLowerCase()}`}
                                         >
                                           {selectedRejectionReasons.includes(reason) ? (
-                                            <CheckSquare className="w-5 h-5 text-red-600" />
+                                            <CheckSquare className="w-5 h-5 text-red-600 shrink-0" />
                                           ) : (
-                                            <Square className="w-5 h-5 text-muted-foreground" />
+                                            <Square className="w-5 h-5 text-muted-foreground shrink-0" />
                                           )}
+                                          <span className="text-sm">{reason}</span>
                                         </button>
-                                        <span className="text-sm">{reason}</span>
-                                      </label>
-                                    ))}
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {(rejectedPhotos.length > 0 || rejectedVideo.rejected || rejectedVoiceNote.rejected) && (
+                                    <div className="space-y-2 border rounded-lg p-4 bg-red-50/50 dark:bg-red-950/10">
+                                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Rejected Media Summary</p>
+                                      <div className="space-y-1">
+                                        {rejectedPhotos.map((rp, i) => (
+                                          <div key={i} className="flex items-center gap-2 text-xs text-red-700">
+                                            <XCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <span>Photo: {rp.reason}</span>
+                                          </div>
+                                        ))}
+                                        {rejectedVideo.rejected && (
+                                          <div className="flex items-center gap-2 text-xs text-red-700">
+                                            <XCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <span>Video: {rejectedVideo.reason || "Rejected"}</span>
+                                          </div>
+                                        )}
+                                        {rejectedVoiceNote.rejected && (
+                                          <div className="flex items-center gap-2 text-xs text-red-700">
+                                            <XCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <span>Voice Note: {rejectedVoiceNote.reason || "Rejected"}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="space-y-2 border rounded-lg p-4 bg-orange-50/50 dark:bg-orange-950/10">
+                                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                      <Send className="w-3 h-3" />
+                                      Message to Technician (sent via SMS)
+                                    </Label>
+                                    <Textarea
+                                      placeholder="Add a custom message for the technician explaining what needs to be corrected..."
+                                      value={technicianMessage}
+                                      onChange={(e) => setTechnicianMessage(e.target.value)}
+                                      className="resize-none"
+                                      rows={3}
+                                      data-testid="input-technician-message"
+                                    />
                                   </div>
                                 </div>
                               )}
@@ -1576,13 +1743,15 @@ export default function AgentDashboard() {
                               )}
 
                               <div>
-                                <Label className="text-xs text-muted-foreground mb-1 block">Agent Notes (optional)</Label>
+                                <Label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1.5">
+                                  Internal Agent Notes (not sent to technician)
+                                </Label>
                                 <Textarea
-                                  placeholder="Add any notes for this ticket..."
+                                  placeholder="Internal notes — saved to ticket history only..."
                                   value={agentNotes}
                                   onChange={(e) => setAgentNotes(e.target.value)}
                                   className="resize-none"
-                                  rows={3}
+                                  rows={2}
                                   data-testid="input-agent-notes"
                                 />
                               </div>
@@ -1593,8 +1762,16 @@ export default function AgentDashboard() {
                                 variant={selectedAction === "reject" ? "destructive" : selectedAction === "invalid" ? "outline" : "default"}
                                 onClick={() => {
                                   if (!selectedAction) return;
-                                  if (selectedAction === "reject" && selectedRejectionReasons.length === 0) {
-                                    toast({ title: "Error", description: "Select at least one rejection reason", variant: "destructive" });
+                                  if (selectedAction === "reject" && selectedRejectionReasons.length === 0 && rejectedPhotos.length === 0 && !rejectedVideo.rejected && !rejectedVoiceNote.rejected) {
+                                    toast({ title: "Error", description: "Select at least one rejection reason or reject specific media", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && rejectedVideo.rejected && !rejectedVideo.reason) {
+                                    toast({ title: "Error", description: "Select a reason for rejecting the video", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && rejectedVoiceNote.rejected && !rejectedVoiceNote.reason) {
+                                    toast({ title: "Error", description: "Select a reason for rejecting the voice note", variant: "destructive" });
                                     return;
                                   }
                                   if (selectedAction === "invalid" && !invalidReason) {
