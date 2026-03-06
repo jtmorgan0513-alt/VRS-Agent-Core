@@ -151,6 +151,10 @@ export default function AgentLoginPage() {
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
+    if (!password.trim()) {
+      toast({ title: "Error", description: "Please enter your current password", variant: "destructive" });
+      return;
+    }
     if (!allRequirementsMet || !passwordsMatch) return;
     setChangePwLoading(true);
     try {
@@ -480,6 +484,18 @@ export default function AgentLoginPage() {
           <Card>
             <CardContent className="p-4">
               <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="current-password">Current Password</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    placeholder="Enter your current password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    data-testid="input-current-password"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="new-password">New Password</Label>
                   <Input

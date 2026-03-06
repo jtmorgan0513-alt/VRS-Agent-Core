@@ -86,6 +86,10 @@ export default function AdminLoginPage() {
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
+    if (!password.trim()) {
+      toast({ title: "Error", description: "Please enter your current password", variant: "destructive" });
+      return;
+    }
     if (!allRequirementsMet || !passwordsMatch) return;
     setChangePwLoading(true);
     try {
@@ -308,6 +312,18 @@ export default function AdminLoginPage() {
           <Card>
             <CardContent className="p-4">
               <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="admin-current-password">Current Password</Label>
+                  <Input
+                    id="admin-current-password"
+                    type="password"
+                    placeholder="Enter your current password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    data-testid="input-admin-current-password"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="admin-new-password">New Password</Label>
                   <Input
