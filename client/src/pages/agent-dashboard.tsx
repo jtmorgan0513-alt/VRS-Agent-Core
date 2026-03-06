@@ -218,11 +218,28 @@ export default function AgentDashboard() {
 
   const statusMutation = useMutation({
     mutationFn: async (status: "online" | "offline") => {
-      const res = await apiRequest("PATCH", "/api/agent/status", { status });
-      return res.json();
+      const res = await fetch("/api/agent/status", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("vrs_token")}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update status");
+      return data;
     },
     onSuccess: (_data, status) => {
       setLocalAgentStatus(status);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Cannot Go Offline",
+        description: error.message,
+        variant: "destructive",
+        duration: 6000,
+      });
     },
   });
 
@@ -641,22 +658,34 @@ export default function AgentDashboard() {
               {!isAdminViewing && (
                 <button
                   onClick={() => {
+                    if (agentStatus === "working") {
+                      toast({
+                        title: "Cannot Go Offline",
+                        description: "You have an open ticket. Complete or reassign it before going offline.",
+                        variant: "destructive",
+                        duration: 5000,
+                      });
+                      return;
+                    }
                     if (agentStatus === "offline") {
                       statusMutation.mutate("online");
                     } else if (agentStatus === "online") {
                       statusMutation.mutate("offline");
                     }
                   }}
-                  disabled={agentStatus === "working"}
+                  disabled={statusMutation.isPending}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                    agentStatus === "online" || agentStatus === "working"
+                    agentStatus === "working"
+                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 cursor-pointer"
+                      : agentStatus === "online"
                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                       : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
                   }`}
                   data-testid="toggle-agent-status"
                 >
                   <span className={`inline-block w-2 h-2 rounded-full ${
-                    agentStatus === "online" || agentStatus === "working" ? "bg-green-500" : "bg-gray-400 ring-1 ring-gray-500"
+                    agentStatus === "working" ? "bg-yellow-500" :
+                    agentStatus === "online" ? "bg-green-500" : "bg-gray-400 ring-1 ring-gray-500"
                   }`} />
                   {agentStatus === "online" ? "Online" : agentStatus === "working" ? "Working" : "Offline"}
                 </button>
