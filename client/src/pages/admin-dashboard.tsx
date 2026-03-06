@@ -900,9 +900,9 @@ export default function AdminDashboard() {
             )}
           </header>
 
-          <ScrollArea className="flex-1">
+          <div className="flex-1 overflow-auto">
             {activeView === "users" && (
-              <div className="p-4 overflow-hidden">
+              <div className="p-4">
                 <div className="relative mb-4">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -929,8 +929,8 @@ export default function AdminDashboard() {
                     ))}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto w-full max-w-full">
-                    <Table data-testid="table-users" className="min-w-[700px]">
+                  <div className="overflow-x-auto -mx-4 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
+                    <Table data-testid="table-users" className="min-w-[700px] mx-4">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
@@ -1525,7 +1525,7 @@ export default function AdminDashboard() {
             {activeView === "agent-status" && (
               <AgentStatusSection />
             )}
-          </ScrollArea>
+          </div>
         </div>
       </div>
 
