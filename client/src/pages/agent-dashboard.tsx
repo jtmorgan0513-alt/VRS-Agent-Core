@@ -168,8 +168,8 @@ export default function AgentDashboard() {
   const [technicianMessage, setTechnicianMessage] = useState("");
   const [agentNotes, setAgentNotes] = useState("");
   const [authCode, setAuthCode] = useState("");
-  const [invalidReason, setInvalidReason] = useState("");
-  const [invalidInstructions, setInvalidInstructions] = useState("");
+  const [selectedInvalidReasons, setSelectedInvalidReasons] = useState<string[]>([]);
+  const [invalidMessage, setInvalidMessage] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
@@ -290,8 +290,8 @@ export default function AgentDashboard() {
     setTechnicianMessage("");
     setAgentNotes("");
     setAuthCode("");
-    setInvalidReason("");
-    setInvalidInstructions("");
+    setSelectedInvalidReasons([]);
+    setInvalidMessage("");
     setConfirmOpen(false);
   };
 
@@ -418,6 +418,16 @@ export default function AgentDashboard() {
     "Issue description does not match photos",
     "Missing appliance information",
     "Incomplete submission",
+  ];
+
+  const INVALID_SUGGESTIONS = [
+    "Not a VRS-eligible warranty",
+    "Product not covered under warranty",
+    "Use standard authorization process",
+    "Contact B2B support directly",
+    "Service order not found or invalid",
+    "Duplicate submission",
+    "Technician not authorized for this service",
   ];
 
   const PHOTO_REJECTION_REASONS = [
@@ -560,8 +570,8 @@ export default function AgentDashboard() {
       if (technicianMessage) body.technicianMessage = technicianMessage;
     }
     if (selectedAction === "invalid") {
-      body.invalidReason = invalidReason;
-      body.invalidInstructions = invalidInstructions || undefined;
+      body.invalidReason = selectedInvalidReasons.join("; ");
+      body.invalidInstructions = invalidMessage || undefined;
     }
     if (selectedAction === "approve" && authCode) {
       body.authCode = authCode;
@@ -1673,28 +1683,47 @@ export default function AgentDashboard() {
                               )}
 
                               {selectedAction === "invalid" && (
-                                <div className="space-y-3 border rounded-lg p-4 bg-gray-50/50 dark:bg-gray-950/10">
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Invalid Reason</p>
-                                  <Select value={invalidReason} onValueChange={setInvalidReason}>
-                                    <SelectTrigger data-testid="select-invalid-reason">
-                                      <SelectValue placeholder="Select reason..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="Not a VRS-eligible warranty">Not a VRS-eligible warranty</SelectItem>
-                                      <SelectItem value="Product not covered">Product not covered</SelectItem>
-                                      <SelectItem value="Use standard authorization process">Use standard authorization process</SelectItem>
-                                      <SelectItem value="Contact B2B support directly">Contact B2B support directly</SelectItem>
-                                      <SelectItem value="Other">Other</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <Textarea
-                                    placeholder="Instructions for the technician..."
-                                    value={invalidInstructions}
-                                    onChange={(e) => setInvalidInstructions(e.target.value)}
-                                    className="resize-none"
-                                    rows={2}
-                                    data-testid="input-invalid-instructions"
-                                  />
+                                <div className="space-y-3">
+                                  <div className="space-y-2 border rounded-lg p-4 bg-gray-50/50 dark:bg-gray-950/10">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Invalid Reasons (select all that apply)</p>
+                                    <div className="space-y-1.5">
+                                      {INVALID_SUGGESTIONS.map((reason) => (
+                                        <button
+                                          key={reason}
+                                          type="button"
+                                          className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                          onClick={() => {
+                                            setSelectedInvalidReasons((prev) =>
+                                              prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                            );
+                                          }}
+                                          data-testid={`checkbox-invalid-${reason.replace(/\s+/g, '-').toLowerCase()}`}
+                                        >
+                                          {selectedInvalidReasons.includes(reason) ? (
+                                            <CheckSquare className="w-5 h-5 text-gray-700 dark:text-gray-400 shrink-0" />
+                                          ) : (
+                                            <Square className="w-5 h-5 text-muted-foreground shrink-0" />
+                                          )}
+                                          <span className="text-sm">{reason}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2 border rounded-lg p-4 bg-orange-50/50 dark:bg-orange-950/10">
+                                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                      <Send className="w-3 h-3" />
+                                      Message to Technician (sent via SMS)
+                                    </Label>
+                                    <Textarea
+                                      placeholder="Add instructions for the technician explaining why this request cannot be processed..."
+                                      value={invalidMessage}
+                                      onChange={(e) => setInvalidMessage(e.target.value)}
+                                      className="resize-none"
+                                      rows={3}
+                                      data-testid="input-invalid-message"
+                                    />
+                                  </div>
                                 </div>
                               )}
 
@@ -1774,8 +1803,8 @@ export default function AgentDashboard() {
                                     toast({ title: "Error", description: "Select a reason for rejecting the voice note", variant: "destructive" });
                                     return;
                                   }
-                                  if (selectedAction === "invalid" && !invalidReason) {
-                                    toast({ title: "Error", description: "Select an invalid reason", variant: "destructive" });
+                                  if (selectedAction === "invalid" && selectedInvalidReasons.length === 0) {
+                                    toast({ title: "Error", description: "Select at least one invalid reason", variant: "destructive" });
                                     return;
                                   }
                                   if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && needsExternalAuth(selectedSubmission) && !authCode.trim()) {
@@ -2012,9 +2041,25 @@ export default function AgentDashboard() {
               </ul>
             </div>
           )}
+          {selectedAction === "invalid" && selectedInvalidReasons.length > 0 && (
+            <div className="px-6 pb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Invalid Reasons:</p>
+              <ul className="text-sm space-y-0.5">
+                {selectedInvalidReasons.map((r) => (
+                  <li key={r} className="text-gray-700 dark:text-gray-400">&bull; {r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(selectedAction === "reject" && technicianMessage || selectedAction === "invalid" && invalidMessage) && (
+            <div className="px-6 pb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Message to Technician:</p>
+              <p className="text-sm">{selectedAction === "reject" ? technicianMessage : invalidMessage}</p>
+            </div>
+          )}
           {agentNotes && (
             <div className="px-6 pb-2">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Agent Notes:</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Internal Agent Notes:</p>
               <p className="text-sm">{agentNotes}</p>
             </div>
           )}
