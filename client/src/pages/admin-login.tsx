@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Check, X, ArrowLeft } from "lucide-react";
@@ -219,9 +220,8 @@ export default function AdminLoginPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="admin-forgot-new-pw">New Password</Label>
-                    <Input
+                    <PasswordInput
                       id="admin-forgot-new-pw"
-                      type="password"
                       placeholder="Enter new password"
                       value={forgotNewPw}
                       onChange={(e) => setForgotNewPw(e.target.value)}
@@ -231,9 +231,8 @@ export default function AdminLoginPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="admin-forgot-confirm-pw">Confirm Password</Label>
-                    <Input
+                    <PasswordInput
                       id="admin-forgot-confirm-pw"
-                      type="password"
                       placeholder="Confirm new password"
                       value={forgotConfirmPw}
                       onChange={(e) => setForgotConfirmPw(e.target.value)}
@@ -314,9 +313,8 @@ export default function AdminLoginPage() {
               <form onSubmit={handleChangePassword} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="admin-current-password">Current Password</Label>
-                  <Input
+                  <PasswordInput
                     id="admin-current-password"
-                    type="password"
                     placeholder="Enter your current password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -326,9 +324,8 @@ export default function AdminLoginPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="admin-new-password">New Password</Label>
-                  <Input
+                  <PasswordInput
                     id="admin-new-password"
-                    type="password"
                     placeholder="Enter new password"
                     value={newPw}
                     onChange={(e) => setNewPw(e.target.value)}
@@ -338,9 +335,8 @@ export default function AdminLoginPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="admin-confirm-password">Confirm Password</Label>
-                  <Input
+                  <PasswordInput
                     id="admin-confirm-password"
-                    type="password"
                     placeholder="Confirm new password"
                     value={confirmPw}
                     onChange={(e) => setConfirmPw(e.target.value)}
@@ -420,9 +416,8 @@ export default function AdminLoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-password">Password</Label>
-                <Input
+                <PasswordInput
                   id="admin-password"
-                  type="password"
                   placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

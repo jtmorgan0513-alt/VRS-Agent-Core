@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
@@ -190,9 +191,8 @@ export default function TechLoginPage() {
               {showPasswordField && (
                 <div className="space-y-2">
                   <Label htmlFor="admin-password">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="admin-password"
-                    type="password"
                     placeholder="Enter admin password"
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
