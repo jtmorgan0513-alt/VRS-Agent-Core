@@ -207,12 +207,13 @@ export default function AgentDashboard() {
   const agentStatus = localAgentStatus;
 
   const isAdminRole = user?.role === "admin" || user?.role === "super_admin";
-  const { data: specsData } = useQuery<{ divisions: string[] }>({
+  const { data: specsData, isSuccess: specsLoaded } = useQuery<{ divisions: string[] }>({
     queryKey: ["/api/agent/specializations"],
     enabled: !isAdminRole,
   });
   const allDivisionKeys = Object.keys(DIVISION_LABELS);
   const agentDivisions = isAdminRole ? allDivisionKeys : (specsData?.divisions || []);
+
   const isGeneralist = isAdminRole || agentDivisions.length >= allDivisionKeys.length;
 
   const statusMutation = useMutation({

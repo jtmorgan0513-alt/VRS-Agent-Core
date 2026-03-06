@@ -43,6 +43,8 @@ export default function AgentLoginPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  const [redirectChecked, setRedirectChecked] = useState(false);
+
   useEffect(() => {
     if (user && user.mustChangePassword && !mustChangePassword) {
       setMustChangePassword(true);
@@ -50,7 +52,41 @@ export default function AgentLoginPage() {
     }
   }, [user, mustChangePassword]);
 
-  if (authLoading) {
+  useEffect(() => {
+    if (!user || authLoading || redirectChecked || selectDivisionsStep) return;
+    if (user.mustChangePassword) { setRedirectChecked(true); return; }
+    if (user.role === "technician") {
+      setLocation("/tech");
+      return;
+    }
+    if (user.role === "admin" || user.role === "super_admin") {
+      setLocation("/agent/dashboard");
+      return;
+    }
+    if (user.role === "vrs_agent") {
+      const token = localStorage.getItem("vrs_token");
+      fetch("/api/agent/specializations", { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => {
+          if (!res.ok) {
+            setLocation("/agent/dashboard");
+            return null;
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data === null) return;
+          if (!data.divisions || data.divisions.length === 0) {
+            setSelectDivisionsStep(true);
+          } else {
+            setLocation("/agent/dashboard");
+          }
+        })
+        .catch(() => setLocation("/agent/dashboard"))
+        .finally(() => setRedirectChecked(true));
+    }
+  }, [user, authLoading, redirectChecked, selectDivisionsStep, setLocation]);
+
+  if (authLoading || (user && !user.mustChangePassword && !selectDivisionsStep && !redirectChecked)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -61,8 +97,22 @@ export default function AgentLoginPage() {
     );
   }
 
-  if (user && !user.mustChangePassword && (user.role === "vrs_agent" || user.role === "admin" || user.role === "super_admin")) return <Redirect to="/agent/dashboard" />;
-  if (user && !user.mustChangePassword && user.role === "technician") return <Redirect to="/tech" />;
+  async function checkDivisionsAndProceed() {
+    try {
+      const token = localStorage.getItem("vrs_token");
+      const res = await fetch("/api/agent/specializations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.divisions || data.divisions.length === 0) {
+          setSelectDivisionsStep(true);
+          return;
+        }
+      }
+    } catch {}
+    setLocation("/agent/dashboard");
+  }
 
   async function handleAgentSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,6 +122,8 @@ export default function AgentLoginPage() {
       if (u.mustChangePassword) {
         setMustChangePassword(true);
         setChangePasswordUser(u);
+      } else if (u.role === "vrs_agent") {
+        await checkDivisionsAndProceed();
       } else {
         setLocation("/agent/dashboard");
       }
