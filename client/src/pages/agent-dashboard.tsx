@@ -865,7 +865,7 @@ export default function AgentDashboard() {
           </SidebarFooter>
         </Sidebar>
 
-        <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           {!isAdminViewing && agentStatus === "offline" && (
             <button
               onClick={() => statusMutation.mutate("online")}
@@ -878,18 +878,19 @@ export default function AgentDashboard() {
           )}
           <header className="flex items-center justify-between gap-2 p-3 border-b sticky top-0 z-50 bg-background">
             <div className="flex items-center gap-2">
-              {selectedId ? (
+              {selectedId && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="gap-1.5"
+                  className="hidden md:inline-flex gap-1.5"
                   onClick={() => setSelectedId(null)}
-                  data-testid="button-back-to-list"
+                  data-testid="button-back-to-queue"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Back to Queue
                 </Button>
-              ) : (
+              )}
+              {!selectedId && (
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
               )}
               <h1 className="text-lg font-semibold" data-testid="text-page-title">
@@ -903,7 +904,7 @@ export default function AgentDashboard() {
           </header>
 
           <div className="flex flex-1 min-h-0">
-            <div className={`w-[380px] border-r flex flex-col min-h-0 ${selectedId ? "hidden" : ""}`}>
+            <div className={`w-full md:w-[380px] border-r flex flex-col min-h-0 ${selectedId ? "hidden" : ""}`}>
               <div className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm text-muted-foreground" data-testid="text-queue-count">
                   {submissions.length} ticket{submissions.length !== 1 ? "s" : ""}
@@ -1018,8 +1019,18 @@ export default function AgentDashboard() {
                 </div>
               ) : (
                 <div className="flex flex-1 min-h-0">
-                <ScrollArea className={activeView === "mytickets" && shsaiVisible ? "w-[60%] border-r" : "flex-1"}>
-                  <div className="p-6 max-w-3xl space-y-6">
+                <ScrollArea className={activeView === "mytickets" && shsaiVisible ? "w-full md:w-[60%] border-r" : "flex-1"}>
+                  <div className="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="md:hidden mb-2 -ml-1 gap-1"
+                      onClick={() => setSelectedId(null)}
+                      data-testid="button-back-to-list"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Back to list
+                    </Button>
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <h2 className="text-xl font-semibold" data-testid="text-detail-so">
@@ -1898,7 +1909,7 @@ export default function AgentDashboard() {
                   </div>
                 </ScrollArea>
                 {activeView === "mytickets" && shsaiVisible && selectedSubmission && (
-                  <div className="w-[40%] flex flex-col min-h-0" data-testid="panel-shsai">
+                  <div className="hidden md:flex w-[40%] flex-col min-h-0" data-testid="panel-shsai">
                     <div className="px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4 text-primary" />

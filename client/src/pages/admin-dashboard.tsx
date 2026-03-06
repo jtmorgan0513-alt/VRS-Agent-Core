@@ -207,14 +207,15 @@ function AgentStatusSection() {
           ) : agents.length === 0 ? (
             <p className="text-sm text-muted-foreground">No active agents found.</p>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>LDAP ID</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Divisions</TableHead>
-                  <TableHead>Last Seen</TableHead>
+                  <TableHead className="hidden sm:table-cell">Last Seen</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -244,7 +245,7 @@ function AgentStatusSection() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                       {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : "—"}
                     </TableCell>
                     <TableCell className="text-right">
@@ -264,6 +265,7 @@ function AgentStatusSection() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -900,7 +902,7 @@ export default function AdminDashboard() {
 
           <ScrollArea className="flex-1">
             {activeView === "users" && (
-              <div className="p-4">
+              <div className="p-4 overflow-hidden">
                 <div className="relative mb-4">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -927,14 +929,15 @@ export default function AdminDashboard() {
                     ))}
                   </div>
                 ) : (
-                  <Table data-testid="table-users">
+                  <div className="overflow-x-auto w-full max-w-full">
+                    <Table data-testid="table-users" className="min-w-[700px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Role</TableHead>
-                        <TableHead>Phone</TableHead>
+                        <TableHead className="hidden sm:table-cell">Phone</TableHead>
                         <TableHead>RAC ID</TableHead>
-                        <TableHead>Password Status</TableHead>
+                        <TableHead className="hidden sm:table-cell">Password Status</TableHead>
                         <TableHead>
                           <div className="flex items-center gap-1.5">
                             Status
@@ -966,9 +969,9 @@ export default function AdminDashboard() {
                               {ROLE_LABELS[u.role] || u.role}
                             </Badge>
                           </TableCell>
-                          <TableCell data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
+                          <TableCell className="hidden sm:table-cell" data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
                           <TableCell data-testid={`text-user-racid-${u.id}`}>{u.racId || "-"}</TableCell>
-                          <TableCell data-testid={`text-pw-status-${u.id}`}>
+                          <TableCell className="hidden sm:table-cell" data-testid={`text-pw-status-${u.id}`}>
                             {u.mustChangePassword ? (
                               <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">Must Change</Badge>
                             ) : u.passwordChangedAt ? (
@@ -1025,6 +1028,7 @@ export default function AdminDashboard() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </div>
             )}

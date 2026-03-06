@@ -104,8 +104,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `/tech/history` - Submission history list
 - `/tech/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
 - `/tech/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
-- `/agent/dashboard` - VRS Agent dashboard (sidebar nav, unified Queue/My Tickets/Completed tabs, claim-to-process workflow, large checkbox action UI, auth code by warranty type, division correction)
-- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics, real-time agent status)
+- `/agent/dashboard` - VRS Agent dashboard (sidebar nav, unified Queue/My Tickets/Completed tabs, claim-to-process workflow, large checkbox action UI, auth code by warranty type, division correction, mobile-responsive: full-width list on mobile, mobile back button in detail view, SHSAI panel hidden on mobile)
+- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics, real-time agent status, mobile-responsive: tables in overflow-x-auto wrappers, phone/password columns hidden on small screens)
 
 ### Onboarding & Help System
 - First-login wizard: role-based step-by-step modal (5 slides tech, 5 agent, 4 admin)
