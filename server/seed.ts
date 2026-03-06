@@ -1,7 +1,7 @@
 import bcryptjs from "bcryptjs";
-import { storage } from "./storage";
-import { db } from "./db";
-import { technicians } from "@shared/schema";
+import { storage, db } from "./storage";
+import { technicians, users } from "@shared/schema";
+import { sql } from "drizzle-orm";
 
 const SEED_USERS = [
   {
@@ -126,4 +126,48 @@ export async function seedDatabase() {
       // Already exists
     }
   }
+
+  await resetAllPasswords();
+}
+
+const TEST_RAC_IDS = ["testagent1", "TESTADMIN", "testtech1", "tmorri1", "sysadmin"];
+
+async function resetAllPasswords() {
+  const RESET_FLAG_RAC = "__pw_reset_v2_done__";
+  const flagUser = await storage.getUserByRacId(RESET_FLAG_RAC);
+  if (flagUser) {
+    console.log("[password-reset] Already completed (flag found), skipping");
+    return;
+  }
+
+  const GENERIC_PASSWORD = "VRS2026!";
+  const hashedGeneric = await bcryptjs.hash(GENERIC_PASSWORD, 10);
+
+  const allUsers = await db.select({ id: users.id, racId: users.racId, isSystemAccount: users.isSystemAccount }).from(users);
+
+  let resetCount = 0;
+  for (const u of allUsers) {
+    if (u.racId === "VRS_MASTER") continue;
+
+    const isTestAccount = TEST_RAC_IDS.includes(u.racId || "");
+    await db.update(users).set({
+      password: hashedGeneric,
+      mustChangePassword: !isTestAccount,
+      passwordChangedAt: null,
+    }).where(sql`id = ${u.id}`);
+    resetCount++;
+  }
+
+  await db.insert(users).values({
+    email: null,
+    password: "flag",
+    name: "Password Reset Flag",
+    role: "technician",
+    phone: null,
+    racId: RESET_FLAG_RAC,
+    isActive: false,
+    isSystemAccount: true,
+  });
+
+  console.log(`[password-reset] Reset ${resetCount} user passwords to generic (skipped VRS_MASTER)`);
 }
