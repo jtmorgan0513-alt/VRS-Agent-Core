@@ -170,6 +170,11 @@ export default function AgentDashboard() {
   const [authCode, setAuthCode] = useState("");
   const [selectedInvalidReasons, setSelectedInvalidReasons] = useState<string[]>([]);
   const [invalidMessage, setInvalidMessage] = useState("");
+  const [otherRejectionText, setOtherRejectionText] = useState("");
+  const [otherInvalidText, setOtherInvalidText] = useState("");
+  const [otherPhotoRejectionText, setOtherPhotoRejectionText] = useState("");
+  const [otherVideoRejectionText, setOtherVideoRejectionText] = useState("");
+  const [otherVoiceRejectionText, setOtherVoiceRejectionText] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
@@ -310,6 +315,11 @@ export default function AgentDashboard() {
     setAuthCode("");
     setSelectedInvalidReasons([]);
     setInvalidMessage("");
+    setOtherRejectionText("");
+    setOtherInvalidText("");
+    setOtherPhotoRejectionText("");
+    setOtherVideoRejectionText("");
+    setOtherVoiceRejectionText("");
     setConfirmOpen(false);
   };
 
@@ -456,6 +466,7 @@ export default function AgentDashboard() {
     "Duplicate photo",
     "Does not match description",
     "Model/serial not readable",
+    "Other",
   ];
 
   const MEDIA_REJECTION_REASONS = [
@@ -465,6 +476,7 @@ export default function AgentDashboard() {
     "Video is too short",
     "Video does not show the issue",
     "Corrupted or won't play",
+    "Other",
   ];
 
   const claimMutation = useMutation({
@@ -577,18 +589,48 @@ export default function AgentDashboard() {
       agentNotes: agentNotes || undefined,
     };
     if (selectedAction === "reject") {
-      if (selectedRejectionReasons.length > 0) {
-        body.rejectionReasons = selectedRejectionReasons;
+      const allRejectReasons = [...selectedRejectionReasons];
+      if (allRejectReasons.includes("Other") && otherRejectionText.trim()) {
+        allRejectReasons[allRejectReasons.indexOf("Other")] = `Other: ${otherRejectionText.trim()}`;
+      } else if (allRejectReasons.includes("Other")) {
+        allRejectReasons[allRejectReasons.indexOf("Other")] = "Other";
+      }
+      if (allRejectReasons.length > 0) {
+        body.rejectionReasons = allRejectReasons;
       }
       const mediaRejections: Record<string, unknown> = {};
-      if (rejectedPhotos.length > 0) mediaRejections.photos = rejectedPhotos;
-      if (rejectedVideo.rejected) mediaRejections.video = rejectedVideo;
-      if (rejectedVoiceNote.rejected) mediaRejections.voiceNote = rejectedVoiceNote;
+      if (rejectedPhotos.length > 0) {
+        const processedPhotos = rejectedPhotos.map(rp => {
+          if (rp.reason === "Other" && otherPhotoRejectionText.trim()) {
+            return { ...rp, reason: `Other: ${otherPhotoRejectionText.trim()}` };
+          }
+          return rp;
+        });
+        mediaRejections.photos = processedPhotos;
+      }
+      if (rejectedVideo.rejected) {
+        const videoData = rejectedVideo.reason === "Other" && otherVideoRejectionText.trim()
+          ? { ...rejectedVideo, reason: `Other: ${otherVideoRejectionText.trim()}` }
+          : rejectedVideo;
+        mediaRejections.video = videoData;
+      }
+      if (rejectedVoiceNote.rejected) {
+        const voiceData = rejectedVoiceNote.reason === "Other" && otherVoiceRejectionText.trim()
+          ? { ...rejectedVoiceNote, reason: `Other: ${otherVoiceRejectionText.trim()}` }
+          : rejectedVoiceNote;
+        mediaRejections.voiceNote = voiceData;
+      }
       if (Object.keys(mediaRejections).length > 0) body.rejectedMedia = mediaRejections;
       if (technicianMessage) body.technicianMessage = technicianMessage;
     }
     if (selectedAction === "invalid") {
-      body.invalidReason = selectedInvalidReasons.join("; ");
+      const allInvalidReasons = [...selectedInvalidReasons];
+      if (allInvalidReasons.includes("Other") && otherInvalidText.trim()) {
+        allInvalidReasons[allInvalidReasons.indexOf("Other")] = `Other: ${otherInvalidText.trim()}`;
+      } else if (allInvalidReasons.includes("Other")) {
+        allInvalidReasons[allInvalidReasons.indexOf("Other")] = "Other";
+      }
+      body.invalidReason = allInvalidReasons.join("; ");
       body.invalidInstructions = invalidMessage || undefined;
     }
     if (selectedAction === "approve" && authCode) {
@@ -1299,16 +1341,28 @@ export default function AgentDashboard() {
                                           )}
                                         </div>
                                         {rejected && (
-                                          <Select value={rejection?.reason || ""} onValueChange={(val) => updatePhotoRejectionReason(url, val)}>
-                                            <SelectTrigger className="h-7 text-[10px] border-red-300">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {PHOTO_REJECTION_REASONS.map(r => (
-                                                <SelectItem key={r} value={r}>{r}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
+                                          <>
+                                            <Select value={rejection?.reason || ""} onValueChange={(val) => updatePhotoRejectionReason(url, val)}>
+                                              <SelectTrigger className="h-7 text-[10px] border-red-300">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {PHOTO_REJECTION_REASONS.map(r => (
+                                                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                            {rejection?.reason === "Other" && (
+                                              <input
+                                                type="text"
+                                                className="w-full text-[10px] border rounded-md px-2 py-1 bg-background border-red-300"
+                                                placeholder="Specify reason..."
+                                                value={otherPhotoRejectionText}
+                                                onChange={(e) => setOtherPhotoRejectionText(e.target.value)}
+                                                data-testid="input-other-photo-rejection"
+                                              />
+                                            )}
+                                          </>
                                         )}
                                       </div>
                                     );
@@ -1359,16 +1413,28 @@ export default function AgentDashboard() {
                                 </div>
                               )}
                               {rejectedVideo.rejected && (
-                                <Select value={rejectedVideo.reason || ""} onValueChange={(val) => setRejectedVideo(prev => ({...prev, reason: val}))}>
-                                  <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-video-reject-reason">
-                                    <SelectValue placeholder="Select reason..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {MEDIA_REJECTION_REASONS.map(r => (
-                                      <SelectItem key={r} value={r}>{r}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <>
+                                  <Select value={rejectedVideo.reason || ""} onValueChange={(val) => setRejectedVideo(prev => ({...prev, reason: val}))}>
+                                    <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-video-reject-reason">
+                                      <SelectValue placeholder="Select reason..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {MEDIA_REJECTION_REASONS.map(r => (
+                                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {rejectedVideo.reason === "Other" && (
+                                    <input
+                                      type="text"
+                                      className="w-full text-xs border rounded-md px-2 py-1 bg-background border-red-300"
+                                      placeholder="Specify reason..."
+                                      value={otherVideoRejectionText}
+                                      onChange={(e) => setOtherVideoRejectionText(e.target.value)}
+                                      data-testid="input-other-video-rejection"
+                                    />
+                                  )}
+                                </>
                               )}
                             </div>
                           ) : (
@@ -1398,16 +1464,28 @@ export default function AgentDashboard() {
                                 </div>
                               )}
                               {rejectedVoiceNote.rejected && (
-                                <Select value={rejectedVoiceNote.reason || ""} onValueChange={(val) => setRejectedVoiceNote(prev => ({...prev, reason: val}))}>
-                                  <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-voice-reject-reason">
-                                    <SelectValue placeholder="Select reason..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {MEDIA_REJECTION_REASONS.map(r => (
-                                      <SelectItem key={r} value={r}>{r}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <>
+                                  <Select value={rejectedVoiceNote.reason || ""} onValueChange={(val) => setRejectedVoiceNote(prev => ({...prev, reason: val}))}>
+                                    <SelectTrigger className="h-8 text-xs border-red-300" data-testid="select-voice-reject-reason">
+                                      <SelectValue placeholder="Select reason..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {MEDIA_REJECTION_REASONS.map(r => (
+                                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {rejectedVoiceNote.reason === "Other" && (
+                                    <input
+                                      type="text"
+                                      className="w-full text-xs border rounded-md px-2 py-1 bg-background border-red-300"
+                                      placeholder="Specify reason..."
+                                      value={otherVoiceRejectionText}
+                                      onChange={(e) => setOtherVoiceRejectionText(e.target.value)}
+                                      data-testid="input-other-voice-rejection"
+                                    />
+                                  )}
+                                </>
                               )}
                             </div>
                           ) : (
@@ -1666,6 +1744,9 @@ export default function AgentDashboard() {
                                             setSelectedRejectionReasons((prev) =>
                                               prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
                                             );
+                                            if (reason === "Other" && selectedRejectionReasons.includes("Other")) {
+                                              setOtherRejectionText("");
+                                            }
                                           }}
                                           data-testid={`checkbox-reason-${reason.replace(/\s+/g, '-').toLowerCase()}`}
                                         >
@@ -1677,6 +1758,36 @@ export default function AgentDashboard() {
                                           <span className="text-sm">{reason}</span>
                                         </button>
                                       ))}
+                                      <button
+                                        type="button"
+                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                        onClick={() => {
+                                          setSelectedRejectionReasons((prev) =>
+                                            prev.includes("Other") ? prev.filter((r) => r !== "Other") : [...prev, "Other"]
+                                          );
+                                          if (selectedRejectionReasons.includes("Other")) {
+                                            setOtherRejectionText("");
+                                          }
+                                        }}
+                                        data-testid="checkbox-reason-other"
+                                      >
+                                        {selectedRejectionReasons.includes("Other") ? (
+                                          <CheckSquare className="w-5 h-5 text-red-600 shrink-0" />
+                                        ) : (
+                                          <Square className="w-5 h-5 text-muted-foreground shrink-0" />
+                                        )}
+                                        <span className="text-sm">Other</span>
+                                      </button>
+                                      {selectedRejectionReasons.includes("Other") && (
+                                        <input
+                                          type="text"
+                                          className="w-full ml-7 text-sm border rounded-md px-3 py-1.5 bg-background"
+                                          placeholder="Specify other reason..."
+                                          value={otherRejectionText}
+                                          onChange={(e) => setOtherRejectionText(e.target.value)}
+                                          data-testid="input-other-rejection-reason"
+                                        />
+                                      )}
                                     </div>
                                   </div>
 
@@ -1737,6 +1848,9 @@ export default function AgentDashboard() {
                                             setSelectedInvalidReasons((prev) =>
                                               prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
                                             );
+                                            if (reason === "Other" && selectedInvalidReasons.includes("Other")) {
+                                              setOtherInvalidText("");
+                                            }
                                           }}
                                           data-testid={`checkbox-invalid-${reason.replace(/\s+/g, '-').toLowerCase()}`}
                                         >
@@ -1748,6 +1862,36 @@ export default function AgentDashboard() {
                                           <span className="text-sm">{reason}</span>
                                         </button>
                                       ))}
+                                      <button
+                                        type="button"
+                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                        onClick={() => {
+                                          setSelectedInvalidReasons((prev) =>
+                                            prev.includes("Other") ? prev.filter((r) => r !== "Other") : [...prev, "Other"]
+                                          );
+                                          if (selectedInvalidReasons.includes("Other")) {
+                                            setOtherInvalidText("");
+                                          }
+                                        }}
+                                        data-testid="checkbox-invalid-other"
+                                      >
+                                        {selectedInvalidReasons.includes("Other") ? (
+                                          <CheckSquare className="w-5 h-5 text-gray-700 dark:text-gray-400 shrink-0" />
+                                        ) : (
+                                          <Square className="w-5 h-5 text-muted-foreground shrink-0" />
+                                        )}
+                                        <span className="text-sm">Other</span>
+                                      </button>
+                                      {selectedInvalidReasons.includes("Other") && (
+                                        <input
+                                          type="text"
+                                          className="w-full ml-7 text-sm border rounded-md px-3 py-1.5 bg-background"
+                                          placeholder="Specify other reason..."
+                                          value={otherInvalidText}
+                                          onChange={(e) => setOtherInvalidText(e.target.value)}
+                                          data-testid="input-other-invalid-reason"
+                                        />
+                                      )}
                                     </div>
                                   </div>
 
@@ -1842,6 +1986,26 @@ export default function AgentDashboard() {
                                   }
                                   if (selectedAction === "reject" && rejectedVoiceNote.rejected && !rejectedVoiceNote.reason) {
                                     toast({ title: "Error", description: "Select a reason for rejecting the voice note", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && selectedRejectionReasons.includes("Other") && !otherRejectionText.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' rejection reason", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && rejectedVideo.rejected && rejectedVideo.reason === "Other" && !otherVideoRejectionText.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' reason for video rejection", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && rejectedVoiceNote.rejected && rejectedVoiceNote.reason === "Other" && !otherVoiceRejectionText.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' reason for voice note rejection", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject" && rejectedPhotos.some(rp => rp.reason === "Other") && !otherPhotoRejectionText.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' reason for photo rejection", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "invalid" && selectedInvalidReasons.includes("Other") && !otherInvalidText.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' invalid reason", variant: "destructive" });
                                     return;
                                   }
                                   if (selectedAction === "invalid" && selectedInvalidReasons.length === 0) {
