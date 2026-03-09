@@ -1,4 +1,4 @@
-# VRS Digital Authorization Platform — Internal Handover Guide
+# VRS Digital Authorization Platform — User Guide
 
 **Last Updated:** March 2026
 **Classification:** INTERNAL USE ONLY — Contains credentials and system architecture details

@@ -1,4 +1,4 @@
-# VRS Digital Authorization Platform — Developer / Maintainer Guide
+# VRS Digital Authorization Platform — Developer Guide
 
 **Last Updated:** March 2026
 **Audience:** Engineers and technical owners inheriting or maintaining this Replit project
@@ -28,7 +28,7 @@
 
 This document is for developers who will maintain, extend, or debug the VRS Digital Authorization Platform. It covers how the codebase is structured, how the application starts, how the build and deployment pipeline works, and where all the integration points live.
 
-This is **not** the end-user guide. A separate document (`VRS_PLATFORM_INTERNAL_GUIDE.md`) covers user-facing workflows, login credentials, and feature walkthroughs. This document assumes you are a developer working inside the Replit project.
+This is **not** the end-user guide. A separate document (`VRS_PLATFORM_USER_GUIDE.md`) covers user-facing workflows, login credentials, and feature walkthroughs. This document assumes you are a developer working inside the Replit project.
 
 ---
 
@@ -113,8 +113,8 @@ This is **not** the end-user guide. A separate document (`VRS_PLATFORM_INTERNAL_
 ├── package.json                    # Dependencies and npm scripts
 ├── .replit                         # Replit configuration (workflows, ports, deployment settings)
 ├── replit.md                       # Project summary loaded into Replit Agent memory
-├── VRS_PLATFORM_INTERNAL_GUIDE.md  # End-user internal guide
-└── DEVELOPER_MAINTAINER_GUIDE.md   # This file
+├── VRS_PLATFORM_USER_GUIDE.md       # End-user guide
+└── VRS_PLATFORM_DEVELOPER_GUIDE.md  # This file
 ```
 
 ---
