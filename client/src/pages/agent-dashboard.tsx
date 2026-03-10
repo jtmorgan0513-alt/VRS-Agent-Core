@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -709,39 +710,29 @@ export default function AgentDashboard() {
                 <span className="text-xs text-muted-foreground" data-testid="text-agent-name">{user?.name}</span>
               </div>
               {!isAdminViewing && (
-                <button
-                  onClick={() => {
-                    if (agentStatus === "working") {
-                      toast({
-                        title: "Cannot Go Offline",
-                        description: "You have an open ticket. Complete or reassign it before going offline.",
-                        variant: "destructive",
-                        duration: 5000,
-                      });
-                      return;
-                    }
-                    if (agentStatus === "offline") {
-                      statusMutation.mutate("online");
-                    } else if (agentStatus === "online") {
-                      statusMutation.mutate("offline");
-                    }
-                  }}
-                  disabled={statusMutation.isPending}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                    agentStatus === "working"
-                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 cursor-pointer"
-                      : agentStatus === "online"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                  }`}
-                  data-testid="toggle-agent-status"
-                >
-                  <span className={`inline-block w-2 h-2 rounded-full ${
-                    agentStatus === "working" ? "bg-yellow-500" :
-                    agentStatus === "online" ? "bg-green-500" : "bg-gray-400 ring-1 ring-gray-500"
-                  }`} />
-                  {agentStatus === "online" ? "Online" : agentStatus === "working" ? "Working" : "Offline"}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground">
+                    {agentStatus === "online" ? "Online" : agentStatus === "working" ? "Working" : "Offline"}
+                  </span>
+                  <Switch
+                    checked={agentStatus === "online" || agentStatus === "working"}
+                    onCheckedChange={(checked) => {
+                      if (agentStatus === "working") {
+                        toast({
+                          title: "Cannot Go Offline",
+                          description: "You have an open ticket. Complete or reassign it before going offline.",
+                          variant: "destructive",
+                          duration: 5000,
+                        });
+                        return;
+                      }
+                      statusMutation.mutate(checked ? "online" : "offline");
+                    }}
+                    disabled={statusMutation.isPending || agentStatus === "working"}
+                    data-testid="toggle-agent-status"
+                    className="scale-75"
+                  />
+                </div>
               )}
             </div>
           </SidebarHeader>

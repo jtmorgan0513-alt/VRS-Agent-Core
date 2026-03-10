@@ -409,6 +409,13 @@ export default function AdminDashboard() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
   const [rgcDate, setRgcDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rgcDigits, setRgcDigits] = useState("");
+  const [adminStatus, setAdminStatus] = useState<string>((user as any)?.agentStatus || "offline");
+
+  useEffect(() => {
+    if (user && (user as any).agentStatus) {
+      setAdminStatus((user as any).agentStatus);
+    }
+  }, [user]);
 
   const { subscribe } = useWebSocket(user?.role);
 
@@ -440,11 +447,42 @@ export default function AdminDashboard() {
   });
 
   const [exportingRange, setExportingRange] = useState<string | null>(null);
-  const handleExportCsv = async (range: string) => {
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [exportTechLdap, setExportTechLdap] = useState("");
+
+  const setExportPreset = (preset: string) => {
+    const now = new Date();
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    if (preset === "today") {
+      setExportStartDate(fmt(now));
+      setExportEndDate(fmt(now));
+    } else if (preset === "week") {
+      const day = now.getDay();
+      const start = new Date(now);
+      start.setDate(now.getDate() - day);
+      setExportStartDate(fmt(start));
+      setExportEndDate(fmt(now));
+    } else if (preset === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      setExportStartDate(fmt(start));
+      setExportEndDate(fmt(now));
+    } else {
+      setExportStartDate("");
+      setExportEndDate("");
+    }
+  };
+
+  const handleExportCsv = async () => {
     try {
-      setExportingRange(range);
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/export-csv?range=${range}`, {
+      setExportingRange("exporting");
+      const token = getToken();
+      const params = new URLSearchParams();
+      if (exportStartDate) params.set("startDate", exportStartDate);
+      if (exportEndDate) params.set("endDate", exportEndDate);
+      if (exportTechLdap.trim()) params.set("techLdap", exportTechLdap.trim());
+      if (!exportStartDate && !exportEndDate) params.set("range", "all");
+      const res = await fetch(`/api/admin/export-csv?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Export failed");
@@ -452,7 +490,7 @@ export default function AdminDashboard() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || `vrs-export-${range}.csv`;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || "vrs-export.csv";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -548,6 +586,20 @@ export default function AdminDashboard() {
     onSuccess: () => {
       toast({ title: "Status Updated", description: "User status has been updated." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const adminStatusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      const res = await apiRequest("PATCH", "/api/agent/status", { status });
+      return res.json();
+    },
+    onSuccess: (_: any, status: string) => {
+      setAdminStatus(status);
+      toast({ title: status === "online" ? "You are now Online" : "You are now Offline" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -738,7 +790,25 @@ export default function AdminDashboard() {
               <img src={searsLogo} alt="Sears Home Services" className="h-7" data-testid="img-logo" />
               <span className="font-semibold text-sm" data-testid="text-sidebar-title">Admin Panel</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1" data-testid="text-admin-name">{user?.name}</p>
+            <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2 h-2 rounded-full ${adminStatus === "online" ? "bg-green-500" : "bg-gray-400"}`}
+                  data-testid="indicator-admin-status"
+                />
+                <span className="text-xs text-muted-foreground" data-testid="text-admin-name">{user?.name}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground">{adminStatus === "online" ? "Online" : "Offline"}</span>
+                <Switch
+                  checked={adminStatus === "online"}
+                  onCheckedChange={(checked) => adminStatusMutation.mutate(checked ? "online" : "offline")}
+                  disabled={adminStatusMutation.isPending}
+                  data-testid="toggle-admin-status"
+                  className="scale-75"
+                />
+              </div>
+            </div>
           </SidebarHeader>
 
           <SidebarContent>
@@ -1483,31 +1553,69 @@ export default function AdminDashboard() {
                           <Download className="w-4 h-4 text-muted-foreground" />
                         </div>
                       </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground mb-4">Download all processed tickets as a CSV file for the selected time range.</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <CardContent className="space-y-4">
+                        <p className="text-sm text-muted-foreground">Download tickets as CSV. Use presets or pick custom dates. Optionally filter by technician LDAP ID for coaching review.</p>
+                        <div className="flex flex-wrap gap-2">
                           {[
-                            { range: "today", label: "Today" },
-                            { range: "week", label: "This Week" },
-                            { range: "month", label: "This Month" },
-                            { range: "all", label: "All Time" },
-                          ].map(({ range, label }) => (
+                            { preset: "today", label: "Today" },
+                            { preset: "week", label: "This Week" },
+                            { preset: "month", label: "This Month" },
+                            { preset: "all", label: "All Time" },
+                          ].map(({ preset, label }) => (
                             <Button
-                              key={range}
+                              key={preset}
                               variant="outline"
-                              onClick={() => handleExportCsv(range)}
-                              disabled={exportingRange !== null}
-                              data-testid={`button-export-${range}`}
+                              size="sm"
+                              onClick={() => setExportPreset(preset)}
+                              data-testid={`button-preset-${preset}`}
                             >
-                              {exportingRange === range ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Download className="w-4 h-4" />
-                              )}
+                              <Calendar className="w-3 h-3 mr-1" />
                               {label}
                             </Button>
                           ))}
                         </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Start Date</Label>
+                            <Input
+                              type="date"
+                              value={exportStartDate}
+                              onChange={(e) => setExportStartDate(e.target.value)}
+                              data-testid="input-export-start-date"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">End Date</Label>
+                            <Input
+                              type="date"
+                              value={exportEndDate}
+                              onChange={(e) => setExportEndDate(e.target.value)}
+                              data-testid="input-export-end-date"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Technician LDAP ID</Label>
+                            <Input
+                              type="text"
+                              placeholder="e.g. tmorri1"
+                              value={exportTechLdap}
+                              onChange={(e) => setExportTechLdap(e.target.value)}
+                              data-testid="input-export-tech-ldap"
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleExportCsv}
+                          disabled={exportingRange !== null}
+                          data-testid="button-export-csv"
+                        >
+                          {exportingRange ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <Download className="w-4 h-4 mr-2" />
+                          )}
+                          Export CSV
+                        </Button>
                       </CardContent>
                     </Card>
                   </>

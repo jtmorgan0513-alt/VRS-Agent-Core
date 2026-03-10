@@ -1188,7 +1188,7 @@ export async function registerRoutes(
   // AGENT STATUS ROUTES
   // ========================================================================
 
-  app.patch("/api/agent/status", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.patch("/api/agent/status", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const statusSchema = z.object({ status: z.enum(["online", "offline"]) });
@@ -1985,10 +1985,21 @@ export async function registerRoutes(
   app.get("/api/admin/export-csv", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const range = (req.query.range as string) || "all";
+      const customStart = req.query.startDate as string | undefined;
+      const customEnd = req.query.endDate as string | undefined;
+      const techLdap = req.query.techLdap as string | undefined;
       const now = new Date();
       let startDate: Date | null = null;
+      let endDate: Date | null = null;
 
-      if (range === "today") {
+      if (customStart) {
+        startDate = new Date(customStart);
+        if (customEnd) {
+          const end = new Date(customEnd);
+          end.setHours(23, 59, 59, 999);
+          endDate = end;
+        }
+      } else if (range === "today") {
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       } else if (range === "week") {
         const day = now.getDay();
@@ -1997,7 +2008,7 @@ export async function registerRoutes(
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      const allSubmissions = await storage.getAllSubmissions(startDate);
+      const allSubmissions = await storage.getAllSubmissions(startDate, endDate, techLdap || null);
 
       const userCache: Record<number, string> = {};
       const getUserName = async (userId: number | null): Promise<string> => {
@@ -2012,15 +2023,17 @@ export async function registerRoutes(
         "ID", "Service Order", "Technician LDAP", "Technician Name", "Phone",
         "District", "Appliance Type", "Request Type", "Warranty Type", "Warranty Provider",
         "Issue Description", "Estimate Amount",
-        "Stage 1 Status", "Stage 1 Reviewed By", "Stage 1 Reviewed At", "Stage 1 Rejection Reason",
-        "Stage 2 Status", "Stage 2 Reviewed By", "Stage 2 Reviewed At",
+        "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
         "Auth Code", "RGC Code", "Assigned To",
         "Created At", "Updated At"
       ];
 
       const escCsv = (val: any): string => {
         if (val === null || val === undefined) return "";
-        const str = String(val);
+        let str = String(val);
+        if (/^[=+\-@\t\r]/.test(str)) {
+          str = "'" + str;
+        }
         if (str.includes(",") || str.includes('"') || str.includes("\n")) {
           return `"${str.replace(/"/g, '""')}"`;
         }
@@ -2031,9 +2044,13 @@ export async function registerRoutes(
 
       for (const s of allSubmissions) {
         const techName = await getUserName(s.technicianId);
-        const s1Reviewer = await getUserName(s.stage1ReviewedBy);
-        const s2Reviewer = await getUserName(s.stage2ReviewedBy);
+        const reviewerName = await getUserName(s.reviewedBy);
         const assignedName = await getUserName(s.assignedTo);
+
+        let rejReasons = "";
+        if (s.rejectionReasons) {
+          try { rejReasons = JSON.parse(s.rejectionReasons).join("; "); } catch { rejReasons = s.rejectionReasons; }
+        }
 
         rows.push([
           s.id,
@@ -2048,13 +2065,10 @@ export async function registerRoutes(
           escCsv(s.warrantyProvider),
           escCsv(s.issueDescription),
           escCsv(s.estimateAmount),
-          escCsv(s.stage1Status),
-          escCsv(s1Reviewer),
-          s.stage1ReviewedAt ? new Date(s.stage1ReviewedAt).toISOString() : "",
-          escCsv(s.stage1RejectionReason),
-          escCsv(s.stage2Status),
-          escCsv(s2Reviewer),
-          s.stage2ReviewedAt ? new Date(s.stage2ReviewedAt).toISOString() : "",
+          escCsv(s.ticketStatus),
+          escCsv(reviewerName),
+          s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
+          escCsv(rejReasons),
           escCsv(s.authCode),
           escCsv(s.rgcCode),
           escCsv(assignedName),
@@ -2064,7 +2078,8 @@ export async function registerRoutes(
       }
 
       const csv = rows.join("\n");
-      const rangeLabel = range === "today" ? "today" : range === "week" ? "this-week" : range === "month" ? "this-month" : "all-time";
+      let rangeLabel = customStart ? `${customStart}${customEnd ? '_to_' + customEnd : ''}` : range === "today" ? "today" : range === "week" ? "this-week" : range === "month" ? "this-month" : "all-time";
+      if (techLdap) rangeLabel += `-tech-${techLdap}`;
       const filename = `vrs-tickets-${rangeLabel}-${now.toISOString().slice(0, 10)}.csv`;
 
       res.setHeader("Content-Type", "text/csv");

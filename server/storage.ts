@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, or, desc, gte, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, desc, gte, lte, sql, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   users,
@@ -76,7 +76,7 @@ export interface IStorage {
     data: Partial<InsertSubmission>
   ): Promise<Submission | undefined>;
   deleteSubmission(id: number): Promise<boolean>;
-  getAllSubmissions(startDate?: Date | null): Promise<Submission[]>;
+  getAllSubmissions(startDate?: Date | null, endDate?: Date | null, techLdap?: string | null): Promise<Submission[]>;
   getAgentQueueCount(agentId?: number): Promise<number>;
   getDivisionQueueCount(divisions: string[]): Promise<number>;
   getCompletedTodayCount(agentId?: number): Promise<number>;
@@ -320,9 +320,14 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getAllSubmissions(startDate?: Date | null): Promise<Submission[]> {
-    if (startDate) {
-      return db.select().from(submissions).where(gte(submissions.createdAt, startDate)).orderBy(desc(submissions.createdAt));
+  async getAllSubmissions(startDate?: Date | null, endDate?: Date | null, techLdap?: string | null): Promise<Submission[]> {
+    const conditions = [];
+    if (startDate) conditions.push(gte(submissions.createdAt, startDate));
+    if (endDate) conditions.push(lte(submissions.createdAt, endDate));
+    if (techLdap) conditions.push(sql`lower(${submissions.technicianLdapId}) = ${techLdap.toLowerCase()}`);
+
+    if (conditions.length > 0) {
+      return db.select().from(submissions).where(and(...conditions)).orderBy(desc(submissions.createdAt));
     }
     return db.select().from(submissions).orderBy(desc(submissions.createdAt));
   }

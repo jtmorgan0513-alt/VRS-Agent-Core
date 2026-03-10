@@ -51,7 +51,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - GET /api/agent/stats - Queue count, personal pending count, completed today count
 - GET /api/agent/rgc-status - Check if agent needs to enter today's RGC code
 - POST /api/agent/verify-rgc - Verify agent's RGC code entry (body: {code: "5digits"})
-- PATCH /api/agent/status - Agent self-toggle online/offline (vrs_agent only, body: {status: "online"|"offline"})
+- PATCH /api/agent/status - Self-toggle online/offline (vrs_agent, admin, super_admin; body: {status: "online"|"offline"})
 - POST /api/admin/rgc-code - Set daily RGC code (admin only, body: {code: "5digits", date: "YYYY-MM-DD"})
 - GET /api/admin/rgc-code?date=YYYY-MM-DD - Get RGC code for specific date (admin only)
 - POST /api/uploads/request-url - Get presigned upload URL (technician only, JSON body: {name, size, contentType})
@@ -71,6 +71,8 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - POST /api/shsai/followup - Send follow-up question to SHSAI session (vrs_agent only, body: {sessionId, trackId, threadId, message})
 - PATCH /api/admin/users/:id/status - Admin force agent status (admin/super_admin, body: {status: "online"|"working"|"offline"})
 - GET /api/admin/agent-status - Live list of all agents with name, LDAP ID, status, divisions (admin only)
+- GET /api/admin/analytics - Aggregated submission metrics (admin only)
+- GET /api/admin/export-csv - CSV export with filters (admin only, query: ?range=today|week|month|all, ?startDate=YYYY-MM-DD, ?endDate=YYYY-MM-DD, ?techLdap=ldapId)
 
 ### WebSocket Architecture
 - **Server** (`server/websocket.ts`): Runs on `/ws` path, JWT token as URL query param for authentication
@@ -112,7 +114,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - `/tech/submissions/:id` - Submission detail/status view (pending, approved, rejected, auth code states)
 - `/tech/help` - Help Center page (tabbed: Getting Started, How-To Guides, FAQs, Troubleshooting, searchable accordion)
 - `/agent/dashboard` - VRS Agent dashboard (sidebar nav, unified Queue/My Tickets/Completed tabs, claim-to-process workflow, large checkbox action UI, auth code by warranty type, division correction, mobile-responsive: full-width list on mobile, mobile back button in detail view, SHSAI panel hidden on mobile)
-- `/admin/dashboard` - Admin dashboard (sidebar nav, user management table, division assignments, analytics, real-time agent status, mobile-responsive: tables in overflow-x-auto wrappers, phone/password columns hidden on small screens)
+- `/admin/dashboard` - Admin dashboard (sidebar nav with online/offline toggle switch, user management table, division assignments, analytics with CSV export (date range + tech LDAP filter), real-time agent status, mobile-responsive: tables in overflow-x-auto wrappers, phone/password columns hidden on small screens)
 
 ### Onboarding & Help System
 - First-login wizard: role-based step-by-step modal (5 slides tech, 5 agent, 4 admin)
