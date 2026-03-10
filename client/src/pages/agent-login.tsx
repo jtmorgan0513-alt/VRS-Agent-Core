@@ -175,7 +175,12 @@ export default function AgentLoginPage() {
       toast({ title: "Password Changed", description: "Your password has been updated successfully." });
       await refreshUser();
       setMustChangePassword(false);
-      setSelectDivisionsStep(true);
+      const updatedUser = JSON.parse(localStorage.getItem("vrs_user") || "{}");
+      if (updatedUser.role === "admin" || updatedUser.role === "super_admin") {
+        setLocation("/agent/dashboard");
+      } else {
+        await checkDivisionsAndProceed();
+      }
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
