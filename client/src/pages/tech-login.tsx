@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Redirect } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +19,15 @@ export default function TechLoginPage() {
   const [newPhone, setNewPhone] = useState("");
   const [showPasswordField, setShowPasswordField] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const { user, isLoading: authLoading, techLogin, login } = useAuth();
+  const { user, isLoading: authLoading, techLogin, login, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (user && user.role === "vrs_agent") {
+      logout();
+    }
+  }, [user]);
 
   if (authLoading) {
     return (
@@ -35,7 +41,6 @@ export default function TechLoginPage() {
   }
 
   if (user && user.role === "technician") return <Redirect to="/tech" />;
-  if (user && user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
   if (user && (user.role === "admin" || user.role === "super_admin")) return <Redirect to="/tech" />;
 
   async function handleTechSubmit(e: React.FormEvent) {
