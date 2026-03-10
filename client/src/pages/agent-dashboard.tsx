@@ -160,8 +160,10 @@ export default function AgentDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
 
-  const [selectedAction, setSelectedAction] = useState<"approve" | "reject" | "invalid" | "approve_submission" | null>(null);
+  const [selectedAction, setSelectedAction] = useState<"approve" | "reject" | "reject_and_close" | "invalid" | "approve_submission" | null>(null);
   const [selectedRejectionReasons, setSelectedRejectionReasons] = useState<string[]>([]);
+  const [rejectCloseReason, setRejectCloseReason] = useState("");
+  const [rejectCloseCustomReason, setRejectCloseCustomReason] = useState("");
   const [rejectedPhotos, setRejectedPhotos] = useState<{url: string; reason: string}[]>([]);
   const [rejectedVideo, setRejectedVideo] = useState<{rejected: boolean; reason: string}>({rejected: false, reason: ""});
   const [rejectedVoiceNote, setRejectedVoiceNote] = useState<{rejected: boolean; reason: string}>({rejected: false, reason: ""});
@@ -320,6 +322,8 @@ export default function AgentDashboard() {
     setOtherPhotoRejectionText("");
     setOtherVideoRejectionText("");
     setOtherVoiceRejectionText("");
+    setRejectCloseReason("");
+    setRejectCloseCustomReason("");
     setConfirmOpen(false);
   };
 
@@ -501,8 +505,8 @@ export default function AgentDashboard() {
       return res.json();
     },
     onSuccess: () => {
-      const actionLabel = selectedAction === "approve_submission" ? "Submission Approved" : selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : "Marked Invalid";
-      const actionDesc = selectedAction === "approve_submission" ? "Technician has been notified. Enter the authorization code to complete this ticket." : "Technician has been notified.";
+      const actionLabel = selectedAction === "approve_submission" ? "Submission Approved" : selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : selectedAction === "reject_and_close" ? "Rejected & Closed" : "Marked Invalid";
+      const actionDesc = selectedAction === "approve_submission" ? "Technician has been notified. Enter the authorization code to complete this ticket." : selectedAction === "reject_and_close" ? "Technician has been notified. This service order is permanently closed." : "Technician has been notified.";
       toast({ title: actionLabel, description: actionDesc });
       if (selectedAction !== "approve_submission") {
         setSelectedId(null);
@@ -621,6 +625,13 @@ export default function AgentDashboard() {
         mediaRejections.voiceNote = voiceData;
       }
       if (Object.keys(mediaRejections).length > 0) body.rejectedMedia = mediaRejections;
+      if (technicianMessage) body.technicianMessage = technicianMessage;
+    }
+    if (selectedAction === "reject_and_close") {
+      const closeReason = rejectCloseReason === "Other" && rejectCloseCustomReason.trim()
+        ? `Other: ${rejectCloseCustomReason.trim()}`
+        : rejectCloseReason;
+      body.rejectionReasons = [closeReason];
       if (technicianMessage) body.technicianMessage = technicianMessage;
     }
     if (selectedAction === "invalid") {
@@ -1728,6 +1739,25 @@ export default function AgentDashboard() {
                                     Invalid
                                   </span>
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAction(selectedAction === "reject_and_close" ? null : "reject_and_close")}
+                                  className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                                    selectedAction === "reject_and_close"
+                                      ? "border-orange-600 bg-orange-50 dark:bg-orange-950/30"
+                                      : "border-border hover:border-orange-300"
+                                  }`}
+                                  data-testid="action-reject-and-close"
+                                >
+                                  {selectedAction === "reject_and_close" ? (
+                                    <CheckSquare className="w-8 h-8 text-orange-600" />
+                                  ) : (
+                                    <Square className="w-8 h-8 text-muted-foreground" />
+                                  )}
+                                  <span className={`text-sm font-medium ${selectedAction === "reject_and_close" ? "text-orange-700 dark:text-orange-400" : ""}`}>
+                                    Reject & Close
+                                  </span>
+                                </button>
                               </div>
 
                               {selectedAction === "reject" && (
@@ -1829,6 +1859,59 @@ export default function AgentDashboard() {
                                       className="resize-none"
                                       rows={3}
                                       data-testid="input-technician-message"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {selectedAction === "reject_and_close" && (
+                                <div className="space-y-4">
+                                  <div className="space-y-3 border rounded-lg p-4 bg-orange-50/50 dark:bg-orange-950/10">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reject & Close — Not Covered</p>
+                                    <p className="text-xs text-muted-foreground">This permanently closes the ticket. The technician will be unable to resubmit or create new tickets for this service order. Use when the repair is not covered under warranty.</p>
+                                    <div className="space-y-2">
+                                      <Label className="text-xs text-muted-foreground">Reason</Label>
+                                      <select
+                                        className="w-full text-sm border rounded-md px-3 py-2 bg-background"
+                                        value={rejectCloseReason}
+                                        onChange={(e) => {
+                                          setRejectCloseReason(e.target.value);
+                                          if (e.target.value !== "Other") setRejectCloseCustomReason("");
+                                        }}
+                                        data-testid="select-reject-close-reason"
+                                      >
+                                        <option value="">Select a reason...</option>
+                                        <option value="Customer abuse/neglect">Customer abuse/neglect</option>
+                                        <option value="Pre-existing damage not covered">Pre-existing damage not covered</option>
+                                        <option value="Cosmetic damage — not a functional failure">Cosmetic damage — not a functional failure</option>
+                                        <option value="Unauthorized modification by customer">Unauthorized modification by customer</option>
+                                        <option value="Commercial use of residential product">Commercial use of residential product</option>
+                                        <option value="Coverage expired or not active">Coverage expired or not active</option>
+                                        <option value="Product not listed on warranty contract">Product not listed on warranty contract</option>
+                                        <option value="Recall or manufacturer defect — contact manufacturer">Recall or manufacturer defect — contact manufacturer</option>
+                                        <option value="Other">Other</option>
+                                      </select>
+                                      {rejectCloseReason === "Other" && (
+                                        <input
+                                          type="text"
+                                          className="w-full text-sm border rounded-md px-3 py-1.5 bg-background"
+                                          placeholder="Specify other reason..."
+                                          value={rejectCloseCustomReason}
+                                          onChange={(e) => setRejectCloseCustomReason(e.target.value)}
+                                          data-testid="input-reject-close-custom-reason"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Message to Technician (optional)</Label>
+                                    <textarea
+                                      className="w-full text-sm border rounded-md px-3 py-2 bg-background resize-none"
+                                      placeholder="e.g., Offer customer cash call estimate for repair..."
+                                      value={technicianMessage}
+                                      onChange={(e) => setTechnicianMessage(e.target.value)}
+                                      rows={3}
+                                      data-testid="input-reject-close-message"
                                     />
                                   </div>
                                 </div>
@@ -1973,7 +2056,7 @@ export default function AgentDashboard() {
                               <Button
                                 className="w-full"
                                 size="lg"
-                                variant={selectedAction === "reject" ? "destructive" : selectedAction === "invalid" ? "outline" : "default"}
+                                variant={selectedAction === "reject" || selectedAction === "reject_and_close" ? "destructive" : selectedAction === "invalid" ? "outline" : "default"}
                                 onClick={() => {
                                   if (!selectedAction) return;
                                   if (selectedAction === "reject" && selectedRejectionReasons.length === 0 && rejectedPhotos.length === 0 && !rejectedVideo.rejected && !rejectedVoiceNote.rejected) {
@@ -2012,6 +2095,14 @@ export default function AgentDashboard() {
                                     toast({ title: "Error", description: "Select at least one invalid reason", variant: "destructive" });
                                     return;
                                   }
+                                  if (selectedAction === "reject_and_close" && !rejectCloseReason) {
+                                    toast({ title: "Error", description: "Select a reason for permanently closing this ticket", variant: "destructive" });
+                                    return;
+                                  }
+                                  if (selectedAction === "reject_and_close" && rejectCloseReason === "Other" && !rejectCloseCustomReason.trim()) {
+                                    toast({ title: "Error", description: "Please specify the 'Other' reason for closing", variant: "destructive" });
+                                    return;
+                                  }
                                   if (selectedAction === "approve" && !isNonPartsRequest(selectedSubmission) && needsExternalAuth(selectedSubmission) && !authCode.trim()) {
                                     toast({ title: "Error", description: `Enter the ${getProviderAuthLabel(selectedSubmission)}`, variant: "destructive" });
                                     return;
@@ -2026,7 +2117,7 @@ export default function AgentDashboard() {
                                 data-testid="button-process-submit"
                               >
                                 <Send className="w-4 h-4 mr-2" />
-                                {processMutation.isPending ? "Processing..." : selectedAction === "approve_submission" ? "Approve Submission & Notify" : "Process & Send"}
+                                {processMutation.isPending ? "Processing..." : selectedAction === "approve_submission" ? "Approve Submission & Notify" : selectedAction === "reject_and_close" ? "Reject & Close Permanently" : "Process & Send"}
                               </Button>
                             </>
                           )}
@@ -2219,7 +2310,7 @@ export default function AgentDashboard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle data-testid="text-confirm-title">
-              {selectedAction === "approve_submission" ? "Approve Submission" : selectedAction === "approve" ? "Approve Ticket" : selectedAction === "reject" ? "Reject Ticket" : "Mark as Invalid"}
+              {selectedAction === "approve_submission" ? "Approve Submission" : selectedAction === "approve" ? "Approve Ticket" : selectedAction === "reject" ? "Reject Ticket" : selectedAction === "reject_and_close" ? "Reject & Close Permanently" : "Mark as Invalid"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedAction === "approve_submission" && (
@@ -2230,6 +2321,9 @@ export default function AgentDashboard() {
               )}
               {selectedAction === "reject" && (
                 <>The ticket will be returned to the queue and the technician will be notified via SMS with the rejection reasons.</>
+              )}
+              {selectedAction === "reject_and_close" && (
+                <>This will permanently close the ticket. The technician will be notified that the repair is not covered and will be unable to resubmit or create new tickets for this service order. This action cannot be undone.</>
               )}
               {selectedAction === "invalid" && (
                 <>The technician will be notified via SMS that this request cannot be processed through VRS.</>
@@ -2256,10 +2350,16 @@ export default function AgentDashboard() {
               </ul>
             </div>
           )}
-          {(selectedAction === "reject" && technicianMessage || selectedAction === "invalid" && invalidMessage) && (
+          {selectedAction === "reject_and_close" && rejectCloseReason && (
+            <div className="px-6 pb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Closure Reason:</p>
+              <p className="text-sm text-orange-700 dark:text-orange-400">&bull; {rejectCloseReason === "Other" && rejectCloseCustomReason.trim() ? `Other: ${rejectCloseCustomReason.trim()}` : rejectCloseReason}</p>
+            </div>
+          )}
+          {((selectedAction === "reject" || selectedAction === "reject_and_close") && technicianMessage || selectedAction === "invalid" && invalidMessage) && (
             <div className="px-6 pb-2">
               <p className="text-xs font-medium text-muted-foreground mb-1">Message to Technician:</p>
-              <p className="text-sm">{selectedAction === "reject" ? technicianMessage : invalidMessage}</p>
+              <p className="text-sm">{selectedAction === "reject" || selectedAction === "reject_and_close" ? technicianMessage : invalidMessage}</p>
             </div>
           )}
           {agentNotes && (
@@ -2272,10 +2372,10 @@ export default function AgentDashboard() {
             <AlertDialogCancel data-testid="button-cancel-confirm">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleProcessSubmit}
-              className={selectedAction === "reject" ? "bg-destructive text-destructive-foreground" : ""}
+              className={selectedAction === "reject" || selectedAction === "reject_and_close" ? "bg-destructive text-destructive-foreground" : ""}
               data-testid="button-confirm-process"
             >
-              {selectedAction === "approve_submission" ? "Approve Submission & Notify" : selectedAction === "approve" ? "Approve & Notify" : selectedAction === "reject" ? "Reject & Notify" : "Mark Invalid & Notify"}
+              {selectedAction === "approve_submission" ? "Approve Submission & Notify" : selectedAction === "approve" ? "Approve & Notify" : selectedAction === "reject" ? "Reject & Notify" : selectedAction === "reject_and_close" ? "Reject, Close & Notify" : "Mark Invalid & Notify"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

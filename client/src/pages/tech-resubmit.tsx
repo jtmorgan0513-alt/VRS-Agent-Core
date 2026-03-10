@@ -288,6 +288,7 @@ export default function TechResubmitPage() {
   const resubCount = historyQuery.data?.resubmissionCount ?? 0;
   const maxResubs = historyQuery.data?.maxResubmissions ?? 3;
   const isMaxReached = resubCount >= maxResubs;
+  const isRejectedClosed = originalSub.ticketStatus === "rejected_closed";
 
   return (
     <div className="min-h-screen pb-20">
@@ -306,7 +307,22 @@ export default function TechResubmitPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {isMaxReached && (
+        {isRejectedClosed && (
+          <Card className="border-destructive bg-destructive/10">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-destructive" data-testid="text-rejected-closed">Service order permanently closed</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This repair has been determined to not be covered under warranty. No further submissions can be made for this service order. You may offer the customer a cash call estimate for the repair.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {isMaxReached && !isRejectedClosed && (
           <Card className="border-destructive bg-destructive/10">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
@@ -624,11 +640,11 @@ export default function TechResubmitPage() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || isRejectedClosed}
                 data-testid="button-resubmit"
               >
                 <Send className="w-4 h-4 mr-2" />
-                {mutation.isPending ? "Resubmitting..." : "Resubmit to VRS"}
+                {mutation.isPending ? "Resubmitting..." : isRejectedClosed ? "Service Order Closed" : "Resubmit to VRS"}
               </Button>
             </form>
           </Form>

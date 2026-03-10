@@ -88,6 +88,7 @@ export interface IStorage {
 
   getResubmissionChain(rootId: number): Promise<Submission[]>;
   getSubmissionHistory(serviceOrder: string): Promise<Submission[]>;
+  hasRejectedClosedForServiceOrder(serviceOrder: string): Promise<boolean>;
 
   // SMS methods
   createSmsNotification(
@@ -540,6 +541,20 @@ export class DatabaseStorage implements IStorage {
       .from(submissions)
       .where(eq(submissions.serviceOrder, serviceOrder))
       .orderBy(submissions.createdAt);
+  }
+
+  async hasRejectedClosedForServiceOrder(serviceOrder: string): Promise<boolean> {
+    const results = await db
+      .select({ id: submissions.id })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.serviceOrder, serviceOrder),
+          eq(submissions.ticketStatus, "rejected_closed")
+        )
+      )
+      .limit(1);
+    return results.length > 0;
   }
 
   // SMS methods

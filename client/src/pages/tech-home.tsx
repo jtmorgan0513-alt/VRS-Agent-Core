@@ -22,7 +22,7 @@ export default function TechHomePage() {
   const submissions = data?.submissions || [];
   const pendingCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "pending" || (s.ticketStatus || s.stage1Status) === "queued").length;
   const approvedCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "completed" || (s.ticketStatus || s.stage1Status) === "approved").length;
-  const rejectedCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "rejected").length;
+  const rejectedCount = submissions.filter((s) => (s.ticketStatus || s.stage1Status) === "rejected" || (s.ticketStatus || s.stage1Status) === "rejected_closed").length;
   const recentSubmissions = submissions.slice(0, 3);
 
   return (
@@ -157,6 +157,8 @@ function StatusBadge({ status }: { status: string }) {
       return <Badge className="bg-green-600 text-white border-green-600" data-testid="badge-approved">Approved</Badge>;
     case "rejected":
       return <Badge variant="destructive" data-testid="badge-rejected">Rejected</Badge>;
+    case "rejected_closed":
+      return <Badge variant="destructive" data-testid="badge-rejected-closed">Closed — Not Covered</Badge>;
     case "invalid":
       return <Badge variant="outline" data-testid="badge-invalid">Invalid</Badge>;
     default:

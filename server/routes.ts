@@ -17,7 +17,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildStage2DeclinedMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildStage2DeclinedMessage, buildRejectAndCloseMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -491,6 +491,11 @@ export async function registerRoutes(
         return res.status(404).json({ error: "User not found" });
       }
 
+      const isClosed = await storage.hasRejectedClosedForServiceOrder(parsed.data.serviceOrder);
+      if (isClosed) {
+        return res.status(400).json({ error: "This service order has been permanently closed and cannot accept new submissions. The repair was determined to not be covered under warranty. Please offer the customer a cash call estimate instead." });
+      }
+
       if (parsed.data.resubmissionOf) {
         const originalSub = await storage.getSubmission(parsed.data.resubmissionOf);
         if (!originalSub) {
@@ -498,6 +503,9 @@ export async function registerRoutes(
         }
         if (originalSub.ticketStatus === "invalid" || originalSub.stage1Status === "invalid") {
           return res.status(400).json({ error: "Invalid submissions cannot be resubmitted" });
+        }
+        if (originalSub.ticketStatus === "rejected_closed") {
+          return res.status(400).json({ error: "This submission has been permanently closed and cannot be resubmitted. The repair was determined to not be covered under warranty." });
         }
         const MAX_RESUBMISSIONS = 3;
         let rootId = parsed.data.resubmissionOf;
@@ -832,7 +840,7 @@ export async function registerRoutes(
   // ========================================================================
 
   const processActionSchema = z.object({
-    action: z.enum(["approve", "reject", "invalid", "approve_submission"]),
+    action: z.enum(["approve", "reject", "reject_and_close", "invalid", "approve_submission"]),
     rejectionReasons: z.array(z.string()).optional(),
     rejectedMedia: z.object({
       photos: z.array(z.object({ url: z.string(), reason: z.string() })).optional(),
@@ -875,7 +883,7 @@ export async function registerRoutes(
       const { action, rejectionReasons, rejectedMedia, agentNotes, technicianMessage, invalidReason, invalidInstructions } = parsed.data;
       let { authCode } = parsed.data;
 
-      if (submission.submissionApproved && (action === "reject" || action === "invalid" || action === "approve_submission")) {
+      if (submission.submissionApproved && (action === "reject" || action === "reject_and_close" || action === "invalid" || action === "approve_submission")) {
         return res.status(400).json({ error: "Submission has already been approved. Only authorization (approve) is allowed at this stage." });
       }
 
@@ -977,6 +985,22 @@ export async function registerRoutes(
         const fullMessage = technicianMessage ? `${reasonText}\n\nAgent message: ${technicianMessage}` : reasonText;
         smsMessage = buildStage1RejectedMessage(submission.serviceOrder, fullMessage, resubmitLink);
         smsType = "ticket_rejected";
+
+      } else if (action === "reject_and_close") {
+        updateData.ticketStatus = "rejected_closed";
+        updateData.assignedTo = null;
+        updateData.stage1Status = "rejected";
+        updateData.stage2Status = "not_applicable";
+        updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
+        updateData.technicianMessage = technicianMessage || null;
+        updateData.stage1RejectionReason = rejectionReasons?.join(", ") || "Not covered under warranty";
+
+        const reasonText = rejectionReasons && rejectionReasons.length > 0
+          ? rejectionReasons.join(", ")
+          : "Not covered under warranty";
+        const fullMsg = technicianMessage ? `${reasonText}\n\nAgent message: ${technicianMessage}` : reasonText;
+        smsMessage = buildRejectAndCloseMessage(submission.serviceOrder, fullMsg);
+        smsType = "ticket_rejected_closed";
 
       } else {
         updateData.ticketStatus = "invalid";
