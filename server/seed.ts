@@ -127,6 +127,20 @@ export async function seedDatabase() {
     }
   }
 
+  const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+  const allUsers = await db.select({ id: users.id, role: users.role }).from(users);
+  for (const u of allUsers) {
+    if (u.role === "admin" || u.role === "super_admin") {
+      const existing = await storage.getSpecializations(u.id);
+      const existingDivisions = new Set(existing.map(s => s.division));
+      const hasMissing = ALL_DIVISIONS.some(d => !existingDivisions.has(d));
+      if (hasMissing) {
+        await storage.setSpecializations(u.id, ALL_DIVISIONS);
+        console.log(`Auto-assigned all divisions to admin user id=${u.id}`);
+      }
+    }
+  }
+
   await resetAllPasswords();
 }
 

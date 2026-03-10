@@ -87,6 +87,13 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - **Admin dashboard**: Subscribes to `agent_status_changed` to auto-refresh agent status list
 - **Logout**: WebSocket disconnected via dynamic import of `disconnectWs()` in auth.tsx
 
+### Division Auto-Assignment
+- Admins and super_admins automatically get ALL divisions — no division picker on login
+- VRS agents choose their divisions on first login (if none assigned)
+- On startup, seed auto-assigns all divisions to any admin/super_admin missing them
+- Creating or promoting a user to admin/super_admin auto-assigns all divisions
+- GET /api/agent/specializations returns all divisions for admin/super_admin roles (no DB lookup needed)
+
 ### Division Correction
 - Agent can correct appliance type (division) on pending tickets they own via "Correct" dropdown next to Appliance Type in ticket detail
 - Confirmation dialog before applying

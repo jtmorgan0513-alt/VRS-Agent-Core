@@ -78,7 +78,9 @@ export function setupWebSocket(server: Server) {
       }
 
       let divisions: string[] = [];
-      if (user.role === "vrs_agent") {
+      if (user.role === "admin" || user.role === "super_admin") {
+        divisions = Object.keys(DIVISION_LABELS);
+      } else if (user.role === "vrs_agent") {
         const specs = await storage.getSpecializations(decoded.id);
         divisions = specs.map(s => s.division);
       }

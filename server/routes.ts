@@ -54,6 +54,8 @@ function signToken(user: User): string {
   );
 }
 
+const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -566,8 +568,6 @@ export async function registerRoutes(
       const authReq = req as AuthenticatedRequest;
       const user = authReq.user!;
 
-      const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-
       let filters: {
         technicianId?: number;
         ticketStatus?: string;
@@ -683,8 +683,7 @@ export async function registerRoutes(
         if (isQueued) {
           const specs = await storage.getSpecializations(user.id);
           const divisions = specs.map(s => s.division);
-          const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-          const isGeneralist = divisions.length >= allDivisions.length;
+          const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
           if (!isGeneralist && !divisions.includes(submission.applianceType)) {
             return res.status(403).json({ error: "Access denied" });
           }
@@ -780,8 +779,8 @@ export async function registerRoutes(
       if (authReq.user!.role === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
-        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-        const isGeneralist = divisions.length >= allDivisions.length;
+        
+        const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
         if (!isGeneralist && !divisions.includes(submission.applianceType)) {
           return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
         }
@@ -1055,8 +1054,8 @@ export async function registerRoutes(
       if (authReq.user!.role === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
-        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-        const isGeneralist = divisions.length >= allDivisions.length;
+        
+        const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
         if (!isGeneralist && !divisions.includes(submission.applianceType)) {
           return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
         }
@@ -1150,8 +1149,8 @@ export async function registerRoutes(
         return res.status(200).json({ queueCount, pendingCount, completedToday });
       }
 
-      const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-      const queueCount = await storage.getQueuedCount(allDivisions);
+      
+      const queueCount = await storage.getQueuedCount(ALL_DIVISIONS);
       const completedToday = await storage.getCompletedTodayCount();
 
       return res.status(200).json({ queueCount, pendingCount: 0, completedToday });
@@ -1191,8 +1190,8 @@ export async function registerRoutes(
       if (parsed.data.status === "online") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
-        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-        const isGeneralist = divisions.length >= allDivisions.length;
+        
+        const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
 
         const allSubmissions = await storage.getSubmissions({});
         const queuedTickets = (allSubmissions as any[]).filter((s: any) => {
@@ -1428,8 +1427,8 @@ export async function registerRoutes(
       if (authReq.user!.role === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
-        const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
-        const isGeneralist = divisions.length >= allDivisions.length;
+        
+        const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
         agentHasNewDivision = isGeneralist || divisions.includes(newDivision);
       } else {
         agentHasNewDivision = true;
@@ -1721,6 +1720,10 @@ export async function registerRoutes(
         racId: racId || null,
       });
 
+      if (role === "admin" || role === "super_admin") {
+        await storage.setSpecializations(user.id, ALL_DIVISIONS);
+      }
+
       return res.status(201).json({ user: sanitizeUser(user) });
     } catch (error) {
       console.error("Admin create user error:", error);
@@ -1817,6 +1820,10 @@ export async function registerRoutes(
         return res.status(404).json({ error: "User not found" });
       }
 
+      if (parsed.data.role && (parsed.data.role === "admin" || parsed.data.role === "super_admin")) {
+        await storage.setSpecializations(id, ALL_DIVISIONS);
+      }
+
       return res.status(200).json({ user: sanitizeUser(updatedUser) });
     } catch (error) {
       console.error("Admin update user error:", error);
@@ -1853,9 +1860,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/agent/specializations", authenticateToken, requireRole("vrs_agent"), async (req, res) => {
+  app.get("/api/agent/specializations", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
+      if (authReq.user!.role === "admin" || authReq.user!.role === "super_admin") {
+        return res.status(200).json({ divisions: ALL_DIVISIONS });
+      }
       const specializations = await storage.getSpecializations(authReq.user!.id);
       const divisions = specializations.map(s => s.division);
       return res.status(200).json({ divisions });
@@ -2132,7 +2142,7 @@ export async function registerRoutes(
         const name = `${firstName} ${lastName}`;
         const role = roleStr === "Admin" ? "admin" : "vrs_agent";
 
-        await storage.createUser({
+        const newUser = await storage.createUser({
           email: null,
           password: defaultPassword,
           name,
@@ -2143,6 +2153,9 @@ export async function registerRoutes(
           firstLogin: true,
           mustChangePassword: true,
         });
+        if (role === "admin" || role === "super_admin") {
+          await storage.setSpecializations(newUser.id, ALL_DIVISIONS);
+        }
         imported++;
       }
 
