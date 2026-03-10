@@ -46,7 +46,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - PATCH /api/submissions/:id/claim - Claim queued ticket: ticketStatus queued→pending, assignedTo=agent, agent status→working, auto SMS sent to tech (different message for Sears vs AHS/FA two-stage)
 - PATCH /api/submissions/:id/process - Unified approve/reject/invalid/approve_submission (body: {action, rejectionReasons?, rejectedMedia?, agentNotes?, technicianMessage?, authCode?}), approve→completed, reject→rejected (tech resubmits new ticket), invalid→invalid, approve_submission→sets submissionApproved=true (ticket stays pending for Stage 2 auth code entry), SMS sent, agent status→online (except approve_submission keeps agent working)
 - GET /api/submissions/:id/history - Get submission history chain with reviewer names, resubmission count
-- PATCH /api/submissions/:id/reassign - Release pending ticket back to queue (vrs_agent own ticket, body: {notes?}), ticketStatus→queued, assignedTo cleared
+- PATCH /api/submissions/:id/reassign - Reassign pending ticket (admin/super_admin only, body: {agentId?, notes?}), releases to queue or assigns to specific agent
 - PATCH /api/submissions/:id/correct-division - Agent corrects appliance type mid-review (pending tickets only, body: {newDivision}). If agent has new division: keeps ticket. If not: releases to queue, broadcasts ticket_queued
 - GET /api/agent/stats - Queue count, personal pending count, completed today count
 - GET /api/agent/rgc-status - Check if agent needs to enter today's RGC code
@@ -141,7 +141,7 @@ A full-stack web application for Sears Home Services that replaces the call-in a
 - **Two-stage review (AHS/First American)**: Stage 1 = submission review (approve_submission/reject/invalid); Stage 2 = authorization code entry (approve with external auth code). Agent stays in "working" status between stages. Progress bar shown in UI.
 - **Single-stage review (Sears Protect/PA/Legacy)**: Approve with auto RGC code in one step
 - Auth code logic: Sears Protect/PA/Legacy = auto RGC read-only; AHS/First American = RGC + external code input; skip for non-authorization requestType
-- Reassign: agent releases own pending ticket back to queue
+- Reassign: admin/super_admin only — can release ticket to queue or assign to specific agent. Agents cannot reassign or release tickets.
 - Division Correction: agent changes appliance type; keeps or releases ticket depending on specializations
 
 ### Seed Users

@@ -1200,7 +1200,7 @@ export async function registerRoutes(
       if (parsed.data.status === "offline") {
         const pendingCount = await storage.getPendingCount(authReq.user!.id);
         if (pendingCount > 0) {
-          return res.status(400).json({ error: "You have an open ticket. Please request reassignment before going offline.", hasPendingTicket: true });
+          return res.status(400).json({ error: "You have an open ticket. Complete it or ask an admin to reassign it before going unavailable.", hasPendingTicket: true });
         }
       }
 
@@ -1312,7 +1312,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/submissions/:id/reassign", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
+  app.patch("/api/submissions/:id/reassign", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const id = parseInt(req.params.id as string);
@@ -1336,38 +1336,6 @@ export async function registerRoutes(
 
       if (submission.ticketStatus !== "pending") {
         return res.status(400).json({ error: "Can only reassign pending tickets" });
-      }
-
-      if (authReq.user!.role === "vrs_agent") {
-        if (submission.assignedTo !== authReq.user!.id) {
-          return res.status(403).json({ error: "You can only reassign your own tickets" });
-        }
-        const updated = await storage.updateSubmission(id, {
-          ticketStatus: "queued",
-          assignedTo: null,
-          reassignmentNotes: parsed.data.notes || null,
-          updatedAt: new Date(),
-        } as any);
-
-        await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
-        updateClientStatus(authReq.user!.id, "online");
-        broadcastToAdmins({
-          type: "agent_status_changed",
-          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
-        });
-
-        broadcastToDivisionAgents(submission.applianceType, {
-          type: "ticket_queued",
-          payload: {
-            submissionId: id,
-            serviceOrder: submission.serviceOrder,
-            applianceType: submission.applianceType,
-            applianceLabel: getDivisionLabel(submission.applianceType),
-            warrantyLabel: getWarrantyLabel(submission.warrantyType),
-          },
-        });
-
-        return res.status(200).json({ submission: updated });
       }
 
       if (parsed.data.agentId) {

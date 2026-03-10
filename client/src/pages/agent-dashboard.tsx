@@ -243,7 +243,7 @@ export default function AgentDashboard() {
     },
     onError: (error: Error) => {
       toast({
-        title: "Cannot Go Offline",
+        title: "Cannot Go Unavailable",
         description: error.message,
         variant: "destructive",
         duration: 6000,
@@ -548,7 +548,6 @@ export default function AgentDashboard() {
       setSelectedId(null);
       setReassignNotes("");
       setReassignOpen(false);
-      setLocalAgentStatus("online");
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     },
@@ -712,15 +711,15 @@ export default function AgentDashboard() {
               {!isAdminViewing && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-muted-foreground">
-                    {agentStatus === "online" ? "Online" : agentStatus === "working" ? "Working" : "Offline"}
+                    {agentStatus === "online" ? "Available" : agentStatus === "working" ? "Working" : "Unavailable"}
                   </span>
                   <Switch
                     checked={agentStatus === "online" || agentStatus === "working"}
                     onCheckedChange={(checked) => {
                       if (agentStatus === "working") {
                         toast({
-                          title: "Cannot Go Offline",
-                          description: "You have an open ticket. Complete or reassign it before going offline.",
+                          title: "Cannot Go Unavailable",
+                          description: "You have an open ticket. Complete it or ask an admin to reassign it.",
                           variant: "destructive",
                           duration: 5000,
                         });
@@ -917,7 +916,7 @@ export default function AgentDashboard() {
               data-testid="banner-offline"
             >
               <AlertTriangle className="w-4 h-4" />
-              You are offline and not receiving tickets. Click here to go online.
+              You are currently unavailable and not receiving tickets. Click here to go available.
             </button>
           )}
           <header className="flex items-center justify-between gap-2 p-3 border-b sticky top-0 z-50 bg-background">
@@ -1128,7 +1127,7 @@ export default function AgentDashboard() {
                             Service History
                           </Button>
                         )}
-                        {activeView === "mytickets" && !isAdminViewing && (
+                        {activeView === "mytickets" && (user?.role === "admin" || user?.role === "super_admin") && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1136,7 +1135,7 @@ export default function AgentDashboard() {
                             data-testid="button-reassign"
                           >
                             <RotateCcw className="w-4 h-4 mr-1" />
-                            Release
+                            Reassign
                           </Button>
                         )}
                         {(user?.role === "admin" || user?.role === "super_admin") && (
@@ -2407,16 +2406,16 @@ export default function AgentDashboard() {
       <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Release Ticket</DialogTitle>
+            <DialogTitle>Reassign Ticket</DialogTitle>
             <DialogDescription>
-              Release this ticket back to the queue so another agent can pick it up.
+              Return this ticket to the queue so another agent can pick it up.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Reassignment Notes (optional)</Label>
               <Textarea
-                placeholder="Why are you releasing this ticket?"
+                placeholder="Reason for reassignment"
                 value={reassignNotes}
                 onChange={(e) => setReassignNotes(e.target.value)}
                 className="resize-none"
@@ -2436,7 +2435,7 @@ export default function AgentDashboard() {
               disabled={reassignMutation.isPending}
               data-testid="button-confirm-reassign"
             >
-              {reassignMutation.isPending ? "Releasing..." : "Release to Queue"}
+              {reassignMutation.isPending ? "Reassigning..." : "Reassign to Queue"}
             </Button>
           </div>
         </DialogContent>
@@ -2475,14 +2474,14 @@ export default function AgentDashboard() {
       <AlertDialog open={showStatusPopup} onOpenChange={setShowStatusPopup}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle data-testid="text-status-popup-title">You're currently offline</AlertDialogTitle>
+            <AlertDialogTitle data-testid="text-status-popup-title">You're currently unavailable</AlertDialogTitle>
             <AlertDialogDescription>
-              Go online to start receiving tickets?
+              Set yourself as available to start receiving tickets?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowStatusPopup(false)} data-testid="button-stay-offline">
-              Stay Offline
+              Stay Unavailable
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
@@ -2491,7 +2490,7 @@ export default function AgentDashboard() {
               }}
               data-testid="button-go-online"
             >
-              Go Online
+              Go Available
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
