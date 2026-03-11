@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, and, or, desc, gte, lte, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, desc, asc, gte, lte, sql, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   users,
@@ -397,13 +397,14 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(technicians, eq(submissions.technicianLdapId, technicians.ldapId))
       .leftJoin(assignedAgent, eq(submissions.assignedTo, assignedAgent.id))
       .where(whereClause)
-      .orderBy(desc(submissions.createdAt));
+      .orderBy(filters?.ticketStatus === "queued" ? asc(submissions.createdAt) : desc(submissions.createdAt));
 
     return result.map((r) => ({
       ...r.submission,
       technicianName: r.ldapTechName || r.technicianName,
       technicianPhone: r.submission.phoneOverride || r.ldapTechPhone || r.technicianPhone,
       assignedAgentName: r.assignedAgentName,
+      racId: r.submission.technicianLdapId || "",
     }));
   }
 

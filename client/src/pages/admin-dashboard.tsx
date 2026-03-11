@@ -118,7 +118,7 @@ function formatDuration(ms: number | null): string {
 
 type SafeUser = Omit<User, "password">;
 
-type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status";
+type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status" | "tickets";
 
 const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"] as const;
 
@@ -275,6 +275,234 @@ function AgentStatusSection() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function getTimeInStatus(createdAt: string | Date, reviewedAt?: string | Date | null): string {
+  const start = new Date(createdAt);
+  const end = reviewedAt ? new Date(reviewedAt) : new Date();
+  const diffMs = end.getTime() - start.getTime();
+  const totalMinutes = Math.floor(diffMs / 60000);
+  if (totalMinutes < 1) return "< 1m";
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "queued": return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+    case "pending": return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+    case "completed": return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+    case "rejected": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+    case "rejected_closed": return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+    case "invalid": return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+    default: return "bg-gray-100 text-gray-700";
+  }
+}
+
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case "queued": return "Queued";
+    case "pending": return "Pending";
+    case "completed": return "Approved";
+    case "rejected": return "Rejected";
+    case "rejected_closed": return "Closed";
+    case "invalid": return "Invalid";
+    default: return status;
+  }
+}
+
+type TicketStatusFilter = "all" | "queued" | "pending" | "completed" | "rejected" | "rejected_closed" | "invalid";
+
+function TicketOverviewSection() {
+  const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("pending");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const { data: allData, isLoading: allLoading } = useQuery<{ submissions: any[] }>({
+    queryKey: ["/api/submissions"],
+    refetchInterval: 15000,
+  });
+
+  const allTickets = allData?.submissions || [];
+
+  const statusCounts = {
+    all: allTickets.length,
+    queued: allTickets.filter(t => t.ticketStatus === "queued").length,
+    pending: allTickets.filter(t => t.ticketStatus === "pending").length,
+    completed: allTickets.filter(t => t.ticketStatus === "completed").length,
+    rejected: allTickets.filter(t => t.ticketStatus === "rejected").length,
+    rejected_closed: allTickets.filter(t => t.ticketStatus === "rejected_closed").length,
+    invalid: allTickets.filter(t => t.ticketStatus === "invalid").length,
+  };
+
+  let filteredTickets = statusFilter === "all"
+    ? allTickets
+    : allTickets.filter(t => t.ticketStatus === statusFilter);
+
+  if (statusFilter === "queued") {
+    filteredTickets = [...filteredTickets].sort((a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  }
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim();
+    filteredTickets = filteredTickets.filter(t =>
+      t.serviceOrder?.toLowerCase().includes(q) ||
+      t.technicianName?.toLowerCase().includes(q) ||
+      t.technicianLdapId?.toLowerCase().includes(q) ||
+      t.assignedAgentName?.toLowerCase().includes(q)
+    );
+  }
+
+  const tabs: { key: TicketStatusFilter; label: string }[] = [
+    { key: "queued", label: "Queued" },
+    { key: "pending", label: "Pending" },
+    { key: "completed", label: "Approved" },
+    { key: "rejected", label: "Rejected" },
+    { key: "all", label: "All" },
+  ];
+
+  return (
+    <div className="space-y-4 p-4">
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <Button
+            key={tab.key}
+            variant={statusFilter === tab.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(tab.key)}
+            data-testid={`tab-tickets-${tab.key}`}
+          >
+            {tab.label}
+            <Badge variant="secondary" className="ml-1.5 text-xs">
+              {statusCounts[tab.key]}
+            </Badge>
+          </Button>
+        ))}
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by service order, technician, or agent..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+          data-testid="input-ticket-search"
+        />
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {allLoading ? (
+            <div className="p-6 space-y-2">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : filteredTickets.length === 0 ? (
+            <div className="p-6 text-center text-muted-foreground">
+              No {statusFilter === "all" ? "" : getStatusLabel(statusFilter).toLowerCase()} tickets found.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[800px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[130px]">Service Order</TableHead>
+                    <TableHead>Technician</TableHead>
+                    <TableHead>Division</TableHead>
+                    <TableHead>Warranty</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assigned To</TableHead>
+                    <TableHead>Age</TableHead>
+                    <TableHead>Time in Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTickets.map((ticket: any) => {
+                    const ageMs = new Date().getTime() - new Date(ticket.createdAt).getTime();
+                    const ageHours = ageMs / 3600000;
+                    const isUrgent = ageHours >= 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
+                    const isAging = ageHours >= 2 && ageHours < 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
+
+                    return (
+                      <TableRow
+                        key={ticket.id}
+                        className={isUrgent ? "bg-red-50 dark:bg-red-950/20" : isAging ? "bg-amber-50 dark:bg-amber-950/20" : ""}
+                        data-testid={`ticket-row-${ticket.id}`}
+                      >
+                        <TableCell className="font-mono font-medium text-sm">
+                          {ticket.serviceOrder}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">{ticket.technicianName || "—"}</div>
+                          <div className="text-xs text-muted-foreground">{ticket.technicianLdapId || ""}</div>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {DIVISION_LABELS[ticket.applianceType] || ticket.applianceType}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {ticket.warrantyType === "sears_protect" ? "Sears Protect" :
+                           ticket.warrantyType === "ahs" ? "AHS" :
+                           ticket.warrantyType === "first_american" ? "First American" :
+                           ticket.warrantyType || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(ticket.ticketStatus)}`}>
+                            {getStatusLabel(ticket.ticketStatus)}
+                          </span>
+                          {isUrgent && (
+                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500 text-white">
+                              URGENT
+                            </span>
+                          )}
+                          {isAging && (
+                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500 text-white">
+                              AGING
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {ticket.assignedAgentName || <span className="text-muted-foreground italic">Unassigned</span>}
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">
+                          {getTimeInStatus(ticket.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {ticket.ticketStatus === "queued"
+                            ? getTimeInStatus(ticket.createdAt)
+                            : ticket.ticketStatus === "pending"
+                            ? getTimeInStatus(ticket.updatedAt || ticket.createdAt)
+                            : ticket.reviewedAt
+                            ? getTimeInStatus(ticket.updatedAt || ticket.createdAt, ticket.reviewedAt)
+                            : "—"
+                          }
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {(statusFilter === "queued" || statusFilter === "pending") && filteredTickets.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {statusFilter === "queued"
+            ? "Sorted oldest first (FIFO). Oldest tickets should be picked up first."
+            : "Showing tickets currently being worked by agents."
+          }
+        </p>
+      )}
     </div>
   );
 }
@@ -891,6 +1119,16 @@ export default function AdminDashboard() {
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
+                      onClick={() => setActiveView("tickets")}
+                      data-active={activeView === "tickets"}
+                      data-testid="nav-tickets"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Ticket Overview</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
                       onClick={() => navigate("/agent/dashboard")}
                       data-testid="nav-agent-view"
                     >
@@ -951,6 +1189,7 @@ export default function AdminDashboard() {
                 {activeView === "analytics" && "Analytics"}
                 {activeView === "technicians" && "Technician Sync"}
                 {activeView === "agent-status" && "Agent Status"}
+                {activeView === "tickets" && "Ticket Overview"}
               </h1>
             </div>
             {activeView === "users" && (
@@ -1638,6 +1877,9 @@ export default function AdminDashboard() {
             )}
             {activeView === "agent-status" && (
               <AgentStatusSection />
+            )}
+            {activeView === "tickets" && (
+              <TicketOverviewSection />
             )}
           </div>
         </div>
