@@ -163,14 +163,14 @@ function AgentStatusSection() {
     refetchInterval: 10000,
   });
 
-  const forceOfflineMutation = useMutation({
-    mutationFn: async (agentId: number) => {
-      const res = await apiRequest("PATCH", `/api/admin/users/${agentId}/status`, { status: "offline" });
+  const toggleAgentStatusMutation = useMutation({
+    mutationFn: async ({ agentId, status }: { agentId: number; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/admin/users/${agentId}/status`, { status });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-status"] });
-      toast({ title: "Agent set to offline" });
+      toast({ title: variables.status === "online" ? "Agent set to available" : "Agent set to unavailable" });
     },
     onError: (err: Error) => {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
@@ -186,9 +186,9 @@ function AgentStatusSection() {
   };
 
   const statusLabel = (status: string) => {
-    if (status === "online") return "Online";
+    if (status === "online") return "Available";
     if (status === "working") return "Working";
-    return "Offline";
+    return "Unavailable";
   };
 
   return (
@@ -216,7 +216,7 @@ function AgentStatusSection() {
                   <TableHead>Status</TableHead>
                   <TableHead>Divisions</TableHead>
                   <TableHead className="hidden sm:table-cell">Last Seen</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right">Availability</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -249,17 +249,23 @@ function AgentStatusSection() {
                       {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {agent.agentStatus !== "offline" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => forceOfflineMutation.mutate(agent.id)}
-                          disabled={forceOfflineMutation.isPending}
-                          data-testid={`button-force-offline-${agent.id}`}
-                        >
-                          Force Offline
-                        </Button>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {agent.agentStatus === "working" ? "Working" : agent.agentStatus === "online" ? "On" : "Off"}
+                        </span>
+                        <Switch
+                          checked={agent.agentStatus === "online" || agent.agentStatus === "working"}
+                          onCheckedChange={(checked) => {
+                            toggleAgentStatusMutation.mutate({
+                              agentId: agent.id,
+                              status: checked ? "online" : "offline",
+                            });
+                          }}
+                          disabled={toggleAgentStatusMutation.isPending || agent.agentStatus === "working"}
+                          data-testid={`toggle-agent-status-${agent.id}`}
+                          className="scale-90"
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
