@@ -985,13 +985,15 @@ export default function AgentDashboard() {
                             isSelected
                               ? "bg-accent"
                               : "hover-elevate"
-                          } ${
-                            urgency === "urgent"
-                              ? "border-l-2 border-l-destructive"
-                              : urgency === "warning"
-                              ? "border-l-2 border-l-chart-3"
-                              : ""
                           }`}
+                          style={
+                            urgency === "urgent"
+                              ? { borderLeft: "3px solid #ef4444" }
+                              : urgency === "warning"
+                              ? { borderLeft: "3px solid #f59e0b" }
+                              : undefined
+                          }
+                          data-testid={`queue-item-${sub.id}`}
                         >
                           <button
                             onClick={() => {
@@ -1002,7 +1004,6 @@ export default function AgentDashboard() {
                               }
                             }}
                             className="flex-1 text-left min-w-0"
-                            data-testid={`queue-item-${sub.id}`}
                           >
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <span className="font-medium text-sm" data-testid={`text-so-${sub.id}`}>
