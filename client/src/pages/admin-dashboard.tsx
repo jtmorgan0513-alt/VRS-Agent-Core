@@ -475,15 +475,8 @@ function TicketOverviewSection() {
                         <TableCell className="text-sm font-medium">
                           {getTimeInStatus(ticket.createdAt)}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {ticket.ticketStatus === "queued"
-                            ? getTimeInStatus(ticket.createdAt)
-                            : ticket.ticketStatus === "pending"
-                            ? getTimeInStatus(ticket.updatedAt || ticket.createdAt)
-                            : ticket.reviewedAt
-                            ? getTimeInStatus(ticket.updatedAt || ticket.createdAt, ticket.reviewedAt)
-                            : "—"
-                          }
+                        <TableCell className="text-sm" data-testid={`time-in-status-${ticket.id}`}>
+                          {getTimeInStatus(ticket.statusChangedAt || ticket.createdAt)}
                         </TableCell>
                       </TableRow>
                     );

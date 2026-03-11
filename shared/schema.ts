@@ -118,12 +118,14 @@ export const submissions = pgTable("submissions", {
   reassignmentNotes: text("reassignment_notes"),
   appealNotes: text("appeal_notes"),
   resubmissionOf: integer("resubmission_of"),
+  statusChangedAt: timestamp("status_changed_at").default(sql`now()`),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({
   id: true,
+  statusChangedAt: true,
   createdAt: true,
   updatedAt: true,
 });

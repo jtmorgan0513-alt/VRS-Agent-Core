@@ -540,6 +540,7 @@ export async function registerRoutes(
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
         assignedTo: null,
         ticketStatus: "queued",
+        statusChangedAt: new Date(),
         stage1Status: "pending",
         stage2Status: "pending",
         stage1ReviewedBy: null,
@@ -796,6 +797,7 @@ export async function registerRoutes(
 
       const updated = await storage.updateSubmission(id, {
         ticketStatus: "pending",
+        statusChangedAt: new Date(),
         assignedTo: authReq.user!.id,
         updatedAt: new Date(),
       } as any);
@@ -941,6 +943,7 @@ export async function registerRoutes(
         }
 
         updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
         updateData.authCode = authCode || null;
         updateData.rgcCode = rgcCode;
         updateData.stage1Status = "approved";
@@ -953,6 +956,7 @@ export async function registerRoutes(
 
       } else if (action === "reject") {
         updateData.ticketStatus = "rejected";
+        updateData.statusChangedAt = new Date();
         updateData.assignedTo = null;
         updateData.stage1Status = "rejected";
         updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
@@ -988,6 +992,7 @@ export async function registerRoutes(
 
       } else if (action === "reject_and_close") {
         updateData.ticketStatus = "rejected_closed";
+        updateData.statusChangedAt = new Date();
         updateData.assignedTo = null;
         updateData.stage1Status = "rejected";
         updateData.stage2Status = "not_applicable";
@@ -1004,6 +1009,7 @@ export async function registerRoutes(
 
       } else {
         updateData.ticketStatus = "invalid";
+        updateData.statusChangedAt = new Date();
         updateData.stage1Status = "invalid";
         updateData.stage2Status = "not_applicable";
         updateData.invalidReason = invalidReason;
@@ -1355,6 +1361,7 @@ export async function registerRoutes(
 
       const updated = await storage.updateSubmission(id, {
         ticketStatus: "queued",
+        statusChangedAt: new Date(),
         assignedTo: null,
         reassignmentNotes: parsed.data.notes || null,
         updatedAt: new Date(),
@@ -1437,6 +1444,7 @@ export async function registerRoutes(
         const updated = await storage.updateSubmission(id, {
           applianceType: newDivision,
           ticketStatus: "queued",
+          statusChangedAt: new Date(),
           assignedTo: null,
           agentNotes: existingNotes,
           updatedAt: new Date(),
