@@ -320,7 +320,7 @@ function getStatusLabel(status: string): string {
 type TicketStatusFilter = "all" | "queued" | "pending" | "completed" | "rejected" | "rejected_closed" | "invalid";
 
 function TicketOverviewSection() {
-  const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("pending");
+  const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: allData, isLoading: allLoading } = useQuery<{ submissions: any[] }>({
@@ -360,30 +360,33 @@ function TicketOverviewSection() {
     );
   }
 
-  const tabs: { key: TicketStatusFilter; label: string }[] = [
-    { key: "queued", label: "Queued" },
-    { key: "pending", label: "Pending" },
-    { key: "completed", label: "Approved" },
-    { key: "rejected", label: "Rejected" },
-    { key: "all", label: "All" },
+  const tabs: { key: TicketStatusFilter; label: string; color: string }[] = [
+    { key: "all", label: "All Tickets", color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200" },
+    { key: "queued", label: "In Queue", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+    { key: "pending", label: "Pending (In Progress)", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
+    { key: "completed", label: "Approved", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+    { key: "rejected", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
   ];
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {tabs.map((tab) => (
-          <Button
+          <button
             key={tab.key}
-            variant={statusFilter === tab.key ? "default" : "outline"}
-            size="sm"
             onClick={() => setStatusFilter(tab.key)}
+            className={`rounded-lg border p-3 text-left transition-all cursor-pointer ${
+              statusFilter === tab.key
+                ? "ring-2 ring-primary border-primary shadow-sm"
+                : "hover:border-muted-foreground/30"
+            }`}
             data-testid={`tab-tickets-${tab.key}`}
           >
-            {tab.label}
-            <Badge variant="secondary" className="ml-1.5 text-xs">
+            <div className="text-2xl font-bold" data-testid={`count-tickets-${tab.key}`}>
               {statusCounts[tab.key]}
-            </Badge>
-          </Button>
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">{tab.label}</div>
+          </button>
         ))}
       </div>
 
@@ -408,21 +411,21 @@ function TicketOverviewSection() {
             </div>
           ) : filteredTickets.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground">
-              No {statusFilter === "all" ? "" : getStatusLabel(statusFilter).toLowerCase()} tickets found.
+              No {statusFilter === "all" ? "" : tabs.find(t => t.key === statusFilter)?.label.toLowerCase() || ""} tickets found.
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table className="min-w-[800px]">
+              <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[130px]">Service Order</TableHead>
+                    <TableHead className="w-[140px]">Service Order</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Assigned To</TableHead>
                     <TableHead>Technician</TableHead>
                     <TableHead>Division</TableHead>
                     <TableHead>Warranty</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Age</TableHead>
-                    <TableHead>Time in Status</TableHead>
+                    <TableHead className="text-right">Age</TableHead>
+                    <TableHead className="text-right">Time in Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -438,8 +441,31 @@ function TicketOverviewSection() {
                         className={isUrgent ? "bg-red-50 dark:bg-red-950/20" : isAging ? "bg-amber-50 dark:bg-amber-950/20" : ""}
                         data-testid={`ticket-row-${ticket.id}`}
                       >
-                        <TableCell className="font-mono font-medium text-sm">
+                        <TableCell className="font-mono font-semibold text-sm" data-testid={`so-${ticket.id}`}>
                           {ticket.serviceOrder}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(ticket.ticketStatus)}`}>
+                              {getStatusLabel(ticket.ticketStatus)}
+                            </span>
+                            {isUrgent && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500 text-white">
+                                URGENT
+                              </span>
+                            )}
+                            {isAging && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500 text-white">
+                                AGING
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell data-testid={`assigned-${ticket.id}`}>
+                          {ticket.assignedAgentName
+                            ? <span className="text-sm font-medium">{ticket.assignedAgentName}</span>
+                            : <span className="text-sm text-muted-foreground italic">Unassigned</span>
+                          }
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">{ticket.technicianName || "—"}</div>
@@ -454,28 +480,10 @@ function TicketOverviewSection() {
                            ticket.warrantyType === "first_american" ? "First American" :
                            ticket.warrantyType || "—"}
                         </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(ticket.ticketStatus)}`}>
-                            {getStatusLabel(ticket.ticketStatus)}
-                          </span>
-                          {isUrgent && (
-                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500 text-white">
-                              URGENT
-                            </span>
-                          )}
-                          {isAging && (
-                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500 text-white">
-                              AGING
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {ticket.assignedAgentName || <span className="text-muted-foreground italic">Unassigned</span>}
-                        </TableCell>
-                        <TableCell className="text-sm font-medium">
+                        <TableCell className="text-sm font-medium text-right whitespace-nowrap">
                           {getTimeInStatus(ticket.createdAt)}
                         </TableCell>
-                        <TableCell className="text-sm" data-testid={`time-in-status-${ticket.id}`}>
+                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`time-in-status-${ticket.id}`}>
                           {getTimeInStatus(ticket.statusChangedAt || ticket.createdAt)}
                         </TableCell>
                       </TableRow>
@@ -488,12 +496,9 @@ function TicketOverviewSection() {
         </CardContent>
       </Card>
 
-      {(statusFilter === "queued" || statusFilter === "pending") && filteredTickets.length > 0 && (
+      {statusFilter === "queued" && filteredTickets.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          {statusFilter === "queued"
-            ? "Sorted oldest first (FIFO). Oldest tickets should be picked up first."
-            : "Showing tickets currently being worked by agents."
-          }
+          Sorted oldest first (FIFO). Oldest tickets should be picked up first.
         </p>
       )}
     </div>
