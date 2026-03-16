@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -123,7 +124,7 @@ function formatDuration(ms: number | null): string {
 
 type SafeUser = Omit<User, "password">;
 
-type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status" | "tickets";
+type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status" | "tickets" | "feedback";
 
 const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"] as const;
 
@@ -896,6 +897,223 @@ function TechnicianSyncSection() {
   );
 }
 
+const FEEDBACK_TYPE_LABELS: Record<string, string> = {
+  issue: "Issue",
+  improvement: "Improvement Request",
+  general: "General Feedback",
+};
+
+const FEEDBACK_STATUS_LABELS: Record<string, string> = {
+  new: "New",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+  dismissed: "Dismissed",
+};
+
+function FeedbackSection() {
+  const { toast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [adminNotes, setAdminNotes] = useState("");
+
+  const { data: feedbackData, isLoading } = useQuery<{ feedback: any[] }>({
+    queryKey: ["/api/feedback"],
+    refetchInterval: 30000,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, status, adminNotes }: { id: number; status?: string; adminNotes?: string }) => {
+      const res = await apiRequest("PATCH", `/api/feedback/${id}`, { status, adminNotes });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
+      toast({ title: "Feedback Updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const items = feedbackData?.feedback || [];
+  const filtered = statusFilter === "all" ? items : items.filter((f: any) => f.status === statusFilter);
+
+  const counts = {
+    all: items.length,
+    new: items.filter((f: any) => f.status === "new").length,
+    in_progress: items.filter((f: any) => f.status === "in_progress").length,
+    resolved: items.filter((f: any) => f.status === "resolved").length,
+    dismissed: items.filter((f: any) => f.status === "dismissed").length,
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 flex-wrap">
+        {[
+          { key: "all", label: "All" },
+          { key: "new", label: "New" },
+          { key: "in_progress", label: "In Progress" },
+          { key: "resolved", label: "Resolved" },
+          { key: "dismissed", label: "Dismissed" },
+        ].map((tab) => (
+          <Button
+            key={tab.key}
+            variant={statusFilter === tab.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(tab.key)}
+            data-testid={`filter-feedback-${tab.key}`}
+          >
+            {tab.label} ({counts[tab.key as keyof typeof counts]})
+          </Button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 bg-muted rounded-md animate-pulse" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-muted-foreground" data-testid="text-no-feedback">
+            No feedback items found.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((fb: any) => {
+            const isExpanded = expandedId === fb.id;
+            return (
+              <Card key={fb.id} data-testid={`feedback-item-${fb.id}`}>
+                <CardContent className="p-4">
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => {
+                      if (isExpanded) {
+                        setExpandedId(null);
+                      } else {
+                        setExpandedId(fb.id);
+                        setAdminNotes(fb.adminNotes || "");
+                      }
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm" data-testid={`text-feedback-tech-${fb.id}`}>
+                            {fb.technicianName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">({fb.technicianRacId})</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2" data-testid={`text-feedback-desc-${fb.id}`}>
+                          {fb.description}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <Badge
+                          variant={fb.status === "new" ? "default" : fb.status === "in_progress" ? "secondary" : fb.status === "resolved" ? "outline" : "destructive"}
+                          data-testid={`badge-feedback-status-${fb.id}`}
+                        >
+                          {FEEDBACK_STATUS_LABELS[fb.status] || fb.status}
+                        </Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-xs">
+                            {FEEDBACK_TYPE_LABELS[fb.feedbackType] || fb.feedbackType}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${
+                              fb.priority === "high" ? "border-red-300 text-red-700 dark:border-red-700 dark:text-red-400" :
+                              fb.priority === "medium" ? "border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400" :
+                              ""
+                            }`}
+                          >
+                            {fb.priority}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      {new Date(fb.createdAt).toLocaleString()}
+                      {fb.resolvedByName && (
+                        <span> - Resolved by {fb.resolvedByName}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-4 pt-4 border-t space-y-3">
+                      <div>
+                        <Label className="text-xs font-medium text-muted-foreground">Full Description</Label>
+                        <p className="text-sm mt-1 whitespace-pre-wrap" data-testid={`text-feedback-full-desc-${fb.id}`}>{fb.description}</p>
+                      </div>
+
+                      {fb.attachmentUrl && (
+                        <div>
+                          <Label className="text-xs font-medium text-muted-foreground">Attachment</Label>
+                          <a
+                            href={fb.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-primary hover:underline block mt-1"
+                            data-testid={`link-feedback-attachment-${fb.id}`}
+                          >
+                            View Attachment
+                          </a>
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-muted-foreground">Admin Notes</Label>
+                        <Textarea
+                          value={adminNotes}
+                          onChange={(e) => setAdminNotes(e.target.value)}
+                          placeholder="Add notes about this feedback..."
+                          rows={2}
+                          data-testid={`input-admin-notes-${fb.id}`}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Label className="text-xs font-medium text-muted-foreground shrink-0">Set Status:</Label>
+                        {(["new", "in_progress", "resolved", "dismissed"] as const).map((s) => (
+                          <Button
+                            key={s}
+                            size="sm"
+                            variant={fb.status === s ? "default" : "outline"}
+                            disabled={updateMutation.isPending}
+                            onClick={() => updateMutation.mutate({ id: fb.id, status: s, adminNotes })}
+                            data-testid={`button-set-status-${s}-${fb.id}`}
+                          >
+                            {FEEDBACK_STATUS_LABELS[s]}
+                          </Button>
+                        ))}
+                      </div>
+
+                      {adminNotes !== (fb.adminNotes || "") && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={updateMutation.isPending}
+                          onClick={() => updateMutation.mutate({ id: fb.id, adminNotes })}
+                          data-testid={`button-save-notes-${fb.id}`}
+                        >
+                          Save Notes
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -1405,6 +1623,16 @@ export default function AdminDashboard() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
+                      onClick={() => setActiveView("feedback")}
+                      data-active={activeView === "feedback"}
+                      data-testid="nav-feedback"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span>Technician Feedback</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
                       onClick={() => navigate("/agent/dashboard")}
                       data-testid="nav-agent-view"
                     >
@@ -1466,6 +1694,7 @@ export default function AdminDashboard() {
                 {activeView === "technicians" && "Technician Sync"}
                 {activeView === "agent-status" && "Agent Status"}
                 {activeView === "tickets" && "Ticket Overview"}
+                {activeView === "feedback" && "Technician Feedback"}
               </h1>
             </div>
             {activeView === "users" && (
@@ -2156,6 +2385,9 @@ export default function AdminDashboard() {
             )}
             {activeView === "tickets" && (
               <TicketOverviewSection />
+            )}
+            {activeView === "feedback" && (
+              <FeedbackSection />
             )}
           </div>
         </div>

@@ -2224,6 +2224,90 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // FEEDBACK ROUTES
+  // ========================================================================
+
+  app.post("/api/feedback", authenticateToken, requireRole("technician"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const user = authReq.user!;
+
+      const feedbackSchema = z.object({
+        feedbackType: z.enum(["issue", "improvement", "general"]),
+        priority: z.enum(["low", "medium", "high"]),
+        description: z.string().min(1, "Description is required").max(2000),
+        attachmentUrl: z.string().optional().nullable(),
+      });
+
+      const parsed = feedbackSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+
+      const fb = await storage.createFeedback({
+        technicianId: user.id,
+        technicianName: user.name,
+        technicianRacId: user.ldapId || "",
+        feedbackType: parsed.data.feedbackType,
+        priority: parsed.data.priority,
+        description: parsed.data.description,
+        attachmentUrl: parsed.data.attachmentUrl || null,
+        status: "new",
+        adminNotes: null,
+        resolvedBy: null,
+        resolvedAt: null,
+      });
+
+      return res.status(201).json({ feedback: fb });
+    } catch (error) {
+      console.error("Create feedback error:", error);
+      return res.status(500).json({ error: "Failed to submit feedback" });
+    }
+  });
+
+  app.get("/api/feedback", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const list = await storage.getFeedbackList();
+      return res.status(200).json({ feedback: list });
+    } catch (error) {
+      console.error("Get feedback error:", error);
+      return res.status(500).json({ error: "Failed to get feedback" });
+    }
+  });
+
+  app.patch("/api/feedback/:id", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid feedback ID" });
+
+      const updateSchema = z.object({
+        status: z.enum(["new", "in_progress", "resolved", "dismissed"]).optional(),
+        adminNotes: z.string().optional().nullable(),
+      });
+
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input" });
+      }
+
+      const updates: any = { ...parsed.data };
+      if (parsed.data.status === "resolved") {
+        updates.resolvedBy = authReq.user!.id;
+        updates.resolvedAt = new Date();
+      }
+
+      const updated = await storage.updateFeedback(id, updates);
+      if (!updated) return res.status(404).json({ error: "Feedback not found" });
+
+      return res.status(200).json({ feedback: updated });
+    } catch (error) {
+      console.error("Update feedback error:", error);
+      return res.status(500).json({ error: "Failed to update feedback" });
+    }
+  });
+
+  // ========================================================================
   // VIDEO CONVERSION ROUTE
   // ========================================================================
 

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Clock, CheckCircle, XCircle, LogOut, RotateCcw } from "lucide-react";
+import { FileText, Clock, CheckCircle, XCircle, LogOut, RotateCcw, MessageSquare } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -95,6 +95,13 @@ export default function TechHomePage() {
           <Button className="w-full" size="lg" data-testid="button-new-submission">
             <FileText className="w-4 h-4 mr-2" />
             New Submission
+          </Button>
+        </Link>
+
+        <Link href="/tech/feedback">
+          <Button variant="outline" className="w-full" size="lg" data-testid="button-feedback">
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Submit Feedback
           </Button>
         </Link>
 

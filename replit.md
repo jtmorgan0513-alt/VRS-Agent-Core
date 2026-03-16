@@ -27,7 +27,8 @@ Key architectural patterns include:
 **Frontend Pages:**
 - **Technician:** Login, Home, Submission Form, History, Submission Detail, Help Center.
 - **VRS Agent:** Login, Dashboard (unified Queue, My Tickets, Completed views), supporting claim-to-process workflow, division correction.
-- **Admin:** Login, Dashboard (user management, division assignments, analytics, real-time agent status, ticket overview with FIFO queue, clickable audit trail per ticket).
+- **Admin:** Login, Dashboard (user management, division assignments, analytics, real-time agent status, ticket overview with FIFO queue, clickable audit trail per ticket, technician feedback management).
+- **Technician Feedback:** Technicians can submit feedback (issue, improvement, general) with priority and optional attachments from /tech/feedback. Admins manage feedback from the "Technician Feedback" view in the admin dashboard with status tracking (new, in_progress, resolved, dismissed) and admin notes.
 
 ## External Dependencies
 - **Twilio:** Used for sending SMS notifications to technicians.

@@ -21,6 +21,9 @@ import {
   technicians,
   InsertTechnician,
   Technician,
+  feedback,
+  InsertFeedback,
+  Feedback,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -113,6 +116,11 @@ export interface IStorage {
 
   getAgentsWithStatus(): Promise<{ id: number; name: string; racId: string | null; agentStatus: string; divisions: string[]; updatedAt: Date | null }[]>;
 
+  createFeedback(data: InsertFeedback): Promise<Feedback>;
+  getFeedbackList(): Promise<(Feedback & { resolvedByName: string | null })[]>;
+  getFeedback(id: number): Promise<Feedback | undefined>;
+  updateFeedback(id: number, data: Partial<InsertFeedback>): Promise<Feedback | undefined>;
+
   getAnalytics(): Promise<{
     submissionsToday: number;
     submissionsThisWeek: number;
@@ -180,6 +188,8 @@ export class DatabaseStorage implements IStorage {
     await db.update(submissions).set({ assignedTo: null } as any).where(eq(submissions.assignedTo, id));
     await db.update(submissions).set({ stage1ReviewedBy: null } as any).where(eq(submissions.stage1ReviewedBy, id));
     await db.update(submissions).set({ stage2ReviewedBy: null } as any).where(eq(submissions.stage2ReviewedBy, id));
+    await db.update(feedback).set({ resolvedBy: null } as any).where(eq(feedback.resolvedBy, id));
+    await db.delete(feedback).where(eq(feedback.technicianId, id));
     const techSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.technicianId, id));
     if (techSubmissions.length > 0) {
       const subIds = techSubmissions.map(s => s.id);
@@ -779,6 +789,41 @@ export class DatabaseStorage implements IStorage {
       avgTimeToStage1Ms: row.avgTimeToStage1Ms !== null ? Number(row.avgTimeToStage1Ms) : null,
       avgTimeToAuthCodeMs: row.avgTimeToAuthCodeMs !== null ? Number(row.avgTimeToAuthCodeMs) : null,
     };
+  }
+
+  async createFeedback(data: InsertFeedback): Promise<Feedback> {
+    const result = await db.insert(feedback).values(data).returning();
+    return result[0];
+  }
+
+  async getFeedbackList(): Promise<(Feedback & { resolvedByName: string | null })[]> {
+    const resolvedByUser = alias(users, "resolvedByUser");
+    const result = await db
+      .select({
+        feedback: feedback,
+        resolvedByName: resolvedByUser.name,
+      })
+      .from(feedback)
+      .leftJoin(resolvedByUser, eq(feedback.resolvedBy, resolvedByUser.id))
+      .orderBy(desc(feedback.createdAt));
+    return result.map((r) => ({
+      ...r.feedback,
+      resolvedByName: r.resolvedByName,
+    }));
+  }
+
+  async getFeedback(id: number): Promise<Feedback | undefined> {
+    const result = await db.select().from(feedback).where(eq(feedback.id, id));
+    return result[0];
+  }
+
+  async updateFeedback(id: number, data: Partial<InsertFeedback>): Promise<Feedback | undefined> {
+    const result = await db
+      .update(feedback)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(feedback.id, id))
+      .returning();
+    return result[0];
   }
 }
 

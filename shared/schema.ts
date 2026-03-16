@@ -206,3 +206,32 @@ export const insertTechnicianSchema = createInsertSchema(technicians).omit({
 
 export type InsertTechnician = z.infer<typeof insertTechnicianSchema>;
 export type Technician = typeof technicians.$inferSelect;
+
+// ============================================================================
+// FEEDBACK TABLE
+// ============================================================================
+export const feedback = pgTable("feedback", {
+  id: serial("id").primaryKey(),
+  technicianId: integer("technician_id").references(() => users.id),
+  technicianName: varchar("technician_name", { length: 255 }).notNull(),
+  technicianRacId: varchar("technician_rac_id", { length: 50 }).notNull(),
+  feedbackType: text("feedback_type").notNull(),
+  priority: text("priority").notNull().default("medium"),
+  description: text("description").notNull(),
+  attachmentUrl: varchar("attachment_url", { length: 500 }),
+  status: text("status").notNull().default("new"),
+  adminNotes: text("admin_notes"),
+  resolvedBy: integer("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const insertFeedbackSchema = createInsertSchema(feedback).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
+export type Feedback = typeof feedback.$inferSelect;

@@ -22,6 +22,7 @@ import OnboardingWizard from "@/components/onboarding-wizard";
 import WhatsNewModal from "@/components/whats-new-modal";
 import HelpCenterPage from "@/pages/help-center";
 import TechResubmitPage from "@/pages/tech-resubmit";
+import TechFeedbackPage from "@/pages/tech-feedback";
 
 function LoadingScreen() {
   return (
@@ -149,6 +150,9 @@ function Router() {
       </Route>
       <Route path="/tech/resubmit/:id">
         {() => <TechRoute component={TechResubmitPage} />}
+      </Route>
+      <Route path="/tech/feedback">
+        {() => <TechRoute component={TechFeedbackPage} />}
       </Route>
       <Route path="/agent/dashboard" component={AgentRoute} />
       <Route path="/admin/dashboard" component={AdminRoute} />
