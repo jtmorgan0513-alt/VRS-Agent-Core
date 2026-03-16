@@ -9,7 +9,13 @@ async function throwIfResNotOk(res: Response) {
       return;
     }
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let message = text;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error) message = parsed.error;
+      else if (parsed.message) message = parsed.message;
+    } catch {}
+    throw new Error(message);
   }
 }
 

@@ -496,6 +496,19 @@ export async function registerRoutes(
         return res.status(400).json({ error: "This service order has been permanently closed and cannot accept new submissions. The repair was determined to not be covered under warranty. Please offer the customer a cash call estimate instead." });
       }
 
+      if (!parsed.data.resubmissionOf) {
+        const activeCheck = await storage.hasActiveSubmissionForServiceOrder(parsed.data.serviceOrder, user.id);
+        if (activeCheck.exists) {
+          const statusLabels: Record<string, string> = {
+            queued: "in the queue waiting for an agent",
+            pending: "currently being reviewed by an agent",
+            completed: "already approved",
+          };
+          const statusMsg = statusLabels[activeCheck.status || ""] || "already active";
+          return res.status(409).json({ error: `You already have a submission for SO# ${parsed.data.serviceOrder} that is ${statusMsg}. Duplicate submissions are not allowed.` });
+        }
+      }
+
       if (parsed.data.resubmissionOf) {
         const originalSub = await storage.getSubmission(parsed.data.resubmissionOf);
         if (!originalSub) {

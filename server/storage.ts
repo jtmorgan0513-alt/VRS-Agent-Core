@@ -89,6 +89,7 @@ export interface IStorage {
   getResubmissionChain(rootId: number): Promise<Submission[]>;
   getSubmissionHistory(serviceOrder: string): Promise<Submission[]>;
   hasRejectedClosedForServiceOrder(serviceOrder: string): Promise<boolean>;
+  hasActiveSubmissionForServiceOrder(serviceOrder: string, technicianId: number): Promise<{ exists: boolean; status?: string }>;
 
   // SMS methods
   createSmsNotification(
@@ -561,6 +562,25 @@ export class DatabaseStorage implements IStorage {
       )
       .limit(1);
     return results.length > 0;
+  }
+
+  async hasActiveSubmissionForServiceOrder(serviceOrder: string, technicianId: number): Promise<{ exists: boolean; status?: string }> {
+    const activeStatuses = ["queued", "pending", "completed"];
+    const results = await db
+      .select({ id: submissions.id, ticketStatus: submissions.ticketStatus })
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.serviceOrder, serviceOrder),
+          eq(submissions.technicianId, technicianId),
+          inArray(submissions.ticketStatus, activeStatuses)
+        )
+      )
+      .limit(1);
+    if (results.length > 0) {
+      return { exists: true, status: results[0].ticketStatus };
+    }
+    return { exists: false };
   }
 
   // SMS methods
