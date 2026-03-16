@@ -821,9 +821,9 @@ export async function registerRoutes(
 
       let claimSmsMessage: string;
       if (isTwoStage) {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it. Here's how the process works:\n\n1. Your photos and submission will be reviewed to ensure they meet all criteria. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. Once approved, VRS will obtain your authorization code and send it to you.\n\nPlease stay on site and stand by — you will receive a status update on your submission shortly.`;
+        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.\n\nPlease stand by — you will receive a follow-up text with the result shortly.`;
       } else {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is working on your approval now. Please stay on site in case the agent has questions about your submission. Your authorization will come through shortly.`;
+        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it. Please stand by — you will receive a follow-up text with the result shortly.`;
       }
 
       sendSms(submission.id, submission.phone, "ticket_claimed", claimSmsMessage).catch(err => {

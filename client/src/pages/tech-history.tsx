@@ -73,6 +73,8 @@ function StatusBadge({ status }: { status: string }) {
       return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
     case "rejected":
       return <Badge variant="destructive">Rejected</Badge>;
+    case "rejected_closed":
+      return <Badge variant="destructive">Not Covered</Badge>;
     case "invalid":
       return <Badge variant="secondary">Not Applicable</Badge>;
     default:

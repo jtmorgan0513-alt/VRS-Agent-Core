@@ -102,6 +102,14 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
+    if (status === "rejected_closed") {
+      return {
+        bgClass: "bg-destructive text-destructive-foreground",
+        icon: <XCircle className="w-10 h-10 mx-auto mb-2" />,
+        title: "Not Covered Under Warranty",
+        subtitle: `Service Order #${sub.serviceOrder}`,
+      };
+    }
     if (status === "rejected" || sub.stage1Status === "rejected") {
       return {
         bgClass: "bg-destructive text-destructive-foreground",
@@ -193,6 +201,11 @@ export default function SubmissionDetailPage() {
                 VRS needs additional information before they can proceed with authorization.
               </p>
             )}
+            {status === "rejected_closed" && (
+              <p className="text-sm opacity-80 mt-1">
+                This repair has been determined to not be covered under warranty. You may offer the customer a cash call estimate.
+              </p>
+            )}
             {status === "invalid" && (
               <p className="text-sm opacity-80 mt-1">
                 This request cannot be processed through VRS.
@@ -229,6 +242,31 @@ export default function SubmissionDetailPage() {
                   ? (typeof sub.rejectionReasons === 'string' ? JSON.parse(sub.rejectionReasons) : sub.rejectionReasons).join(', ')
                   : sub.stage1RejectionReason}
               </p>
+              {sub.technicianMessage && (
+                <div className="mt-2 pt-2 border-t">
+                  <p className="text-sm font-semibold text-destructive mb-1">Agent Message:</p>
+                  <p className="text-sm" data-testid="text-technician-message">{sub.technicianMessage}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {status === "rejected_closed" && (
+          <Card className="border-destructive">
+            <CardContent className="p-4">
+              <p className="text-sm font-semibold text-destructive mb-1">Rejection Reason:</p>
+              <p className="text-sm" data-testid="text-rejection-closed-reason">
+                {sub.rejectionReasons
+                  ? (typeof sub.rejectionReasons === 'string' ? JSON.parse(sub.rejectionReasons) : sub.rejectionReasons).join(', ')
+                  : sub.stage1RejectionReason || "Not covered under warranty"}
+              </p>
+              {sub.technicianMessage && (
+                <div className="mt-2 pt-2 border-t">
+                  <p className="text-sm font-semibold text-destructive mb-1">Agent Message:</p>
+                  <p className="text-sm">{sub.technicianMessage}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -532,6 +570,7 @@ function DetailRow({ label, value, testId }: { label: string; value: React.React
 function StatusBadge({ status, stage2, hasAuthCode }: { status: string; stage2: string; hasAuthCode: boolean }) {
   if (status === "invalid") return <Badge variant="secondary">Not Applicable</Badge>;
   if (stage2 === "declined") return <Badge variant="destructive">Repair Declined</Badge>;
+  if (status === "rejected_closed") return <Badge variant="destructive">Not Covered</Badge>;
   if (hasAuthCode) return <Badge className="bg-green-600 text-white border-green-600">Auth Code Issued</Badge>;
   if (status === "completed" || status === "approved") return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
   if (status === "rejected") return <Badge variant="destructive">Rejected</Badge>;

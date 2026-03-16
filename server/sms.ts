@@ -43,6 +43,11 @@ export async function sendSms(
   messageType: string,
   messageBody: string
 ): Promise<{ success: boolean; twilioSid?: string; error?: string }> {
+  if (!recipientPhone) {
+    console.error(`[SMS] No phone number for submission ${submissionId}, type: ${messageType}`);
+    return { success: false, error: "No recipient phone number" };
+  }
+
   const client = getTwilioClient();
 
   let twilioSid: string | null = null;
@@ -55,8 +60,9 @@ export async function sendSms(
         to: recipientPhone,
       });
       twilioSid = message.sid;
+      console.log(`[SMS] Sent ${messageType} to ${recipientPhone} for submission ${submissionId}, SID: ${message.sid}`);
     } catch (err: any) {
-      console.error("Twilio SMS error:", err.message);
+      console.error(`[SMS] Failed to send ${messageType} to ${recipientPhone} for submission ${submissionId}:`, err.message);
       await storage.createSmsNotification({
         submissionId,
         recipientPhone,
