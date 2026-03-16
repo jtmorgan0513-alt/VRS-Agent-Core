@@ -184,6 +184,7 @@ export default function AgentDashboard() {
   const [rgcMissing, setRgcMissing] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignNotes, setReassignNotes] = useState("");
+  const [reassignTarget, setReassignTarget] = useState<string>("");
   const [divisionCorrectionTarget, setDivisionCorrectionTarget] = useState<string | null>(null);
   const [divisionCorrectionConfirmOpen, setDivisionCorrectionConfirmOpen] = useState(false);
   const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
@@ -219,6 +220,13 @@ export default function AgentDashboard() {
     queryKey: ["/api/agent/specializations"],
     enabled: !isAdminRole,
   });
+  const { data: usersData } = useQuery<{ users: any[] }>({
+    queryKey: ["/api/admin/users"],
+    enabled: isAdminRole,
+  });
+  const availableAgents = (usersData?.users || []).filter(
+    (u: any) => (u.role === "vrs_agent" || u.role === "admin" || u.role === "super_admin") && u.isActive
+  );
   const allDivisionKeys = Object.keys(DIVISION_LABELS);
   const agentDivisions = isAdminRole ? allDivisionKeys : (specsData?.divisions || []);
 
@@ -557,14 +565,20 @@ export default function AgentDashboard() {
   });
 
   const reassignMutation = useMutation({
-    mutationFn: async ({ submissionId, notes }: { submissionId: number; notes?: string }) => {
-      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/reassign`, { notes });
+    mutationFn: async ({ submissionId, agentId, notes }: { submissionId: number; agentId?: number; notes?: string }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/reassign`, { agentId, notes });
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Reassigned", description: "Ticket returned to the queue." });
+    onSuccess: (_data: any, variables: { submissionId: number; agentId?: number }) => {
+      toast({
+        title: variables.agentId ? "Ticket Reassigned" : "Reassigned to Queue",
+        description: variables.agentId
+          ? `Assigned to ${availableAgents.find((a: any) => a.id === variables.agentId)?.name || "agent"}.`
+          : "Ticket returned to the queue.",
+      });
       setSelectedId(null);
       setReassignNotes("");
+      setReassignTarget("");
       setReassignOpen(false);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
@@ -2430,15 +2444,41 @@ export default function AgentDashboard() {
         open={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
       />
-      <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
+      <Dialog open={reassignOpen} onOpenChange={(open) => { if (!open) { setReassignOpen(false); setReassignNotes(""); setReassignTarget(""); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reassign Ticket</DialogTitle>
             <DialogDescription>
-              Return this ticket to the queue so another agent can pick it up.
+              {isAdminRole
+                ? "Reassign this ticket to the queue or directly to an agent."
+                : "Return this ticket to the queue so another agent can pick it up."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {isAdminRole && (
+              <div className="space-y-2">
+                <Label>Assign to</Label>
+                <Select value={reassignTarget} onValueChange={setReassignTarget}>
+                  <SelectTrigger data-testid="select-reassign-target">
+                    <SelectValue placeholder="Select an option..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="queue" data-testid="option-return-queue">
+                      Return to Queue (unassign)
+                    </SelectItem>
+                    {availableAgents.map((agent: any) => (
+                      <SelectItem
+                        key={agent.id}
+                        value={String(agent.id)}
+                        data-testid={`option-agent-${agent.id}`}
+                      >
+                        {agent.name} ({agent.role === "vrs_agent" ? "Agent" : agent.role === "admin" ? "Admin" : "Super Admin"})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Reassignment Notes (optional)</Label>
               <Textarea
@@ -2452,17 +2492,26 @@ export default function AgentDashboard() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setReassignOpen(false); setReassignNotes(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setReassignOpen(false); setReassignNotes(""); setReassignTarget(""); }} data-testid="button-cancel-reassign">Cancel</Button>
             <Button
               onClick={() => {
                 if (selectedId) {
-                  reassignMutation.mutate({ submissionId: selectedId, notes: reassignNotes || undefined });
+                  if (isAdminRole && reassignTarget) {
+                    const agentId = reassignTarget === "queue" ? undefined : parseInt(reassignTarget);
+                    reassignMutation.mutate({ submissionId: selectedId, agentId, notes: reassignNotes || undefined });
+                  } else {
+                    reassignMutation.mutate({ submissionId: selectedId, notes: reassignNotes || undefined });
+                  }
                 }
               }}
-              disabled={reassignMutation.isPending}
+              disabled={reassignMutation.isPending || (isAdminRole && !reassignTarget)}
               data-testid="button-confirm-reassign"
             >
-              {reassignMutation.isPending ? "Reassigning..." : "Reassign to Queue"}
+              {reassignMutation.isPending ? "Reassigning..." : (
+                isAdminRole
+                  ? (reassignTarget === "queue" ? "Reassign to Queue" : reassignTarget ? "Reassign to Agent" : "Reassign")
+                  : "Reassign to Queue"
+              )}
             </Button>
           </div>
         </DialogContent>
