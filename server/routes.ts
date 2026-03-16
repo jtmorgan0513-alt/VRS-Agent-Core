@@ -514,6 +514,12 @@ export async function registerRoutes(
         if (!originalSub) {
           return res.status(400).json({ error: "Original submission not found" });
         }
+        if (originalSub.technicianId !== user.id) {
+          return res.status(403).json({ error: "You can only resubmit your own tickets" });
+        }
+        if (originalSub.serviceOrder !== parsed.data.serviceOrder) {
+          return res.status(400).json({ error: "Service order must match the original submission" });
+        }
         if (originalSub.ticketStatus === "invalid" || originalSub.stage1Status === "invalid") {
           return res.status(400).json({ error: "Invalid submissions cannot be resubmitted" });
         }
@@ -531,6 +537,21 @@ export async function registerRoutes(
           return res.status(400).json({ error: `Maximum ${MAX_RESUBMISSIONS} resubmissions reached. Please call VRS directly for assistance.` });
         }
       }
+
+      let originalAgent: number | null = null;
+      if (parsed.data.resubmissionOf) {
+        const origSub = await storage.getSubmission(parsed.data.resubmissionOf);
+        if (origSub) {
+          originalAgent = origSub.reviewedBy || origSub.stage1ReviewedBy || null;
+          if (originalAgent) {
+            const agentUser = await storage.getUser(originalAgent);
+            if (!agentUser || agentUser.role === "technician" || !agentUser.isActive) {
+              originalAgent = null;
+            }
+          }
+        }
+      }
+
 
       const submission = await storage.createSubmission({
         technicianId: user.id,
@@ -551,8 +572,8 @@ export async function registerRoutes(
         photos: parsed.data.photos || null,
         videoUrl: parsed.data.videoUrl || null,
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
-        assignedTo: null,
-        ticketStatus: "queued",
+        assignedTo: originalAgent,
+        ticketStatus: originalAgent ? "pending" : "queued",
         statusChangedAt: new Date(),
         stage1Status: "pending",
         stage2Status: "pending",
@@ -567,16 +588,30 @@ export async function registerRoutes(
         resubmissionOf: parsed.data.resubmissionOf || null,
       });
 
-      broadcastToDivisionAgents(parsed.data.applianceType, {
-        type: "new_ticket",
-        payload: {
-          submissionId: submission.id,
-          serviceOrder: submission.serviceOrder,
-          applianceType: parsed.data.applianceType,
-          applianceLabel: getDivisionLabel(parsed.data.applianceType),
-          warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
-        },
-      });
+      if (originalAgent) {
+        broadcastToAgent(originalAgent, {
+          type: "resubmission_received",
+          payload: {
+            submissionId: submission.id,
+            serviceOrder: submission.serviceOrder,
+            applianceType: parsed.data.applianceType,
+            applianceLabel: getDivisionLabel(parsed.data.applianceType),
+            warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+            message: "A technician has resubmitted a ticket you previously reviewed.",
+          },
+        });
+      } else {
+        broadcastToDivisionAgents(parsed.data.applianceType, {
+          type: "new_ticket",
+          payload: {
+            submissionId: submission.id,
+            serviceOrder: submission.serviceOrder,
+            applianceType: parsed.data.applianceType,
+            applianceLabel: getDivisionLabel(parsed.data.applianceType),
+            warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+          },
+        });
+      }
 
       return res.status(201).json({ submission });
     } catch (error) {

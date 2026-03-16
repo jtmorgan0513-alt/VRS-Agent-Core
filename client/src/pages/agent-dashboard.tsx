@@ -290,11 +290,23 @@ export default function AgentDashboard() {
       });
     });
 
+    const unsub5 = subscribe("resubmission_received", (payload: any) => {
+      playNotificationDing();
+      toast({
+        title: `Resubmission assigned to you`,
+        description: `SO #${payload.serviceOrder} — ${payload.applianceLabel} (${payload.warrantyLabel}). A technician resubmitted a ticket you previously reviewed.`,
+        duration: 10000,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    });
+
     return () => {
       unsub1();
       unsub2();
       unsub3();
       unsub4();
+      unsub5();
     };
   }, [subscribe, toast]);
 
@@ -1030,6 +1042,11 @@ export default function AgentDashboard() {
                                   data-testid={`badge-request-type-${sub.id}`}
                                 >
                                   Infestation / Non-Accessible
+                                </Badge>
+                              )}
+                              {sub.resubmissionOf && (
+                                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`badge-resubmission-${sub.id}`}>
+                                  Resubmission
                                 </Badge>
                               )}
                               {sub.aiEnhanced && (
