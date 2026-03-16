@@ -765,6 +765,142 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // ADMIN AUDIT TRAIL — Full timeline for a submission
+  // ========================================================================
+
+  app.get("/api/admin/submissions/:id/audit", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) return res.status(404).json({ error: "Submission not found" });
+
+      const smsLogs = await storage.getSmsNotifications(id);
+
+      const userIds = new Set<number>();
+      if (submission.technicianId) userIds.add(submission.technicianId);
+      if (submission.assignedTo) userIds.add(submission.assignedTo);
+      if (submission.reviewedBy) userIds.add(submission.reviewedBy);
+      if (submission.stage1ReviewedBy) userIds.add(submission.stage1ReviewedBy);
+      if (submission.stage2ReviewedBy) userIds.add(submission.stage2ReviewedBy);
+
+      const userNames: Record<number, string> = {};
+      for (const uid of userIds) {
+        const u = await storage.getUser(uid);
+        if (u) userNames[uid] = u.name;
+      }
+
+      const timeline: { timestamp: string; event: string; actor: string; detail?: string }[] = [];
+
+      timeline.push({
+        timestamp: submission.createdAt?.toISOString() || new Date().toISOString(),
+        event: "Submitted",
+        actor: userNames[submission.technicianId] || "Technician",
+        detail: `SO# ${submission.serviceOrder} — ${submission.applianceType}`,
+      });
+
+      const claimSms = smsLogs.find(s => s.messageType === "ticket_claimed");
+      if (claimSms) {
+        const claimAgent = submission.assignedTo
+          ? userNames[submission.assignedTo]
+          : (submission.reviewedBy ? userNames[submission.reviewedBy] : null)
+            || (submission.stage1ReviewedBy ? userNames[submission.stage1ReviewedBy] : null);
+        timeline.push({
+          timestamp: claimSms.sentAt?.toISOString() || new Date().toISOString(),
+          event: "Claimed by Agent",
+          actor: claimAgent || "Agent",
+        });
+      }
+
+      if (submission.reassignmentNotes) {
+        const reassignAgent = submission.assignedTo ? userNames[submission.assignedTo] : null;
+        timeline.push({
+          timestamp: submission.updatedAt?.toISOString() || new Date().toISOString(),
+          event: "Reassigned",
+          actor: "Admin",
+          detail: `${submission.reassignmentNotes}${reassignAgent ? ` → ${reassignAgent}` : ""}`,
+        });
+      }
+
+      if (submission.submissionApproved && submission.submissionApprovedAt) {
+        timeline.push({
+          timestamp: submission.submissionApprovedAt.toISOString(),
+          event: "Submission Approved",
+          actor: userNames[submission.stage1ReviewedBy!] || userNames[submission.reviewedBy!] || "Agent",
+          detail: "Submission reviewed and approved; pending authorization code",
+        });
+      }
+
+      if (submission.ticketStatus === "completed" && submission.reviewedAt) {
+        timeline.push({
+          timestamp: submission.reviewedAt.toISOString(),
+          event: "Approved & Auth Code Issued",
+          actor: userNames[submission.reviewedBy!] || userNames[submission.stage2ReviewedBy!] || "Agent",
+          detail: submission.authCode ? `Auth Code: ${submission.authCode}` : undefined,
+        });
+      }
+
+      if (submission.ticketStatus === "rejected" && submission.reviewedAt) {
+        timeline.push({
+          timestamp: submission.reviewedAt.toISOString(),
+          event: "Rejected",
+          actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
+          detail: submission.stage1RejectionReason || undefined,
+        });
+      }
+
+      if (submission.ticketStatus === "rejected_closed" && submission.reviewedAt) {
+        timeline.push({
+          timestamp: submission.reviewedAt.toISOString(),
+          event: "Rejected & Closed",
+          actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
+          detail: submission.stage1RejectionReason || "Not covered under warranty",
+        });
+      }
+
+      if (submission.ticketStatus === "invalid" && submission.reviewedAt) {
+        timeline.push({
+          timestamp: submission.reviewedAt.toISOString(),
+          event: "Marked Invalid",
+          actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
+          detail: submission.invalidReason || undefined,
+        });
+      }
+
+      smsLogs.forEach(sms => {
+        const typeLabels: Record<string, string> = {
+          ticket_claimed: "Claim SMS Sent",
+          submission_approved: "Approval SMS Sent",
+          ticket_approved: "Auth Code SMS Sent",
+          ticket_rejected: "Rejection SMS Sent",
+          ticket_rejected_closed: "Reject & Close SMS Sent",
+          ticket_invalid: "Invalid SMS Sent",
+          auth_code_sent: "Auth Code SMS Sent",
+        };
+        timeline.push({
+          timestamp: sms.sentAt?.toISOString() || new Date().toISOString(),
+          event: typeLabels[sms.messageType] || `SMS: ${sms.messageType}`,
+          actor: "System",
+          detail: `To: ${sms.recipientPhone}`,
+        });
+      });
+
+      timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      return res.status(200).json({
+        submission,
+        timeline,
+        userNames,
+        smsLogs,
+      });
+    } catch (error) {
+      console.error("Admin audit trail error:", error);
+      return res.status(500).json({ error: "Failed to get audit trail" });
+    }
+  });
+
+  // ========================================================================
   // TICKET CLAIM ROUTE — Agent claims a queued ticket
   // ========================================================================
 

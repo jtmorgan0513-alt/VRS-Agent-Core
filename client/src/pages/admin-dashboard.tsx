@@ -92,6 +92,9 @@ import {
   X,
   Search,
   Download,
+  MessageSquare,
+  ArrowRight,
+  CircleDot,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -319,9 +322,134 @@ function getStatusLabel(status: string): string {
 
 type TicketStatusFilter = "all" | "queued" | "pending" | "completed" | "rejected" | "rejected_closed" | "invalid";
 
+interface AuditTimelineEntry {
+  timestamp: string;
+  event: string;
+  actor: string;
+  detail?: string;
+}
+
+function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | null; open: boolean; onClose: () => void }) {
+  const { data, isLoading } = useQuery<{
+    submission: any;
+    timeline: AuditTimelineEntry[];
+    userNames: Record<number, string>;
+    smsLogs: any[];
+  }>({
+    queryKey: ["/api/admin/submissions", ticketId, "audit"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/submissions/${ticketId}/audit`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error("Failed to load audit trail");
+      return res.json();
+    },
+    enabled: !!ticketId && open,
+  });
+
+  const sub = data?.submission;
+  const timeline = data?.timeline || [];
+  const userNames = data?.userNames || {};
+
+  const getEventIcon = (event: string) => {
+    if (event === "Submitted") return <CircleDot className="w-4 h-4 text-blue-500" />;
+    if (event.includes("Claimed")) return <ArrowRight className="w-4 h-4 text-yellow-500" />;
+    if (event.includes("Reassigned")) return <RotateCcw className="w-4 h-4 text-orange-500" />;
+    if (event.includes("Approved")) return <CheckCircle className="w-4 h-4 text-green-500" />;
+    if (event.includes("Rejected") || event.includes("Closed")) return <XCircle className="w-4 h-4 text-red-500" />;
+    if (event.includes("Invalid")) return <XCircle className="w-4 h-4 text-gray-500" />;
+    if (event.includes("SMS")) return <MessageSquare className="w-4 h-4 text-indigo-500" />;
+    return <Clock className="w-4 h-4 text-muted-foreground" />;
+  };
+
+  const formatTs = (ts: string) => {
+    const d = new Date(ts);
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle data-testid="text-audit-title">
+            {sub ? `Audit Trail — SO# ${sub.serviceOrder}` : "Audit Trail"}
+          </DialogTitle>
+          <DialogDescription>
+            Full timeline of actions and notifications for this ticket.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3 py-4">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-14 w-full" />)}
+          </div>
+        ) : !sub ? (
+          <p className="text-muted-foreground py-4">Ticket not found.</p>
+        ) : (
+          <div className="overflow-y-auto flex-1 pr-2">
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Technician</p>
+                <p className="text-sm font-medium" data-testid="text-audit-tech">{userNames[sub.technicianId] || "—"}</p>
+                <p className="text-xs text-muted-foreground">{sub.technicianLdapId || sub.racId}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Current Status</p>
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold mt-1 ${getStatusColor(sub.ticketStatus)}`} data-testid="text-audit-status">
+                  {getStatusLabel(sub.ticketStatus)}
+                </span>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Division</p>
+                <p className="text-sm font-medium">{DIVISION_LABELS[sub.applianceType] || sub.applianceType}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Assigned Agent</p>
+                <p className="text-sm font-medium" data-testid="text-audit-agent">{sub.assignedTo ? userNames[sub.assignedTo] || "Agent" : "Unassigned"}</p>
+              </div>
+            </div>
+
+            {sub.agentNotes && (
+              <div className="rounded-lg border p-3 mb-4 bg-muted/30">
+                <p className="text-xs text-muted-foreground mb-1">Agent Notes</p>
+                <p className="text-sm">{sub.agentNotes}</p>
+              </div>
+            )}
+
+            <Separator className="mb-4" />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Timeline</p>
+
+            <div className="relative">
+              <div className="absolute left-[17px] top-3 bottom-3 w-px bg-border" />
+              <div className="space-y-0">
+                {timeline.map((entry, i) => (
+                  <div key={i} className="relative flex items-start gap-3 py-2.5 pl-1" data-testid={`audit-entry-${i}`}>
+                    <div className="relative z-10 mt-0.5 bg-background rounded-full p-0.5">
+                      {getEventIcon(entry.event)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium">{entry.event}</p>
+                        <p className="text-xs text-muted-foreground whitespace-nowrap">{formatTs(entry.timestamp)}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{entry.actor}</p>
+                      {entry.detail && <p className="text-xs text-muted-foreground mt-0.5 break-words">{entry.detail}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TicketOverviewSection() {
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
 
   const { data: allData, isLoading: allLoading } = useQuery<{ submissions: any[] }>({
     queryKey: ["/api/submissions"],
@@ -438,10 +566,11 @@ function TicketOverviewSection() {
                     return (
                       <TableRow
                         key={ticket.id}
-                        className={isUrgent ? "bg-red-50 dark:bg-red-950/20" : isAging ? "bg-amber-50 dark:bg-amber-950/20" : ""}
+                        className={`cursor-pointer hover:bg-muted/50 transition-colors ${isUrgent ? "bg-red-50 dark:bg-red-950/20" : isAging ? "bg-amber-50 dark:bg-amber-950/20" : ""}`}
+                        onClick={() => setSelectedTicketId(ticket.id)}
                         data-testid={`ticket-row-${ticket.id}`}
                       >
-                        <TableCell className="font-mono font-semibold text-sm" data-testid={`so-${ticket.id}`}>
+                        <TableCell className="font-mono font-semibold text-sm text-primary underline-offset-2 hover:underline" data-testid={`so-${ticket.id}`}>
                           {ticket.serviceOrder}
                         </TableCell>
                         <TableCell>
@@ -501,6 +630,12 @@ function TicketOverviewSection() {
           Sorted oldest first (FIFO). Oldest tickets should be picked up first.
         </p>
       )}
+
+      <TicketAuditDialog
+        ticketId={selectedTicketId}
+        open={selectedTicketId !== null}
+        onClose={() => setSelectedTicketId(null)}
+      />
     </div>
   );
 }
