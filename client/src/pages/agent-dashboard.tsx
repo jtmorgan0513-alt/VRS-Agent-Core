@@ -583,12 +583,15 @@ export default function AgentDashboard() {
       if (data.agentKeepsTicket) {
         toast({ title: "Division Corrected", description: "Appliance type updated. You still own this ticket." });
         queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+        queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+        queryClient.refetchQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       } else {
         toast({ title: "Division Corrected", description: "Ticket re-routed to the correct division queue." });
         setSelectedId(null);
         setLocalAgentStatus("online");
         queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
         queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+        queryClient.refetchQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       }
       setDivisionCorrectionTarget(null);
       setDivisionCorrectionConfirmOpen(false);
