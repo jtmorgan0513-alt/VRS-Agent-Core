@@ -570,7 +570,7 @@ function DetailRow({ label, value, testId }: { label: string; value: React.React
 function StatusBadge({ status, stage2, hasAuthCode }: { status: string; stage2: string; hasAuthCode: boolean }) {
   if (status === "invalid") return <Badge variant="secondary">Not Applicable</Badge>;
   if (stage2 === "declined") return <Badge variant="destructive">Repair Declined</Badge>;
-  if (status === "rejected_closed") return <Badge variant="destructive">Not Covered</Badge>;
+  if (status === "rejected_closed") return <Badge variant="destructive">Closed — Not Covered</Badge>;
   if (hasAuthCode) return <Badge className="bg-green-600 text-white border-green-600">Auth Code Issued</Badge>;
   if (status === "completed" || status === "approved") return <Badge className="bg-green-600 text-white border-green-600">Approved</Badge>;
   if (status === "rejected") return <Badge variant="destructive">Rejected</Badge>;

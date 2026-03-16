@@ -74,7 +74,7 @@ function StatusBadge({ status }: { status: string }) {
     case "rejected":
       return <Badge variant="destructive">Rejected</Badge>;
     case "rejected_closed":
-      return <Badge variant="destructive">Not Covered</Badge>;
+      return <Badge variant="destructive">Closed — Not Covered</Badge>;
     case "invalid":
       return <Badge variant="secondary">Not Applicable</Badge>;
     default:
