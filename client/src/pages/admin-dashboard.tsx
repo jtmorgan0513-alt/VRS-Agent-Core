@@ -95,6 +95,8 @@ import {
   MessageSquare,
   ArrowRight,
   CircleDot,
+  ArrowLeftRight,
+  Undo2,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -447,14 +449,57 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
 }
 
 function TicketOverviewSection() {
+  const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
+  const [reassignTicket, setReassignTicket] = useState<any | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<string>("");
+  const [reassignNotes, setReassignNotes] = useState("");
 
   const { data: allData, isLoading: allLoading } = useQuery<{ submissions: any[] }>({
     queryKey: ["/api/submissions"],
     refetchInterval: 15000,
   });
+
+  const { data: usersData } = useQuery<{ users: any[] }>({
+    queryKey: ["/api/admin/users"],
+  });
+
+  const availableAgents = (usersData?.users || []).filter(
+    (u: any) => (u.role === "vrs_agent" || u.role === "admin" || u.role === "super_admin") && u.isActive
+  );
+
+  const reassignMutation = useMutation({
+    mutationFn: async ({ id, agentId, notes }: { id: number; agentId?: number; notes?: string }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${id}/reassign`, { agentId, notes });
+      return await res.json();
+    },
+    onSuccess: (_data: any, variables: { id: number; agentId?: number }) => {
+      toast({
+        title: variables.agentId ? "Ticket Reassigned" : "Ticket Returned to Queue",
+        description: variables.agentId
+          ? `Assigned to ${availableAgents.find((a: any) => a.id === variables.agentId)?.name || "agent"}.`
+          : "Ticket is now available for any agent to claim.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      setReassignTicket(null);
+      setReassignTarget("");
+      setReassignNotes("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Reassign Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  function handleReassignSubmit() {
+    if (!reassignTicket) return;
+    if (reassignTarget === "queue") {
+      reassignMutation.mutate({ id: reassignTicket.id, notes: reassignNotes || undefined });
+    } else if (reassignTarget) {
+      reassignMutation.mutate({ id: reassignTicket.id, agentId: parseInt(reassignTarget), notes: reassignNotes || undefined });
+    }
+  }
 
   const allTickets = allData?.submissions || [];
 
@@ -554,6 +599,9 @@ function TicketOverviewSection() {
                     <TableHead>Warranty</TableHead>
                     <TableHead className="text-right">Age</TableHead>
                     <TableHead className="text-right">Time in Status</TableHead>
+                    {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
+                      <TableHead className="w-[80px]"></TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -615,6 +663,27 @@ function TicketOverviewSection() {
                         <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`time-in-status-${ticket.id}`}>
                           {getTimeInStatus(ticket.statusChangedAt || ticket.createdAt)}
                         </TableCell>
+                        {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
+                          <TableCell className="text-right">
+                            {(ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReassignTicket(ticket);
+                                  setReassignTarget("");
+                                  setReassignNotes("");
+                                }}
+                                data-testid={`button-reassign-${ticket.id}`}
+                              >
+                                <ArrowLeftRight className="w-3.5 h-3.5 mr-1" />
+                                Reassign
+                              </Button>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -636,6 +705,80 @@ function TicketOverviewSection() {
         open={selectedTicketId !== null}
         onClose={() => setSelectedTicketId(null)}
       />
+
+      <Dialog open={reassignTicket !== null} onOpenChange={(open) => { if (!open) { setReassignTicket(null); setReassignTarget(""); setReassignNotes(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle data-testid="text-reassign-title">Reassign Ticket</DialogTitle>
+            <DialogDescription>
+              SO# {reassignTicket?.serviceOrder} — {DIVISION_LABELS[reassignTicket?.applianceType] || reassignTicket?.applianceType}
+              {reassignTicket?.assignedAgentName && (
+                <span className="block mt-1">Currently assigned to: <strong>{reassignTicket.assignedAgentName}</strong></span>
+              )}
+              {!reassignTicket?.assignedAgentName && reassignTicket?.ticketStatus === "queued" && (
+                <span className="block mt-1">Currently unassigned (in queue)</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Assign to</Label>
+              <Select value={reassignTarget} onValueChange={setReassignTarget}>
+                <SelectTrigger data-testid="select-reassign-target">
+                  <SelectValue placeholder="Select an option..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {reassignTicket?.ticketStatus === "pending" && (
+                    <SelectItem value="queue" data-testid="option-return-queue">
+                      <span className="flex items-center gap-2">
+                        <Undo2 className="w-3.5 h-3.5" />
+                        Return to Queue (unassign)
+                      </span>
+                    </SelectItem>
+                  )}
+                  {availableAgents.map((agent: any) => (
+                    <SelectItem
+                      key={agent.id}
+                      value={String(agent.id)}
+                      data-testid={`option-agent-${agent.id}`}
+                      disabled={reassignTicket?.assignedTo === agent.id}
+                    >
+                      {agent.name} ({agent.role === "vrs_agent" ? "Agent" : agent.role === "admin" ? "Admin" : "Super Admin"})
+                      {reassignTicket?.assignedTo === agent.id ? " (current)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={reassignNotes}
+                onChange={(e) => setReassignNotes(e.target.value)}
+                placeholder="Reason for reassignment..."
+                data-testid="input-reassign-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReassignTicket(null); setReassignTarget(""); setReassignNotes(""); }} data-testid="button-cancel-reassign">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleReassignSubmit}
+              disabled={!reassignTarget || reassignMutation.isPending}
+              data-testid="button-confirm-reassign"
+            >
+              {reassignMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <ArrowLeftRight className="w-4 h-4 mr-2" />
+              )}
+              {reassignTarget === "queue" ? "Return to Queue" : "Reassign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

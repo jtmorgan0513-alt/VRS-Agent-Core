@@ -1416,21 +1416,35 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Submission not found" });
       }
 
-      if (submission.ticketStatus !== "pending") {
-        return res.status(400).json({ error: "Can only reassign pending tickets" });
+      if (submission.ticketStatus !== "pending" && submission.ticketStatus !== "queued") {
+        return res.status(400).json({ error: "Can only reassign queued or pending tickets" });
       }
 
       if (parsed.data.agentId) {
         const agent = await storage.getUser(parsed.data.agentId);
-        if (!agent || agent.role !== "vrs_agent") {
-          return res.status(400).json({ error: "Invalid agent - must be a VRS agent" });
+        if (!agent || (agent.role !== "vrs_agent" && agent.role !== "admin" && agent.role !== "super_admin")) {
+          return res.status(400).json({ error: "Invalid agent" });
+        }
+        if (!agent.isActive) {
+          return res.status(400).json({ error: "Cannot assign to an inactive user" });
         }
 
         const updated = await storage.updateSubmission(id, {
           assignedTo: parsed.data.agentId,
+          ticketStatus: "pending",
+          statusChangedAt: new Date(),
           reassignmentNotes: parsed.data.notes || null,
           updatedAt: new Date(),
         } as any);
+
+        broadcastToAgent(parsed.data.agentId, {
+          type: "ticket_assigned",
+          payload: {
+            submissionId: updated.id,
+            serviceOrder: updated.serviceOrder,
+            message: `A ticket has been assigned to you by an admin.`,
+          },
+        });
 
         return res.status(200).json({ submission: updated });
       }
@@ -1442,6 +1456,17 @@ export async function registerRoutes(
         reassignmentNotes: parsed.data.notes || null,
         updatedAt: new Date(),
       } as any);
+
+      broadcastToDivisionAgents(updated.applianceType, {
+        type: "ticket_queued",
+        payload: {
+          submissionId: updated.id,
+          serviceOrder: updated.serviceOrder,
+          applianceType: updated.applianceType,
+          applianceLabel: getDivisionLabel(updated.applianceType),
+          warrantyLabel: getWarrantyLabel(updated.warrantyType),
+        },
+      });
 
       return res.status(200).json({ submission: updated });
     } catch (error) {
