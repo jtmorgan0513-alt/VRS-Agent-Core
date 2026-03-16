@@ -92,13 +92,13 @@ export const submissions = pgTable("submissions", {
   technicianLdapId: varchar("technician_ldap_id", { length: 50 }),
   phoneOverride: varchar("phone_override", { length: 20 }),
   ticketStatus: text("ticket_status").notNull().default("queued"), // 'queued', 'pending', 'approved', 'rejected', 'invalid', 'completed'
-  stage1Status: text("stage1_status").notNull().default("pending"), // legacy - kept for migration compatibility
+  stage1Status: text("stage1_status").notNull().default("pending"),
   stage1ReviewedBy: integer("stage1_reviewed_by").references(() => users.id),
   stage1ReviewedAt: timestamp("stage1_reviewed_at"),
   stage1RejectionReason: text("stage1_rejection_reason"),
   invalidReason: varchar("invalid_reason", { length: 255 }),
   invalidInstructions: text("invalid_instructions"),
-  stage2Status: text("stage2_status").notNull().default("pending"), // legacy - kept for migration compatibility
+  stage2Status: text("stage2_status").notNull().default("pending"),
   stage2ReviewedBy: integer("stage2_reviewed_by").references(() => users.id),
   stage2ReviewedAt: timestamp("stage2_reviewed_at"),
   stage2Outcome: text("stage2_outcome"),

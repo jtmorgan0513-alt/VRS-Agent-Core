@@ -17,7 +17,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1ApprovedMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildStage2DeclinedMessage, buildRejectAndCloseMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildRejectAndCloseMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -907,6 +907,8 @@ export async function registerRoutes(
         updateData.submissionApproved = true;
         updateData.submissionApprovedAt = new Date();
         updateData.stage1Status = "approved";
+        updateData.stage1ReviewedBy = authReq.user!.id;
+        updateData.stage1ReviewedAt = new Date();
 
         smsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
         smsType = "submission_approved";
@@ -947,8 +949,12 @@ export async function registerRoutes(
         updateData.authCode = authCode || null;
         updateData.rgcCode = rgcCode;
         updateData.stage1Status = "approved";
+        updateData.stage1ReviewedBy = authReq.user!.id;
+        updateData.stage1ReviewedAt = new Date();
         updateData.stage2Status = "approved";
         updateData.stage2Outcome = "approved";
+        updateData.stage2ReviewedBy = authReq.user!.id;
+        updateData.stage2ReviewedAt = new Date();
 
         const authDisplay = authCode || rgcCode || "";
         smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode);
@@ -959,6 +965,8 @@ export async function registerRoutes(
         updateData.statusChangedAt = new Date();
         updateData.assignedTo = null;
         updateData.stage1Status = "rejected";
+        updateData.stage1ReviewedBy = authReq.user!.id;
+        updateData.stage1ReviewedAt = new Date();
         updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
         updateData.rejectedMedia = rejectedMedia ? JSON.stringify(rejectedMedia) : null;
         updateData.technicianMessage = technicianMessage || null;
@@ -995,6 +1003,8 @@ export async function registerRoutes(
         updateData.statusChangedAt = new Date();
         updateData.assignedTo = null;
         updateData.stage1Status = "rejected";
+        updateData.stage1ReviewedBy = authReq.user!.id;
+        updateData.stage1ReviewedAt = new Date();
         updateData.stage2Status = "not_applicable";
         updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
         updateData.technicianMessage = technicianMessage || null;
@@ -1011,6 +1021,8 @@ export async function registerRoutes(
         updateData.ticketStatus = "invalid";
         updateData.statusChangedAt = new Date();
         updateData.stage1Status = "invalid";
+        updateData.stage1ReviewedBy = authReq.user!.id;
+        updateData.stage1ReviewedAt = new Date();
         updateData.stage2Status = "not_applicable";
         updateData.invalidReason = invalidReason;
         updateData.invalidInstructions = invalidInstructions || null;
@@ -1049,115 +1061,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Process ticket error:", error);
       return res.status(500).json({ error: "Failed to process ticket" });
-    }
-  });
-
-  // ========================================================================
-  // LEGACY STAGE 1 REVIEW ROUTE (kept for backward compatibility)
-  // ========================================================================
-
-  const stage1ActionSchema = z.object({
-    action: z.enum(["approve", "reject", "invalid"]),
-    rejectionReason: z.string().optional(),
-    invalidReason: z.string().optional(),
-    invalidInstructions: z.string().optional(),
-  });
-
-  app.patch("/api/submissions/:id/stage1", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
-    try {
-      const authReq = req as AuthenticatedRequest;
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: "Invalid submission ID" });
-      }
-
-      const parsed = stage1ActionSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.errors[0].message });
-      }
-
-      const submission = await storage.getSubmission(id);
-      if (!submission) {
-        return res.status(404).json({ error: "Submission not found" });
-      }
-
-      if (authReq.user!.role === "vrs_agent") {
-        const specs = await storage.getSpecializations(authReq.user!.id);
-        const divisions = specs.map(s => s.division);
-        
-        const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
-        if (!isGeneralist && !divisions.includes(submission.applianceType)) {
-          return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
-        }
-      }
-
-      if (submission.stage1Status !== "pending") {
-        return res.status(400).json({ error: "Submission already reviewed" });
-      }
-
-      const { action, rejectionReason, invalidReason, invalidInstructions } = parsed.data;
-
-      if (action === "reject" && !rejectionReason) {
-        return res.status(400).json({ error: "Rejection reason is required" });
-      }
-
-      if (action === "invalid" && !invalidReason) {
-        return res.status(400).json({ error: "Invalid reason is required" });
-      }
-
-      let statusValue: string;
-      if (action === "approve") statusValue = "approved";
-      else if (action === "reject") statusValue = "rejected";
-      else statusValue = "invalid";
-
-      const updateData: Record<string, unknown> = {
-        stage1Status: statusValue,
-        stage1ReviewedBy: authReq.user!.id,
-        stage1ReviewedAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      if (action === "approve") {
-        updateData.assignedTo = authReq.user!.id;
-      }
-
-      if (action === "reject") {
-        updateData.stage1RejectionReason = rejectionReason;
-      }
-
-      if (action === "invalid") {
-        updateData.invalidReason = invalidReason;
-        updateData.invalidInstructions = invalidInstructions || null;
-        updateData.stage2Status = "not_applicable";
-      }
-
-      const updated = await storage.updateSubmission(id, updateData as any);
-
-      let smsMessage: string;
-      let smsType: string;
-      if (action === "approve") {
-        smsMessage = buildStage1ApprovedMessage(submission.serviceOrder);
-        smsType = "stage1_approved";
-      } else if (action === "invalid") {
-        smsMessage = buildStage1InvalidMessage(submission.serviceOrder, invalidReason || "", invalidInstructions);
-        smsType = "stage1_invalid";
-      } else {
-        const host = req.get("host") || "";
-        const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
-        const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
-        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, rejectionReason || "", resubmitLink);
-        smsType = "stage1_rejected";
-      }
-      await sendSms(submission.id, submission.phone, smsType, smsMessage);
-
-      if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
-        await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
-      }
-
-      return res.status(200).json({ submission: updated });
-    } catch (error) {
-      console.error("Stage 1 review error:", error);
-      return res.status(500).json({ error: "Failed to process review" });
     }
   });
 
@@ -1287,17 +1190,6 @@ export async function registerRoutes(
       console.error("Agent status list error:", error);
       return res.status(500).json({ error: "Failed to get agent status" });
     }
-  });
-
-  // ========================================================================
-  // STAGE 2 REVIEW ROUTES
-  // ========================================================================
-
-  const stage2ActionSchema = z.object({
-    action: z.enum(["approve", "decline"]).default("approve"),
-    authCode: z.string().optional(),
-    declineReason: z.string().optional(),
-    declineInstructions: z.string().optional(),
   });
 
   app.delete("/api/submissions/:id", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -1474,104 +1366,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Correct division error:", error);
       return res.status(500).json({ error: "Failed to correct division" });
-    }
-  });
-
-  app.patch("/api/submissions/:id/stage2", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
-    try {
-      const authReq = req as AuthenticatedRequest;
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) {
-        return res.status(400).json({ error: "Invalid submission ID" });
-      }
-
-      const parsed = stage2ActionSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.errors[0].message });
-      }
-
-      const submission = await storage.getSubmission(id);
-      if (!submission) {
-        return res.status(404).json({ error: "Submission not found" });
-      }
-
-      if (submission.assignedTo !== authReq.user!.id && authReq.user!.role !== "admin" && authReq.user!.role !== "super_admin") {
-        return res.status(403).json({ error: "Not assigned to you" });
-      }
-
-      if (submission.stage1Status !== "approved") {
-        return res.status(400).json({ error: "Submission not approved at Stage 1" });
-      }
-
-      if (submission.stage2Status !== "pending") {
-        return res.status(400).json({ error: "Stage 2 already processed" });
-      }
-
-      const { action, declineReason, declineInstructions } = parsed.data;
-      let { authCode } = parsed.data;
-
-      if (action === "decline") {
-        if (!declineReason || !declineReason.trim()) {
-          return res.status(400).json({ error: "Decline reason is required" });
-        }
-
-        const updated = await storage.updateSubmission(id, {
-          stage2Status: "declined",
-          stage2Outcome: "declined",
-          declineReason: declineReason.trim(),
-          declineInstructions: declineInstructions?.trim() || null,
-          stage2ReviewedBy: authReq.user!.id,
-          stage2ReviewedAt: new Date(),
-          updatedAt: new Date(),
-        } as any);
-
-        const smsMessage = buildStage2DeclinedMessage(submission.serviceOrder, declineReason.trim(), declineInstructions?.trim());
-        await sendSms(submission.id, submission.phone, "stage2_declined", smsMessage);
-
-        if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
-          await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
-        }
-
-        return res.status(200).json({ submission: updated });
-      }
-
-      const todayStr = new Date().toISOString().slice(0, 10);
-      let rgcCode: string | null = null;
-
-      if (submission.warrantyType === "sears_protect") {
-        const todayRgcCode = await storage.getDailyRgcCode(todayStr);
-        if (!todayRgcCode) {
-          return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
-        }
-        rgcCode = todayRgcCode.code;
-        authCode = rgcCode;
-      } else {
-        if (!authCode || !authCode.trim()) {
-          return res.status(400).json({ error: "Authorization code is required" });
-        }
-      }
-
-      const updated = await storage.updateSubmission(id, {
-        authCode,
-        rgcCode,
-        stage2Status: "approved",
-        stage2Outcome: "approved",
-        stage2ReviewedBy: authReq.user!.id,
-        stage2ReviewedAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
-
-      const smsMessage = buildAuthCodeMessage(submission.serviceOrder, authCode!, rgcCode);
-      await sendSms(submission.id, submission.phone, "auth_code_sent", smsMessage);
-
-      if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus === "working") {
-        await storage.updateUser(authReq.user!.id, { agentStatus: "online" } as any);
-      }
-
-      return res.status(200).json({ submission: updated });
-    } catch (error) {
-      console.error("Stage 2 review error:", error);
-      return res.status(500).json({ error: "Failed to process Stage 2 review" });
     }
   });
 
