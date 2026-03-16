@@ -482,7 +482,7 @@ function TicketOverviewSection() {
           ? `Assigned to ${availableAgents.find((a: any) => a.id === variables.agentId)?.name || "agent"}.`
           : "Ticket is now available for any agent to claim.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       setReassignTicket(null);
       setReassignTarget("");
       setReassignNotes("");

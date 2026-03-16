@@ -261,12 +261,12 @@ export default function AgentDashboard() {
         description: `SO #${payload.serviceOrder}`,
         duration: 8000,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
     const unsub2 = subscribe("ticket_claimed", () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
@@ -277,7 +277,7 @@ export default function AgentDashboard() {
         description: `${payload.applianceLabel} - ${payload.warrantyLabel} (SO #${payload.serviceOrder})`,
         duration: 8000,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
@@ -288,6 +288,8 @@ export default function AgentDashboard() {
         description: `SO #${payload.serviceOrder} waiting in queue`,
         duration: 8000,
       });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
     const unsub5 = subscribe("resubmission_received", (payload: any) => {
@@ -297,7 +299,7 @@ export default function AgentDashboard() {
         description: `SO #${payload.serviceOrder} — ${payload.applianceLabel} (${payload.warrantyLabel}). A technician resubmitted a ticket you previously reviewed.`,
         duration: 10000,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
@@ -369,10 +371,14 @@ export default function AgentDashboard() {
 
   const { data: submissionsData, isLoading } = useQuery<{ submissions: SubmissionWithTech[] }>({
     queryKey: [submissionsUrl],
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 
   const { data: statsData } = useQuery<{ queueCount: number; pendingCount: number; completedToday: number }>({
     queryKey: ["/api/agent/stats"],
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 
   const { data: rgcStatus } = useQuery<{

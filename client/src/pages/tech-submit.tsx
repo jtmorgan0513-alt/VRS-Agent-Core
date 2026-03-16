@@ -396,7 +396,7 @@ export default function TechSubmitPage() {
       return await res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       toast({ title: "Submission Created", description: `Service Order #${data.submission.serviceOrder} submitted successfully.` });
       setLocation(`/tech/submissions/${data.submission.id}`);
     },
