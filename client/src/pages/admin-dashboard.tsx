@@ -477,7 +477,7 @@ function TicketOverviewSection() {
     },
     onSuccess: (_data: any, variables: { id: number; agentId?: number }) => {
       toast({
-        title: variables.agentId ? "Ticket Reassigned" : "Ticket Returned to Queue",
+        title: variables.agentId ? "Ticket Reassigned" : "Ticket Reassigned to Queue",
         description: variables.agentId
           ? `Assigned to ${availableAgents.find((a: any) => a.id === variables.agentId)?.name || "agent"}.`
           : "Ticket is now available for any agent to claim.",
@@ -732,7 +732,7 @@ function TicketOverviewSection() {
                     <SelectItem value="queue" data-testid="option-return-queue">
                       <span className="flex items-center gap-2">
                         <Undo2 className="w-3.5 h-3.5" />
-                        Return to Queue (unassign)
+                        Reassign to Queue (unassign)
                       </span>
                     </SelectItem>
                   )}
@@ -774,7 +774,7 @@ function TicketOverviewSection() {
               ) : (
                 <ArrowLeftRight className="w-4 h-4 mr-2" />
               )}
-              {reassignTarget === "queue" ? "Return to Queue" : "Reassign"}
+              {reassignTarget === "queue" ? "Reassign to Queue" : "Reassign"}
             </Button>
           </DialogFooter>
         </DialogContent>
