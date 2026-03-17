@@ -547,6 +547,9 @@ export async function registerRoutes(
             const agentUser = await storage.getUser(originalAgent);
             if (!agentUser || agentUser.role === "technician" || !agentUser.isActive) {
               originalAgent = null;
+            } else if (agentUser.agentStatus === "offline") {
+              console.log(`[resubmission] Original agent ${agentUser.ldapId} (id=${originalAgent}) is offline — routing to queue instead`);
+              originalAgent = null;
             }
           }
         }
