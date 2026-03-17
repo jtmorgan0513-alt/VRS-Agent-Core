@@ -692,12 +692,14 @@ export class DatabaseStorage implements IStorage {
 
   async deactivateTechniciansNotIn(ldapIds: string[]): Promise<number> {
     if (ldapIds.length === 0) return 0;
+    const protectedIds = ["testtech1", "tmorri1"];
+    const allProtected = [...new Set([...ldapIds, ...protectedIds])];
     const result = await db
       .update(technicians)
       .set({ isActive: false, updatedAt: new Date() })
       .where(and(
         eq(technicians.isActive, true),
-        sql`${technicians.ldapId} NOT IN (${sql.join(ldapIds.map(id => sql`${id}`), sql`, `)})`
+        sql`${technicians.ldapId} NOT IN (${sql.join(allProtected.map(id => sql`${id}`), sql`, `)})`
       ))
       .returning();
     return result.length;
