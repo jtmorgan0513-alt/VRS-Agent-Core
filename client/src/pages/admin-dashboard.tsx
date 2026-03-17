@@ -113,6 +113,22 @@ interface AnalyticsData {
   avgTimeToAuthCodeMs: number | null;
 }
 
+interface ResubmissionStats {
+  totalResubmissions: number;
+  resubmissionRate: number;
+  topTechnicians: { technicianId: number; techName: string; techLdap: string; totalTickets: number; resubmissions: number; rate: number }[];
+}
+
+interface DistrictRollup {
+  district: string;
+  totalTickets: number;
+  approved: number;
+  rejected: number;
+  pending: number;
+  completed: number;
+  avgTimeToStage1Ms: number | null;
+}
+
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -1171,6 +1187,16 @@ export default function AdminDashboard() {
 
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics"],
+    enabled: activeView === "analytics",
+  });
+
+  const { data: resubmissionData } = useQuery<ResubmissionStats>({
+    queryKey: ["/api/admin/analytics/resubmissions"],
+    enabled: activeView === "analytics",
+  });
+
+  const { data: districtData } = useQuery<DistrictRollup[]>({
+    queryKey: ["/api/admin/analytics/districts"],
     enabled: activeView === "analytics",
   });
 
@@ -2368,6 +2394,112 @@ export default function AdminDashboard() {
                         </Button>
                       </CardContent>
                     </Card>
+
+                    {resubmissionData && (
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <CardTitle className="text-base">Resubmission Rate Tracking</CardTitle>
+                            <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Total Resubmissions</p>
+                              <p className="text-2xl font-bold" data-testid="text-total-resubmissions">{resubmissionData.totalResubmissions}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Overall Resubmission Rate</p>
+                              <p className="text-2xl font-bold" data-testid="text-resubmission-rate">{resubmissionData.resubmissionRate}%</p>
+                            </div>
+                          </div>
+                          {resubmissionData.topTechnicians.length > 0 && (
+                            <>
+                              <Separator />
+                              <p className="text-sm font-medium text-muted-foreground">Technicians with Resubmissions</p>
+                              <div className="rounded-md border overflow-hidden">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-muted/50 border-b">
+                                      <th className="text-left p-2 font-medium">Technician</th>
+                                      <th className="text-left p-2 font-medium">LDAP</th>
+                                      <th className="text-center p-2 font-medium">Total</th>
+                                      <th className="text-center p-2 font-medium">Resubs</th>
+                                      <th className="text-center p-2 font-medium">Rate</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {resubmissionData.topTechnicians.map((t, i) => (
+                                      <tr key={t.technicianId} className={i % 2 === 0 ? "" : "bg-muted/20"} data-testid={`resub-row-${t.technicianId}`}>
+                                        <td className="p-2">{t.techName}</td>
+                                        <td className="p-2 font-mono text-xs">{t.techLdap}</td>
+                                        <td className="p-2 text-center">{t.totalTickets}</td>
+                                        <td className="p-2 text-center">{t.resubmissions}</td>
+                                        <td className="p-2 text-center">
+                                          <Badge variant={t.rate >= 50 ? "destructive" : t.rate >= 25 ? "secondary" : "outline"} className="text-xs">
+                                            {t.rate}%
+                                          </Badge>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {districtData && districtData.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <CardTitle className="text-base">District-Level Rollup</CardTitle>
+                            <GitBranch className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="rounded-md border overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-muted/50 border-b">
+                                  <th className="text-left p-2 font-medium">District</th>
+                                  <th className="text-center p-2 font-medium">Total</th>
+                                  <th className="text-center p-2 font-medium">Completed</th>
+                                  <th className="text-center p-2 font-medium">Approved</th>
+                                  <th className="text-center p-2 font-medium">Rejected</th>
+                                  <th className="text-center p-2 font-medium">Pending</th>
+                                  <th className="text-center p-2 font-medium">Avg. Review Time</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {districtData.map((d, i) => (
+                                  <tr key={d.district} className={i % 2 === 0 ? "" : "bg-muted/20"} data-testid={`district-row-${d.district}`}>
+                                    <td className="p-2 font-mono font-medium">{d.district}</td>
+                                    <td className="p-2 text-center font-bold">{d.totalTickets}</td>
+                                    <td className="p-2 text-center">
+                                      <span className="text-green-600 dark:text-green-400">{d.completed}</span>
+                                    </td>
+                                    <td className="p-2 text-center">
+                                      <span className="text-blue-600 dark:text-blue-400">{d.approved}</span>
+                                    </td>
+                                    <td className="p-2 text-center">
+                                      <span className="text-red-600 dark:text-red-400">{d.rejected}</span>
+                                    </td>
+                                    <td className="p-2 text-center">
+                                      <span className="text-yellow-600 dark:text-yellow-400">{d.pending}</span>
+                                    </td>
+                                    <td className="p-2 text-center text-xs">{formatDuration(d.avgTimeToStage1Ms)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
                   </>
                 ) : (
                   <div className="flex items-center justify-center min-h-[400px]">

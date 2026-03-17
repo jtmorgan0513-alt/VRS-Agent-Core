@@ -132,6 +132,22 @@ export interface IStorage {
     avgTimeToStage1Ms: number | null;
     avgTimeToAuthCodeMs: number | null;
   }>;
+
+  getResubmissionStats(): Promise<{
+    totalResubmissions: number;
+    resubmissionRate: number;
+    topTechnicians: { technicianId: number; techName: string; techLdap: string; totalTickets: number; resubmissions: number; rate: number }[];
+  }>;
+
+  getDistrictRollup(): Promise<{
+    district: string;
+    totalTickets: number;
+    approved: number;
+    rejected: number;
+    pending: number;
+    completed: number;
+    avgTimeToStage1Ms: number | null;
+  }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -791,6 +807,86 @@ export class DatabaseStorage implements IStorage {
       avgTimeToStage1Ms: row.avgTimeToStage1Ms !== null ? Number(row.avgTimeToStage1Ms) : null,
       avgTimeToAuthCodeMs: row.avgTimeToAuthCodeMs !== null ? Number(row.avgTimeToAuthCodeMs) : null,
     };
+  }
+
+  async getResubmissionStats(): Promise<{
+    totalResubmissions: number;
+    resubmissionRate: number;
+    topTechnicians: { technicianId: number; techName: string; techLdap: string; totalTickets: number; resubmissions: number; rate: number }[];
+  }> {
+    const totalsResult = await db
+      .select({
+        total: sql<number>`count(*)`,
+        resubmissions: sql<number>`count(*) filter (where ${submissions.resubmissionOf} is not null)`,
+      })
+      .from(submissions);
+
+    const total = Number(totalsResult[0].total) || 0;
+    const totalResubs = Number(totalsResult[0].resubmissions) || 0;
+
+    const techRows = await db.execute(sql`
+      select
+        s.technician_id as "technicianId",
+        max(u.name) as "techName",
+        max(coalesce(s.technician_ldap_id, u.rac_id, '')) as "techLdap",
+        count(*) as "totalTickets",
+        count(*) filter (where s.resubmission_of is not null) as "resubmissions"
+      from submissions s
+      left join users u on u.id = s.technician_id
+      group by s.technician_id
+      having count(*) filter (where s.resubmission_of is not null) > 0
+      order by count(*) filter (where s.resubmission_of is not null) desc
+      limit 20
+    `);
+
+    const topTechnicians = (techRows.rows as any[]).map(r => ({
+      technicianId: Number(r.technicianId),
+      techName: r.techName || "Unknown",
+      techLdap: r.techLdap || "",
+      totalTickets: Number(r.totalTickets),
+      resubmissions: Number(r.resubmissions),
+      rate: Number(r.totalTickets) > 0 ? Math.round((Number(r.resubmissions) / Number(r.totalTickets)) * 100) : 0,
+    }));
+
+    return {
+      totalResubmissions: totalResubs,
+      resubmissionRate: total > 0 ? Math.round((totalResubs / total) * 100) : 0,
+      topTechnicians,
+    };
+  }
+
+  async getDistrictRollup(): Promise<{
+    district: string;
+    totalTickets: number;
+    approved: number;
+    rejected: number;
+    pending: number;
+    completed: number;
+    avgTimeToStage1Ms: number | null;
+  }[]> {
+    const rows = await db.execute(sql`
+      select
+        coalesce(district_code, 'Unknown') as "district",
+        count(*) as "totalTickets",
+        count(*) filter (where stage1_status = 'approved') as "approved",
+        count(*) filter (where stage1_status = 'rejected') as "rejected",
+        count(*) filter (where stage1_status = 'pending') as "pending",
+        count(*) filter (where ticket_status in ('completed', 'approved')) as "completed",
+        avg(extract(epoch from (stage1_reviewed_at - created_at)) * 1000) filter (where stage1_reviewed_at is not null) as "avgTimeToStage1Ms"
+      from submissions
+      group by district_code
+      order by count(*) desc
+    `);
+
+    return (rows.rows as any[]).map(r => ({
+      district: r.district || "Unknown",
+      totalTickets: Number(r.totalTickets) || 0,
+      approved: Number(r.approved) || 0,
+      rejected: Number(r.rejected) || 0,
+      pending: Number(r.pending) || 0,
+      completed: Number(r.completed) || 0,
+      avgTimeToStage1Ms: r.avgTimeToStage1Ms !== null ? Number(r.avgTimeToStage1Ms) : null,
+    }));
   }
 
   async createFeedback(data: InsertFeedback): Promise<Feedback> {

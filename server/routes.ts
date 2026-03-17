@@ -1965,6 +1965,26 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/analytics/resubmissions", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const stats = await storage.getResubmissionStats();
+      return res.status(200).json(stats);
+    } catch (error) {
+      console.error("Resubmission stats error:", error);
+      return res.status(500).json({ error: "Failed to get resubmission stats" });
+    }
+  });
+
+  app.get("/api/admin/analytics/districts", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const rollup = await storage.getDistrictRollup();
+      return res.status(200).json(rollup);
+    } catch (error) {
+      console.error("District rollup error:", error);
+      return res.status(500).json({ error: "Failed to get district rollup" });
+    }
+  });
+
   // ========================================================================
   // CSV EXPORT ROUTE (Admin)
   // ========================================================================

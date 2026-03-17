@@ -17,7 +17,7 @@ Key architectural patterns include:
 - **Role-Based Access Control (RBAC):** Users (technicians, VRS agents, admins, super_admins) have distinct roles with varying access permissions.
 - **Two-Stage Submission Review:** Authorization requests, particularly for AHS/First American warranties, undergo a two-stage review process to manage initial approval and subsequent authorization code entry.
 - **Real-time Communication:** A WebSocket server (ws library) facilitates live push notifications for critical events like new tickets, claimed tickets, and agent status changes, ensuring immediate updates across the platform.
-- **Resubmission Auto-Assignment:** When a technician resubmits a rejected ticket, it auto-assigns back to the original reviewing agent (pending status, bypasses queue). Only the resubmission goes back — previous attempts stay as-is. If the original agent is inactive, it falls back to the normal queue. Includes ownership validation (tech can only resubmit their own tickets) and a blue "Resubmission" badge in the agent's ticket list.
+- **Resubmission Auto-Assignment:** When a technician resubmits a rejected ticket, it auto-assigns back to the original reviewing agent (pending status, bypasses queue) if the agent is online or working. If the agent is offline, the resubmission routes to the general queue to avoid delays. Only the resubmission goes back — previous attempts stay as-is. Includes ownership validation (tech can only resubmit their own tickets) and a blue "Resubmission" badge in the agent's ticket list.
 - **Unified Ticket Workflow:** Submissions progress through defined `ticketStatus` states (queued, pending, completed, rejected, invalid) managed by agents.
 - **Division Auto-Assignment:** Admins and super_admins automatically access all divisions, while VRS agents can select their specializations, influencing ticket routing.
 - **Division Correction:** Agents can correct the appliance type mid-review, with intelligent handling of ticket ownership based on their assigned divisions.
@@ -27,7 +27,7 @@ Key architectural patterns include:
 **Frontend Pages:**
 - **Technician:** Login, Home, Submission Form, History, Submission Detail, Help Center.
 - **VRS Agent:** Login, Dashboard (unified Queue, My Tickets, Completed views), supporting claim-to-process workflow, division correction.
-- **Admin:** Login, Dashboard (user management, division assignments, analytics, real-time agent status, ticket overview with FIFO queue, clickable audit trail per ticket, technician feedback management).
+- **Admin:** Login, Dashboard (user management, division assignments, analytics with resubmission rate tracking and district-level rollup, real-time agent status, ticket overview with FIFO queue, clickable audit trail per ticket, technician feedback management).
 - **Technician Feedback:** Technicians can submit feedback (issue, improvement, general) with priority and optional attachments from /tech/feedback. Admins manage feedback from the "Technician Feedback" view in the admin dashboard with status tracking (new, in_progress, resolved, dismissed) and admin notes.
 
 ## External Dependencies
