@@ -600,6 +600,11 @@ export async function registerRoutes(
             message: "A technician has resubmitted a ticket you previously reviewed.",
           },
         });
+
+        const resubmitClaimMsg = `VRS Update for SO#${submission.serviceOrder}: Your resubmission has been received and has been assigned to the same VRS agent for review. Please stand by — you will receive a follow-up text with the result shortly.`;
+        sendSms(submission.id, submission.phone, "ticket_claimed", resubmitClaimMsg).catch(err => {
+          console.error("Failed to send resubmission claim SMS:", err);
+        });
       } else {
         broadcastToDivisionAgents(parsed.data.applianceType, {
           type: "new_ticket",
