@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useWebSocket, playNotificationDing, disconnectWs } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -262,13 +262,16 @@ export default function AgentDashboard() {
   const { subscribe } = useWebSocket(user?.role);
 
   useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  useEffect(() => {
     const unsub1 = subscribe("new_ticket", (payload: any) => {
       playNotificationDing();
-      toast({
-        title: `New ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`,
-        description: `SO #${payload.serviceOrder}`,
-        duration: 8000,
-      });
+      const title = `New ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`;
+      const desc = `SO #${payload.serviceOrder}`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
@@ -280,33 +283,40 @@ export default function AgentDashboard() {
 
     const unsub3 = subscribe("ticket_queued", (payload: any) => {
       playNotificationDing();
-      toast({
-        title: `Ticket returned to queue`,
-        description: `${payload.applianceLabel} - ${payload.warrantyLabel} (SO #${payload.serviceOrder})`,
-        duration: 8000,
-      });
+      const title = `Ticket returned to queue`;
+      const desc = `${payload.applianceLabel} - ${payload.warrantyLabel} (SO #${payload.serviceOrder})`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
     const unsub4 = subscribe("pending_tickets", (payload: any) => {
       playNotificationDing();
-      toast({
-        title: `Queued ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`,
-        description: `SO #${payload.serviceOrder} waiting in queue`,
-        duration: 8000,
-      });
+      const title = `Queued ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`;
+      const desc = `SO #${payload.serviceOrder} waiting in queue`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
     const unsub5 = subscribe("resubmission_received", (payload: any) => {
       playNotificationDing();
-      toast({
-        title: `Resubmission assigned to you`,
-        description: `SO #${payload.serviceOrder} — ${payload.applianceLabel} (${payload.warrantyLabel}). A technician resubmitted a ticket you previously reviewed.`,
-        duration: 10000,
-      });
+      const title = `Resubmission assigned to you`;
+      const desc = `SO #${payload.serviceOrder} — ${payload.applianceLabel} (${payload.warrantyLabel}). A technician resubmitted a ticket you previously reviewed.`;
+      toast({ title, description: desc, duration: 10000 });
+      showBrowserNotification(title, desc);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    });
+
+    const unsub6 = subscribe("ticket_assigned", (payload: any) => {
+      playNotificationDing();
+      const title = `Ticket assigned to you`;
+      const desc = payload.message || `SO #${payload.serviceOrder} has been assigned to you by an admin.`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
@@ -317,6 +327,7 @@ export default function AgentDashboard() {
       unsub3();
       unsub4();
       unsub5();
+      unsub6();
     };
   }, [subscribe, toast]);
 
