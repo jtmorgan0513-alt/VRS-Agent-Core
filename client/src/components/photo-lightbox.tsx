@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { X, ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, Download } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { downloadPhotoUrl } from "@/lib/utils";
 
 interface PhotoLightboxProps {
   photos: string[];
@@ -35,6 +36,12 @@ export default function PhotoLightbox({ photos, initialIndex, open, onClose }: P
     setZoom(100);
     setPan({ x: 0, y: 0 });
   }, []);
+
+  const downloadPhoto = useCallback(() => {
+    const url = photos[currentIndex];
+    if (!url) return;
+    downloadPhotoUrl(url, `photo-${currentIndex + 1}`);
+  }, [photos, currentIndex]);
 
   const goNext = useCallback(() => {
     if (currentIndex < photos.length - 1) {
@@ -203,6 +210,15 @@ export default function PhotoLightbox({ photos, initialIndex, open, onClose }: P
             data-testid="button-zoom-reset"
           >
             <RotateCcw className="w-4 h-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-white"
+            onClick={downloadPhoto}
+            data-testid="button-download-photo"
+          >
+            <Download className="w-4 h-4" />
           </Button>
         </div>
         <div className="flex items-center gap-2">

@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { downloadPhotoUrl } from "@/lib/utils";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
@@ -83,6 +84,7 @@ import {
   Ban,
   ScrollText,
   XCircle,
+  Download,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -1388,9 +1390,21 @@ export default function AgentDashboard() {
                                             </div>
                                           )}
                                           {selectedAction !== "reject" && (
-                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                              <ZoomIn className="w-6 h-6 text-white" />
-                                            </div>
+                                            <>
+                                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <ZoomIn className="w-6 h-6 text-white" />
+                                              </div>
+                                              <button
+                                                className="absolute top-1 right-1 bg-black/60 rounded-md p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 z-10"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  downloadPhotoUrl(url, `photo-${offset + i + 1}`);
+                                                }}
+                                                data-testid={`${testIdPrefix}-download-${i}`}
+                                              >
+                                                <Download className="w-3.5 h-3.5" />
+                                              </button>
+                                            </>
                                           )}
                                         </div>
                                         {rejected && (
