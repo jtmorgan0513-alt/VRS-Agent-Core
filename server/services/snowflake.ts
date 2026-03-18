@@ -1,4 +1,15 @@
-import snowflake from "snowflake-sdk";
+let snowflake: any = null;
+
+function getSnowflakeSDK() {
+  if (!snowflake) {
+    try {
+      snowflake = require("snowflake-sdk");
+    } catch (e) {
+      throw new Error("snowflake-sdk is not available in this environment");
+    }
+  }
+  return snowflake;
+}
 
 interface SnowflakeTechRow {
   TECH_ID: string;
@@ -86,7 +97,7 @@ function normalizePrivateKey(key: string): string {
   return normalized;
 }
 
-function getConnection(): Promise<snowflake.Connection> {
+function getConnection(): Promise<any> {
   return new Promise((resolve, reject) => {
     const rawKey = process.env.SNOWFLAKE_PRIVATE_KEY;
     if (!rawKey) {
@@ -94,9 +105,10 @@ function getConnection(): Promise<snowflake.Connection> {
       return;
     }
 
+    const sdk = getSnowflakeSDK();
     const privateKey = normalizePrivateKey(rawKey);
 
-    const connection = snowflake.createConnection({
+    const connection = sdk.createConnection({
       account: process.env.SNOWFLAKE_ACCOUNT!,
       username: process.env.SNOWFLAKE_USERNAME!,
       authenticator: "SNOWFLAKE_JWT",
@@ -117,7 +129,7 @@ function getConnection(): Promise<snowflake.Connection> {
   });
 }
 
-function executeQuery(connection: snowflake.Connection, query: string): Promise<SnowflakeTechRow[]> {
+function executeQuery(connection: any, query: string): Promise<SnowflakeTechRow[]> {
   return new Promise((resolve, reject) => {
     connection.execute({
       sqlText: query,
