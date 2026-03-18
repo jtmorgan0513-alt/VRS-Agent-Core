@@ -167,21 +167,26 @@ export default function TechSubmitPage() {
     }
   }
 
+  function isVideoFile(file: File): boolean {
+    if (file.type.startsWith("video/")) return true;
+    const name = file.name.toLowerCase();
+    return /\.(mp4|mov|m4v|webm|mkv|avi|3gp|3gpp|wmv|flv|ts|mts)$/.test(name);
+  }
+
   function handleVideoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setVideoError(null);
 
-    if (file.size > 50 * 1024 * 1024) {
-      setVideoError("Video file exceeds 50MB limit");
+    if (!isVideoFile(file)) {
+      setVideoError("Please select a video file");
       if (videoInputRef.current) videoInputRef.current.value = "";
       return;
     }
 
-    const isMov = /\.(mov)$/i.test(file.name) || file.type === "video/quicktime";
-
-    if (isMov) {
-      uploadVideo(file);
+    if (file.size > 50 * 1024 * 1024) {
+      setVideoError("Video file exceeds 50MB limit");
+      if (videoInputRef.current) videoInputRef.current.value = "";
       return;
     }
 
@@ -208,8 +213,12 @@ export default function TechSubmitPage() {
     try {
       const res = await apiRequest("POST", "/api/uploads/convert-video", { objectPath });
       const data = await res.json();
+      if (data.converted === false) {
+        toast({ title: "Video Format Notice", description: "Video could not be converted to MP4. It may not play on all devices.", variant: "destructive" });
+      }
       return data.objectPath;
     } catch {
+      toast({ title: "Video Format Notice", description: "Video conversion failed. The original file will be used.", variant: "destructive" });
       return objectPath;
     } finally {
       setIsConverting(false);
@@ -217,8 +226,10 @@ export default function TechSubmitPage() {
   }
 
   function needsConversion(file: File): boolean {
+    if (file.type === "video/mp4") return false;
     const name = file.name.toLowerCase();
-    return name.endsWith(".mov") || file.type === "video/quicktime" || file.type === "video/x-m4v";
+    if (name.endsWith(".mp4")) return false;
+    return true;
   }
 
   async function uploadVideo(file: File) {
@@ -339,6 +350,27 @@ export default function TechSubmitPage() {
     }
   }
 
+  function audioNeedsConversion(file: File): boolean {
+    const name = file.name.toLowerCase();
+    const webFriendly = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/aac", "audio/wav", "audio/webm", "audio/ogg"];
+    if (webFriendly.some(t => file.type === t)) return false;
+    if (/\.(mp3|m4a|aac|wav|webm|ogg|mp4)$/.test(name)) return false;
+    return true;
+  }
+
+  async function convertAudio(objectPath: string): Promise<string> {
+    try {
+      const res = await apiRequest("POST", "/api/uploads/convert-audio", { objectPath });
+      const data = await res.json();
+      if (data.converted === false) {
+        toast({ title: "Audio Format Notice", description: "Audio could not be converted. It may not play on all devices.", variant: "destructive" });
+      }
+      return data.objectPath;
+    } catch {
+      return objectPath;
+    }
+  }
+
   async function uploadAudioFile(file: File) {
     if (file.size > 10 * 1024 * 1024) {
       toast({ title: "File Too Large", description: "Audio file must be under 10MB.", variant: "destructive" });
@@ -346,18 +378,29 @@ export default function TechSubmitPage() {
     }
     setAudioUploading(true);
     const url = await uploadSinglePhoto(file);
-    setAudioUploading(false);
     if (url) {
-      setVoiceNoteUrl(url);
+      if (audioNeedsConversion(file)) {
+        const converted = await convertAudio(url);
+        setVoiceNoteUrl(converted);
+      } else {
+        setVoiceNoteUrl(url);
+      }
     } else {
       toast({ title: "Upload Failed", description: "Failed to upload audio file.", variant: "destructive" });
     }
+    setAudioUploading(false);
+  }
+
+  function isAudioFile(file: File): boolean {
+    if (file.type.startsWith("audio/")) return true;
+    const name = file.name.toLowerCase();
+    return /\.(mp3|m4a|aac|wav|webm|ogg|wma|amr|3gp|caf|flac|opus)$/.test(name);
   }
 
   function handleAudioFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("audio/")) {
+    if (!isAudioFile(file)) {
       toast({ title: "Invalid File", description: "Please select an audio file.", variant: "destructive" });
       if (audioFileInputRef.current) audioFileInputRef.current.value = "";
       return;
@@ -866,7 +909,7 @@ export default function TechSubmitPage() {
                 <input
                   ref={videoInputRef}
                   type="file"
-                  accept="video/mp4,video/quicktime,video/webm"
+                  accept="video/*"
                   className="hidden"
                   onChange={handleVideoSelect}
                   data-testid="input-video-file"

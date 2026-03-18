@@ -205,7 +205,19 @@ export default function TechResubmitPage() {
     setVideoUploading(true);
     const url = await uploadSingleFile(file);
     if (url) {
-      setVideoUrl(url);
+      const name = file.name.toLowerCase();
+      const isMP4 = file.type === "video/mp4" || name.endsWith(".mp4");
+      if (!isMP4) {
+        try {
+          const res = await apiRequest("POST", "/api/uploads/convert-video", { objectPath: url });
+          const data = await res.json();
+          setVideoUrl(data.objectPath);
+        } catch {
+          setVideoUrl(url);
+        }
+      } else {
+        setVideoUrl(url);
+      }
       toast({ title: "Video Uploaded", description: "New video uploaded successfully." });
     } else {
       toast({ title: "Upload Failed", description: "Failed to upload video.", variant: "destructive" });

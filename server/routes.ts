@@ -2339,12 +2339,63 @@ export async function registerRoutes(
   // VIDEO CONVERSION ROUTE
   // ========================================================================
 
-  const convertVideoSchema = z.object({
+  const convertMediaSchema = z.object({
     objectPath: z.string().min(1),
   });
 
+  app.post("/api/uploads/convert-audio", authenticateToken, requireRole("technician"), async (req, res) => {
+    const parsed = convertMediaSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "objectPath is required" });
+    }
+
+    const { objectPath } = parsed.data;
+    const objectStorageService = new ObjectStorageService();
+    const inputPath = `/tmp/audio-input-${randomUUID()}`;
+    const outputPath = `/tmp/audio-output-${randomUUID()}.mp3`;
+
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      const readStream = objectFile.createReadStream();
+      const writeStream = createWriteStream(inputPath);
+      await pipeline(readStream, writeStream);
+
+      await execFileAsync("ffmpeg", [
+        "-i", inputPath,
+        "-codec:a", "libmp3lame",
+        "-qscale:a", "4",
+        "-y",
+        outputPath,
+      ], { timeout: 60000 });
+
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const newObjectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+
+      const fileBuffer = fs.readFileSync(outputPath);
+      const uploadRes = await fetch(uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": "audio/mpeg" },
+        body: fileBuffer,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed with status ${uploadRes.status}`);
+      }
+
+      try { await unlink(inputPath); } catch {}
+      try { await unlink(outputPath); } catch {}
+
+      return res.status(200).json({ objectPath: newObjectPath, converted: true });
+    } catch (error: any) {
+      console.error("Audio conversion error:", error);
+      try { await unlink(inputPath); } catch {}
+      try { await unlink(outputPath); } catch {}
+      return res.status(200).json({ objectPath, converted: false, error: error.message || "Conversion failed" });
+    }
+  });
+
   app.post("/api/uploads/convert-video", authenticateToken, requireRole("technician"), async (req, res) => {
-    const parsed = convertVideoSchema.safeParse(req.body);
+    const parsed = convertMediaSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "objectPath is required" });
     }
