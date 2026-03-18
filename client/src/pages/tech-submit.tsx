@@ -352,9 +352,9 @@ export default function TechSubmitPage() {
 
   function audioNeedsConversion(file: File): boolean {
     const name = file.name.toLowerCase();
-    const webFriendly = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/aac", "audio/wav", "audio/webm", "audio/ogg"];
+    const webFriendly = ["audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/wav", "audio/webm", "audio/ogg", "audio/flac", "audio/x-flac"];
     if (webFriendly.some(t => file.type === t)) return false;
-    if (/\.(mp3|m4a|aac|wav|webm|ogg|mp4)$/.test(name)) return false;
+    if (/\.(mp3|m4a|aac|wav|webm|ogg|mp4|flac)$/.test(name)) return false;
     return true;
   }
 
