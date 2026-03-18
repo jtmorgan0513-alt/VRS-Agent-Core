@@ -1,7 +1,14 @@
 import OpenAI from "openai";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
 
 const ENHANCE_PROMPT = `You are a Sears appliance repair documentation assistant. Improve this technician's issue description for clarity and readability WITHOUT changing any of the content or meaning.
 
@@ -48,7 +55,7 @@ export async function enhanceDescription(
     .replace("{applianceType}", applianceType)
     .replace("{description}", description);
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: "gpt-5",
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
