@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
 import { useWebSocket } from "@/lib/websocket";
 import type { User } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
@@ -268,7 +269,7 @@ function AgentStatusSection() {
                       </div>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : "—"}
+                      {formatDate(agent.updatedAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -301,9 +302,10 @@ function AgentStatusSection() {
   );
 }
 
-function getTimeInStatus(createdAt: string | Date, reviewedAt?: string | Date | null): string {
-  const start = new Date(createdAt);
-  const end = reviewedAt ? new Date(reviewedAt) : new Date();
+function getTimeInStatus(createdAt: string | Date | null | undefined, reviewedAt?: string | Date | null): string {
+  const start = safeDate(createdAt);
+  if (!start) return "—";
+  const end = safeDate(reviewedAt) || new Date();
   const diffMs = end.getTime() - start.getTime();
   const totalMinutes = Math.floor(diffMs / 60000);
   if (totalMinutes < 1) return "< 1m";
@@ -382,8 +384,7 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
   };
 
   const formatTs = (ts: string) => {
-    const d = new Date(ts);
-    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+    return formatDate(ts, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
   };
 
   return (
@@ -536,7 +537,7 @@ function TicketOverviewSection() {
 
   if (statusFilter === "queued") {
     filteredTickets = [...filteredTickets].sort((a, b) =>
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      (safeDate(a.createdAt)?.getTime() || 0) - (safeDate(b.createdAt)?.getTime() || 0)
     );
   }
 
@@ -623,7 +624,7 @@ function TicketOverviewSection() {
                 </TableHeader>
                 <TableBody>
                   {filteredTickets.map((ticket: any) => {
-                    const ageMs = new Date().getTime() - new Date(ticket.createdAt).getTime();
+                    const ageMs = new Date().getTime() - (safeDate(ticket.createdAt)?.getTime() || new Date().getTime());
                     const ageHours = ageMs / 3600000;
                     const isUrgent = ageHours >= 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
                     const isAging = ageHours >= 2 && ageHours < 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
@@ -850,7 +851,7 @@ function TechnicianSyncSection() {
                 {metricsQuery.isLoading
                   ? "..."
                   : metrics?.lastSyncedAt
-                    ? new Date(metrics.lastSyncedAt).toLocaleString()
+                    ? formatDate(metrics.lastSyncedAt)
                     : "Never"}
               </p>
             </div>
@@ -1051,7 +1052,7 @@ function FeedbackSection() {
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground mt-2">
-                      {new Date(fb.createdAt).toLocaleString()}
+                      {formatDate(fb.createdAt)}
                       {fb.resolvedByName && (
                         <span> - Resolved by {fb.resolvedByName}</span>
                       )}
@@ -1821,7 +1822,7 @@ export default function AdminDashboard() {
                             {u.mustChangePassword ? (
                               <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">Must Change</Badge>
                             ) : u.passwordChangedAt ? (
-                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">Changed {new Date(u.passwordChangedAt).toLocaleDateString()}</Badge>
+                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">Changed {formatDateShort(u.passwordChangedAt)}</Badge>
                             ) : (
                               <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">Active</Badge>
                             )}
@@ -2153,7 +2154,7 @@ export default function AdminDashboard() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground" data-testid="text-rgc-set-by">
-                          Set by {currentRgc.createdByName || "Unknown"} on {new Date(currentRgc.rgcCode.createdAt).toLocaleString()}
+                          Set by {currentRgc.createdByName || "Unknown"} on {formatDate(currentRgc.rgcCode.createdAt)}
                         </p>
                       </div>
                     ) : (

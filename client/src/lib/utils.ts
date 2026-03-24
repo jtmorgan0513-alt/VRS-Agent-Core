@@ -5,6 +5,25 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function safeDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+export function formatDate(value: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+  const d = safeDate(value);
+  if (!d) return "—";
+  return d.toLocaleString(undefined, options);
+}
+
+export function formatDateShort(value: string | Date | null | undefined): string {
+  const d = safeDate(value);
+  if (!d) return "—";
+  return d.toLocaleDateString();
+}
+
 export function downloadPhotoUrl(url: string, filenameBase: string) {
   (async () => {
     try {

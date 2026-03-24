@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { formatDate } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -300,14 +301,14 @@ export default function SubmissionDetailPage() {
             {sub.createdAt && (
               <DetailRow
                 label="Submitted"
-                value={new Date(sub.createdAt).toLocaleString()}
+                value={formatDate(sub.createdAt)}
                 testId="text-detail-submitted"
               />
             )}
             {(sub.reviewedAt || sub.stage1ReviewedAt) && (
               <DetailRow
                 label={(status === "completed" || status === "approved") ? "Approved At" : "Reviewed At"}
-                value={new Date((sub.reviewedAt || sub.stage1ReviewedAt)!).toLocaleString()}
+                value={formatDate(sub.reviewedAt || sub.stage1ReviewedAt)}
                 testId="text-detail-reviewed"
               />
             )}
@@ -443,7 +444,7 @@ export default function SubmissionDetailPage() {
                             {isOriginal ? "Original Submission" : `Resubmission #${resubNumber}`}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {item.createdAt ? new Date(item.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                            {formatDate(item.createdAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                           </p>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -463,7 +464,7 @@ export default function SubmissionDetailPage() {
                         {(item.ticketStatus === "rejected" || item.stage1Status === "rejected") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-destructive/50">
                             <p className="text-xs font-medium text-destructive">
-                              Rejected {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              Rejected {formatDate(item.reviewedAt || item.stage1ReviewedAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                               {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
                             {(item.rejectionReasons || item.stage1RejectionReason) && (
@@ -479,7 +480,7 @@ export default function SubmissionDetailPage() {
                         {(item.ticketStatus === "invalid" || item.stage1Status === "invalid") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-gray-400">
                             <p className="text-xs font-medium text-gray-600">
-                              Invalid {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              Invalid {formatDate(item.reviewedAt || item.stage1ReviewedAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                               {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
                             {(item as any).invalidReason && (
@@ -493,7 +494,7 @@ export default function SubmissionDetailPage() {
                         {(item.ticketStatus === "completed" || item.stage1Status === "approved") && (item.reviewedAt || item.stage1ReviewedAt) && (
                           <div className="mt-2 pl-3 border-l-2 border-green-500/50">
                             <p className="text-xs font-medium text-green-600">
-                              Approved {new Date((item.reviewedAt || item.stage1ReviewedAt)!).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              Approved {formatDate(item.reviewedAt || item.stage1ReviewedAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                               {(item.reviewedBy || item.stage1ReviewedBy) && reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!] ? ` by ${reviewerNames[(item.reviewedBy || item.stage1ReviewedBy)!]}` : ""}
                             </p>
                           </div>
@@ -502,7 +503,7 @@ export default function SubmissionDetailPage() {
                         {item.stage2Status === "declined" && item.stage2ReviewedAt && (
                           <div className="mt-1 pl-3 border-l-2 border-destructive/50">
                             <p className="text-xs font-medium text-destructive">
-                              Declined {new Date(item.stage2ReviewedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              Declined {formatDate(item.stage2ReviewedAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                               {item.stage2ReviewedBy && reviewerNames[item.stage2ReviewedBy] ? ` by ${reviewerNames[item.stage2ReviewedBy]}` : ""}
                             </p>
                             {(item as any).declineReason && (

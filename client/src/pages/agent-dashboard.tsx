@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { downloadPhotoUrl } from "@/lib/utils";
+import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
@@ -115,8 +115,9 @@ const APPLIANCE_LABELS: Record<string, string> = {
   all_other: "All Other",
 };
 
-function getTimeElapsed(createdAt: string | Date): string {
-  const created = new Date(createdAt);
+function getTimeElapsed(createdAt: string | Date | null | undefined): string {
+  const created = safeDate(createdAt);
+  if (!created) return "—";
   const now = new Date();
   const diffMs = now.getTime() - created.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -127,8 +128,9 @@ function getTimeElapsed(createdAt: string | Date): string {
   return `${diffDays}d ${diffHours % 24}h`;
 }
 
-function getUrgencyLevel(createdAt: string | Date): "normal" | "warning" | "urgent" {
-  const created = new Date(createdAt);
+function getUrgencyLevel(createdAt: string | Date | null | undefined): "normal" | "warning" | "urgent" {
+  const created = safeDate(createdAt);
+  if (!created) return "normal";
   const now = new Date();
   const diffHours = (now.getTime() - created.getTime()) / 3600000;
   if (diffHours >= 4) return "urgent";
@@ -1024,7 +1026,7 @@ export default function AgentDashboard() {
                 ) : (
                   <div className="p-2 space-y-1">
                     {submissions.map((sub) => {
-                      const urgency = getUrgencyLevel(sub.createdAt!);
+                      const urgency = getUrgencyLevel(sub.createdAt);
                       const isSelected = selectedId === sub.id;
                       return (
                         <div
@@ -1059,7 +1061,7 @@ export default function AgentDashboard() {
                               </span>
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="w-3 h-3" />
-                                <span data-testid={`text-elapsed-${sub.id}`}>{getTimeElapsed(sub.createdAt!)}</span>
+                                <span data-testid={`text-elapsed-${sub.id}`}>{getTimeElapsed(sub.createdAt)}</span>
                               </div>
                             </div>
                             <div className="flex items-center justify-between gap-2 mt-1 flex-wrap">
@@ -1146,7 +1148,7 @@ export default function AgentDashboard() {
                             </span>
                           )}
                           <span className="text-xs">
-                            Submitted {new Date(selectedSubmission.createdAt!).toLocaleString()}
+                            Submitted {formatDate(selectedSubmission.createdAt)}
                           </span>
                         </p>
                       </div>
@@ -1164,10 +1166,10 @@ export default function AgentDashboard() {
                             ? "Authorization"
                             : "Infestation / Non-Accessible"}
                         </Badge>
-                        {getUrgencyLevel(selectedSubmission.createdAt!) !== "normal" && (
+                        {getUrgencyLevel(selectedSubmission.createdAt) !== "normal" && (
                           <Badge variant="destructive" data-testid="badge-urgency">
                             <AlertTriangle className="w-3 h-3 mr-1" />
-                            {getUrgencyLevel(selectedSubmission.createdAt!) === "urgent" ? "Urgent" : "Aging"}
+                            {getUrgencyLevel(selectedSubmission.createdAt) === "urgent" ? "Urgent" : "Aging"}
                           </Badge>
                         )}
                         {activeView === "mytickets" && !shsaiVisible && (
@@ -1587,7 +1589,7 @@ export default function AgentDashboard() {
                                       {item.id === selectedId && <Badge variant="outline" className="ml-2 text-[10px] py-0">Current</Badge>}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                      {item.createdAt ? new Date(item.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ""}
+                                      {formatDate(item.createdAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                                     </p>
                                   </div>
                                   {item.appealNotes && (
@@ -2205,7 +2207,7 @@ export default function AgentDashboard() {
                             )}
                             {selectedSubmission.reviewedAt && (
                               <span className="text-muted-foreground">
-                                on {new Date(selectedSubmission.reviewedAt).toLocaleString()}
+                                on {formatDate(selectedSubmission.reviewedAt)}
                               </span>
                             )}
                           </div>

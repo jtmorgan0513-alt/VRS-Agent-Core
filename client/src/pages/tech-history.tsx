@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { formatDateShort } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,7 +48,7 @@ export default function TechHistoryPage() {
                       {sub.applianceType.replace("_", " ")}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {sub.createdAt ? new Date(sub.createdAt).toLocaleDateString() : ""}
+                      {formatDateShort(sub.createdAt)}
                     </p>
                   </div>
                   <p className="text-xs text-muted-foreground capitalize mt-0.5">
