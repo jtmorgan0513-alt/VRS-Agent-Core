@@ -183,7 +183,8 @@ function AgentStatusSection() {
 
   const { data, isLoading } = useQuery<{ agents: AgentStatusInfo[] }>({
     queryKey: ["/api/admin/agent-status"],
-    refetchInterval: 10000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 
   const toggleAgentStatusMutation = useMutation({
@@ -478,6 +479,7 @@ function TicketOverviewSection() {
   const { data: allData, isLoading: allLoading } = useQuery<{ submissions: any[] }>({
     queryKey: ["/api/submissions"],
     refetchInterval: 15000,
+    staleTime: 10000,
   });
 
   const { data: usersData } = useQuery<{ users: any[] }>({
@@ -936,6 +938,7 @@ function FeedbackSection() {
   const { data: feedbackData, isLoading } = useQuery<{ feedback: any[] }>({
     queryKey: ["/api/feedback"],
     refetchInterval: 30000,
+    staleTime: 20000,
   });
 
   const updateMutation = useMutation({

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -11,18 +11,19 @@ import TechLoginPage from "@/pages/tech-login";
 import AgentLoginPage from "@/pages/agent-login";
 import AdminLoginPage from "@/pages/admin-login";
 import TechHomePage from "@/pages/tech-home";
-import TechSubmitPage from "@/pages/tech-submit";
-import TechHistoryPage from "@/pages/tech-history";
-import SubmissionDetailPage from "@/pages/submission-detail";
-import AgentDashboard from "@/pages/agent-dashboard";
-import AdminDashboard from "@/pages/admin-dashboard";
 import NotFound from "@/pages/not-found";
 import InstallPrompt from "@/components/install-prompt";
 import OnboardingWizard from "@/components/onboarding-wizard";
 import WhatsNewModal from "@/components/whats-new-modal";
-import HelpCenterPage from "@/pages/help-center";
-import TechResubmitPage from "@/pages/tech-resubmit";
-import TechFeedbackPage from "@/pages/tech-feedback";
+
+const TechSubmitPage = lazy(() => import("@/pages/tech-submit"));
+const TechHistoryPage = lazy(() => import("@/pages/tech-history"));
+const SubmissionDetailPage = lazy(() => import("@/pages/submission-detail"));
+const AgentDashboard = lazy(() => import("@/pages/agent-dashboard"));
+const AdminDashboard = lazy(() => import("@/pages/admin-dashboard"));
+const HelpCenterPage = lazy(() => import("@/pages/help-center"));
+const TechResubmitPage = lazy(() => import("@/pages/tech-resubmit"));
+const TechFeedbackPage = lazy(() => import("@/pages/tech-feedback"));
 
 function LoadingScreen() {
   return (
@@ -41,10 +42,10 @@ function TechRoute({ component: Component }: { component: React.ComponentType })
   if (!user) return <Redirect to="/tech/login" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
   return (
-    <>
+    <Suspense fallback={<LoadingScreen />}>
       <Component />
       <BottomNav />
-    </>
+    </Suspense>
   );
 }
 
@@ -54,7 +55,7 @@ function AgentRoute() {
   if (!user) return <Redirect to="/agent/login" />;
   if (user.mustChangePassword) return <Redirect to="/agent/login" />;
   if (user.role === "technician") return <Redirect to="/tech" />;
-  return <AgentDashboard />;
+  return <Suspense fallback={<LoadingScreen />}><AgentDashboard /></Suspense>;
 }
 
 function AdminRoute() {
@@ -64,7 +65,7 @@ function AdminRoute() {
   if (user.mustChangePassword) return <Redirect to="/admin/login" />;
   if (user.role === "technician") return <Redirect to="/tech" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
-  return <AdminDashboard />;
+  return <Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense>;
 }
 
 function LandingRoute() {
