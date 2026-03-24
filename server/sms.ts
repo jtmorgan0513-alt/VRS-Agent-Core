@@ -1,9 +1,18 @@
 import twilio from "twilio";
 import { storage } from "./storage";
 
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (phone.startsWith("+")) return phone;
+  return `+${digits}`;
+}
+
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+const RAW_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
+const TWILIO_PHONE_NUMBER = RAW_TWILIO_PHONE ? normalizePhone(RAW_TWILIO_PHONE) : undefined;
 
 function getTwilioClient() {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
@@ -17,15 +26,16 @@ export async function sendSmsMessage(
   messageBody: string
 ): Promise<{ success: boolean; twilioSid?: string; error?: string }> {
   const client = getTwilioClient();
+  const normalizedPhone = normalizePhone(recipientPhone);
 
   if (client && TWILIO_PHONE_NUMBER) {
     try {
       const message = await client.messages.create({
         body: messageBody,
         from: TWILIO_PHONE_NUMBER,
-        to: recipientPhone,
+        to: normalizedPhone,
       });
-      console.log(`[SMS] Sent to ${recipientPhone}, SID: ${message.sid}`);
+      console.log(`[SMS] Sent to ${normalizedPhone} (from: ${recipientPhone}), SID: ${message.sid}`);
       return { success: true, twilioSid: message.sid };
     } catch (err: any) {
       console.error("Twilio SMS error:", err.message);
@@ -48,6 +58,7 @@ export async function sendSms(
     return { success: false, error: "No recipient phone number" };
   }
 
+  const normalizedPhone = normalizePhone(recipientPhone);
   const client = getTwilioClient();
 
   let twilioSid: string | null = null;
@@ -57,10 +68,10 @@ export async function sendSms(
       const message = await client.messages.create({
         body: messageBody,
         from: TWILIO_PHONE_NUMBER,
-        to: recipientPhone,
+        to: normalizedPhone,
       });
       twilioSid = message.sid;
-      console.log(`[SMS] Sent ${messageType} to ${recipientPhone} for submission ${submissionId}, SID: ${message.sid}`);
+      console.log(`[SMS] Sent ${messageType} to ${normalizedPhone} (input: ${recipientPhone}) for submission ${submissionId}, SID: ${message.sid}`);
     } catch (err: any) {
       console.error(`[SMS] Failed to send ${messageType} to ${recipientPhone} for submission ${submissionId}:`, err.message);
       await storage.createSmsNotification({

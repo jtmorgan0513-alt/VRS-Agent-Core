@@ -605,7 +605,8 @@ export async function registerRoutes(
         });
 
         const resubmitClaimMsg = `VRS Update for SO#${submission.serviceOrder}: Your resubmission has been received and has been assigned to the same VRS agent for review. Please stand by — you will receive a follow-up text with the result shortly.`;
-        sendSms(submission.id, submission.phone, "ticket_claimed", resubmitClaimMsg).catch(err => {
+        const resubmitSmsPhone = submission.phoneOverride || submission.phone;
+        sendSms(submission.id, resubmitSmsPhone, "ticket_claimed", resubmitClaimMsg).catch(err => {
           console.error("Failed to send resubmission claim SMS:", err);
         });
       } else {
@@ -1018,7 +1019,8 @@ export async function registerRoutes(
         claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it. Please stand by — you will receive a follow-up text with the result shortly.`;
       }
 
-      sendSms(submission.id, submission.phone, "ticket_claimed", claimSmsMessage).catch(err => {
+      const claimSmsPhone = submission.phoneOverride || submission.phone;
+      sendSms(submission.id, claimSmsPhone, "ticket_claimed", claimSmsMessage).catch(err => {
         console.error("Failed to send claim SMS:", err);
       });
 
@@ -1106,7 +1108,8 @@ export async function registerRoutes(
         smsType = "submission_approved";
 
         const updated = await storage.updateSubmission(id, updateData as any);
-        await sendSms(submission.id, submission.phone, smsType, smsMessage);
+        const approveSmsPhone = submission.phoneOverride || submission.phone;
+        await sendSms(submission.id, approveSmsPhone, smsType, smsMessage);
 
         return res.status(200).json({ submission: updated });
       }
@@ -1225,7 +1228,8 @@ export async function registerRoutes(
 
       const updated = await storage.updateSubmission(id, updateData as any);
 
-      await sendSms(submission.id, submission.phone, smsType, smsMessage);
+      const reviewSmsPhone = submission.phoneOverride || submission.phone;
+      await sendSms(submission.id, reviewSmsPhone, smsType, smsMessage);
 
       if (authReq.user!.role === "vrs_agent") {
         await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
