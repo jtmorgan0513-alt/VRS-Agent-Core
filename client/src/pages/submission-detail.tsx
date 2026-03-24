@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useLocation } from "wouter";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ export default function SubmissionDetailPage() {
   const [, params] = useRoute("/tech/submissions/:id");
   const id = params?.id;
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data, isLoading, error } = useQuery<{ submission: Submission }>({
     queryKey: ["/api/submissions", id],
@@ -64,19 +65,15 @@ export default function SubmissionDetailPage() {
       <div className="min-h-screen pb-20">
         <div className="bg-primary text-primary-foreground p-4">
           <div className="max-w-lg mx-auto flex items-center gap-2">
-            <Link href="/tech/history">
-              <Button size="icon" variant="ghost" className="text-primary-foreground no-default-hover-elevate no-default-active-elevate">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </Link>
+            <Button size="icon" variant="ghost" className="text-primary-foreground no-default-hover-elevate no-default-active-elevate" onClick={() => navigate("/tech/history")}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <h1 className="text-lg font-bold">Submission Not Found</h1>
           </div>
         </div>
         <div className="max-w-lg mx-auto px-4 py-8 text-center">
           <p className="text-muted-foreground">This submission could not be found.</p>
-          <Link href="/tech">
-            <Button className="mt-4" data-testid="button-go-home">Go Home</Button>
-          </Link>
+          <Button className="mt-4" data-testid="button-go-home" onClick={() => navigate("/tech")}>Go Home</Button>
         </div>
       </div>
     );
@@ -172,11 +169,9 @@ export default function SubmissionDetailPage() {
       <div className={`${headerConfig.bgClass} p-4 pb-8`}>
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-2 mb-4">
-            <Link href="/tech/history">
-              <Button size="icon" variant="ghost" className="text-inherit no-default-hover-elevate no-default-active-elevate">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </Link>
+            <Button size="icon" variant="ghost" className="text-inherit no-default-hover-elevate no-default-active-elevate" onClick={() => navigate("/tech/history")}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <p className="text-sm opacity-80">{headerConfig.subtitle}</p>
           </div>
           <div className="text-center py-4">
@@ -532,9 +527,7 @@ export default function SubmissionDetailPage() {
 
         {status === "rejected" && resubCount < maxResubs && (
           <div className="space-y-2">
-            <Link href={`/tech/resubmit/${sub.id}`}>
-              <Button className="w-full" data-testid="button-resubmit">Resubmit with Updates</Button>
-            </Link>
+            <Button className="w-full" data-testid="button-resubmit" onClick={() => navigate(`/tech/resubmit/${sub.id}`)}>Resubmit with Updates</Button>
           </div>
         )}
 
@@ -549,11 +542,9 @@ export default function SubmissionDetailPage() {
           </Card>
         )}
 
-        <Link href="/tech">
-          <Button variant="outline" className="w-full" data-testid="button-view-next">
-            {(status === "completed" || status === "approved") ? "View Next Job" : "Back to Home"}
-          </Button>
-        </Link>
+        <Button variant="outline" className="w-full" data-testid="button-view-next" onClick={() => navigate("/tech")}>
+          {(status === "completed" || status === "approved") ? "View Next Job" : "Back to Home"}
+        </Button>
       </div>
     </div>
   );

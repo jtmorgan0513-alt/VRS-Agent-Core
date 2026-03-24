@@ -777,7 +777,7 @@ export default function AgentDashboard() {
                       }
                       statusMutation.mutate(checked ? "online" : "offline");
                     }}
-                    disabled={statusMutation.isPending || agentStatus === "working"}
+                    disabled={statusMutation.isPending}
                     data-testid="toggle-agent-status"
                     className="scale-75"
                   />

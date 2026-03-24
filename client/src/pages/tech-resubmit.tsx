@@ -278,19 +278,15 @@ export default function TechResubmitPage() {
       <div className="min-h-screen pb-20">
         <div className="bg-primary text-primary-foreground p-4">
           <div className="max-w-lg mx-auto flex items-center gap-2">
-            <Link href="/tech/history">
-              <Button size="icon" variant="ghost" className="text-primary-foreground" data-testid="button-back">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </Link>
+            <Button size="icon" variant="ghost" className="text-primary-foreground" data-testid="button-back" onClick={() => setLocation("/tech/history")}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <h1 className="text-lg font-bold">Submission Not Found</h1>
           </div>
         </div>
         <div className="max-w-lg mx-auto px-4 py-8 text-center">
           <p className="text-muted-foreground">The original submission could not be found.</p>
-          <Link href="/tech">
-            <Button className="mt-4" data-testid="button-go-home">Go Home</Button>
-          </Link>
+          <Button className="mt-4" data-testid="button-go-home" onClick={() => setLocation("/tech")}>Go Home</Button>
         </div>
       </div>
     );
@@ -306,11 +302,9 @@ export default function TechResubmitPage() {
     <div className="min-h-screen pb-20">
       <div className="bg-primary text-primary-foreground p-4">
         <div className="max-w-lg mx-auto flex items-center gap-2">
-          <Link href="/tech/history">
-            <Button size="icon" variant="ghost" className="text-primary-foreground" data-testid="button-back-resubmit">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          </Link>
+          <Button size="icon" variant="ghost" className="text-primary-foreground" data-testid="button-back-resubmit" onClick={() => setLocation("/tech/history")}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
           <div>
             <h1 className="text-lg font-bold" data-testid="text-resubmit-title">Resubmit Request</h1>
             <p className="text-sm opacity-80">SO# {originalSub.serviceOrder}</p>
