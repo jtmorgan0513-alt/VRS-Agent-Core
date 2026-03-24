@@ -9,30 +9,39 @@ function normalizePhone(phone: string): string {
   return `+${digits}`;
 }
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const RAW_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
-const TWILIO_PHONE_NUMBER = RAW_TWILIO_PHONE ? normalizePhone(RAW_TWILIO_PHONE) : undefined;
+function getTwilioConfig() {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const rawPhone = process.env.TWILIO_PHONE_NUMBER;
+  const phone = rawPhone ? normalizePhone(rawPhone) : undefined;
+  return { sid, token, phone };
+}
 
-function getTwilioClient() {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+function getTwilioClient(): { client: ReturnType<typeof twilio>; phone: string } | null {
+  const { sid, token, phone } = getTwilioConfig();
+  if (!sid || !token || !phone) {
+    console.warn(`[SMS] Twilio not configured — missing: ${[
+      !sid && "TWILIO_ACCOUNT_SID",
+      !token && "TWILIO_AUTH_TOKEN",
+      !phone && "TWILIO_PHONE_NUMBER",
+    ].filter(Boolean).join(", ")}`);
     return null;
   }
-  return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+  return { client: twilio(sid, token), phone };
 }
 
 export async function sendSmsMessage(
   recipientPhone: string,
   messageBody: string
 ): Promise<{ success: boolean; twilioSid?: string; error?: string }> {
-  const client = getTwilioClient();
+  const twilioConfig = getTwilioClient();
   const normalizedPhone = normalizePhone(recipientPhone);
 
-  if (client && TWILIO_PHONE_NUMBER) {
+  if (twilioConfig) {
     try {
-      const message = await client.messages.create({
+      const message = await twilioConfig.client.messages.create({
         body: messageBody,
-        from: TWILIO_PHONE_NUMBER,
+        from: twilioConfig.phone,
         to: normalizedPhone,
       });
       console.log(`[SMS] Sent to ${normalizedPhone} (from: ${recipientPhone}), SID: ${message.sid}`);
@@ -59,15 +68,15 @@ export async function sendSms(
   }
 
   const normalizedPhone = normalizePhone(recipientPhone);
-  const client = getTwilioClient();
+  const twilioConfig = getTwilioClient();
 
   let twilioSid: string | null = null;
 
-  if (client && TWILIO_PHONE_NUMBER) {
+  if (twilioConfig) {
     try {
-      const message = await client.messages.create({
+      const message = await twilioConfig.client.messages.create({
         body: messageBody,
-        from: TWILIO_PHONE_NUMBER,
+        from: twilioConfig.phone,
         to: normalizedPhone,
       });
       twilioSid = message.sid;
