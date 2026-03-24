@@ -92,7 +92,7 @@ export default function TechHomePage() {
         </div>
 
         <Link href="/tech/submit">
-          <Button className="w-full" size="lg" data-testid="button-new-submission">
+          <Button className="w-full min-h-[44px]" size="lg" data-testid="button-new-submission">
             <FileText className="w-4 h-4 mr-2" />
             New Submission
           </Button>
@@ -145,7 +145,7 @@ export default function TechHomePage() {
 
         <div className="pt-4 border-t">
           <Link href="/tech/feedback">
-            <Button variant="ghost" className="w-full text-muted-foreground" size="sm" data-testid="button-feedback">
+            <Button variant="ghost" className="w-full min-h-[44px] text-muted-foreground" size="default" data-testid="button-feedback">
               <MessageSquare className="w-4 h-4 mr-2" />
               Submit Feedback
             </Button>
