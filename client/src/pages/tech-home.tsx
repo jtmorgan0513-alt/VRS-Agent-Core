@@ -98,13 +98,6 @@ export default function TechHomePage() {
           </Button>
         </Link>
 
-        <Link href="/tech/feedback">
-          <Button variant="outline" className="w-full" size="lg" data-testid="button-feedback">
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Submit Feedback
-          </Button>
-        </Link>
-
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <h2 className="font-semibold text-sm">Recent Submissions</h2>
@@ -148,6 +141,15 @@ export default function TechHomePage() {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="pt-4 border-t">
+          <Link href="/tech/feedback">
+            <Button variant="ghost" className="w-full text-muted-foreground" size="sm" data-testid="button-feedback">
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Submit Feedback
+            </Button>
+          </Link>
         </div>
       </div>
     </div>
