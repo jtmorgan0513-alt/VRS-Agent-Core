@@ -351,7 +351,8 @@ interface AuditTimelineEntry {
   detail?: string;
 }
 
-function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | null; open: boolean; onClose: () => void }) {
+function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | null; open: boolean; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<"details" | "timeline">("details");
   const { data, isLoading } = useQuery<{
     submission: any;
     timeline: AuditTimelineEntry[];
@@ -363,7 +364,7 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
       const res = await fetch(`/api/admin/submissions/${ticketId}/audit`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
-      if (!res.ok) throw new Error("Failed to load audit trail");
+      if (!res.ok) throw new Error("Failed to load ticket details");
       return res.json();
     },
     enabled: !!ticketId && open,
@@ -381,6 +382,7 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
     if (event.includes("Rejected") || event.includes("Closed")) return <XCircle className="w-4 h-4 text-red-500" />;
     if (event.includes("Invalid")) return <XCircle className="w-4 h-4 text-gray-500" />;
     if (event.includes("SMS")) return <MessageSquare className="w-4 h-4 text-indigo-500" />;
+    if (event.includes("Status")) return <Clock className="w-4 h-4 text-purple-500" />;
     return <Clock className="w-4 h-4 text-muted-foreground" />;
   };
 
@@ -388,15 +390,26 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
     return formatDate(ts, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
   };
 
+  const formatTsFull = (ts: string | Date | null | undefined) => {
+    return formatDate(ts as any, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  };
+
+  let rejectionReasonsList: string[] = [];
+  if (sub?.rejectionReasons) {
+    try {
+      rejectionReasonsList = typeof sub.rejectionReasons === "string" ? JSON.parse(sub.rejectionReasons) : sub.rejectionReasons;
+    } catch { rejectionReasonsList = []; }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle data-testid="text-audit-title">
-            {sub ? `Audit Trail — SO# ${sub.serviceOrder}` : "Audit Trail"}
+            {sub ? `Ticket Detail — SO# ${sub.serviceOrder}` : "Ticket Detail"}
           </DialogTitle>
           <DialogDescription>
-            Full timeline of actions and notifications for this ticket.
+            View full ticket information, status changes, and audit trail.
           </DialogDescription>
         </DialogHeader>
 
@@ -408,58 +421,170 @@ function TicketAuditDialog({ ticketId, open, onClose }: { ticketId: number | nul
           <p className="text-muted-foreground py-4">Ticket not found.</p>
         ) : (
           <div className="overflow-y-auto flex-1 pr-2">
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Technician</p>
-                <p className="text-sm font-medium" data-testid="text-audit-tech">{userNames[sub.technicianId] || "—"}</p>
-                <p className="text-xs text-muted-foreground">{sub.technicianLdapId || sub.racId}</p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Current Status</p>
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold mt-1 ${getStatusColor(sub.ticketStatus)}`} data-testid="text-audit-status">
-                  {getStatusLabel(sub.ticketStatus)}
-                </span>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Division</p>
-                <p className="text-sm font-medium">{DIVISION_LABELS[sub.applianceType] || sub.applianceType}</p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Assigned Agent</p>
-                <p className="text-sm font-medium" data-testid="text-audit-agent">{sub.assignedTo ? userNames[sub.assignedTo] || "Agent" : "Unassigned"}</p>
-              </div>
+            <div className="flex gap-1 mb-4 border-b">
+              <button
+                onClick={() => setActiveTab("details")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                data-testid="tab-ticket-details"
+              >
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab("timeline")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "timeline" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                data-testid="tab-ticket-timeline"
+              >
+                Status History
+              </button>
             </div>
 
-            {sub.agentNotes && (
-              <div className="rounded-lg border p-3 mb-4 bg-muted/30">
-                <p className="text-xs text-muted-foreground mb-1">Agent Notes</p>
-                <p className="text-sm">{sub.agentNotes}</p>
+            {activeTab === "details" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Technician</p>
+                    <p className="text-sm font-medium" data-testid="text-audit-tech">{userNames[sub.technicianId] || "—"}</p>
+                    <p className="text-xs text-muted-foreground">{sub.technicianLdapId || sub.racId}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Current Status</p>
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold mt-1 ${getStatusColor(sub.ticketStatus)}`} data-testid="text-audit-status">
+                      {getStatusLabel(sub.ticketStatus)}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Assigned Agent</p>
+                    <p className="text-sm font-medium" data-testid="text-audit-agent">{sub.assignedTo ? userNames[sub.assignedTo] || "Agent" : "Unassigned"}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Division</p>
+                    <p className="text-sm font-medium">{DIVISION_LABELS[sub.applianceType] || sub.applianceType}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Warranty</p>
+                    <p className="text-sm font-medium">
+                      {sub.warrantyType === "sears_protect" ? "Sears Protect" :
+                       sub.warrantyType === "ahs" ? "AHS" :
+                       sub.warrantyType === "first_american" ? "First American" :
+                       sub.warrantyType || "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Request Type</p>
+                    <p className="text-sm font-medium capitalize">{sub.requestType || "—"}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border p-3 bg-muted/20">
+                    <p className="text-xs text-muted-foreground">Submitted</p>
+                    <p className="text-sm font-medium" data-testid="text-detail-created">{formatTsFull(sub.createdAt)}</p>
+                  </div>
+                  <div className="rounded-lg border p-3 bg-muted/20">
+                    <p className="text-xs text-muted-foreground">Last Updated</p>
+                    <p className="text-sm font-medium" data-testid="text-detail-updated">{formatTsFull(sub.updatedAt)}</p>
+                  </div>
+                  <div className="rounded-lg border p-3 bg-muted/20">
+                    <p className="text-xs text-muted-foreground">Last Actioned</p>
+                    <p className="text-sm font-medium" data-testid="text-detail-actioned">{formatTsFull(sub.statusChangedAt || sub.reviewedAt || sub.updatedAt)}</p>
+                  </div>
+                </div>
+
+                {sub.phone && (
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Contact Phone</p>
+                    <p className="text-sm font-medium">{sub.phoneOverride || sub.phone}</p>
+                  </div>
+                )}
+
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Issue Description</p>
+                  <p className="text-sm">{sub.issueDescription || "—"}</p>
+                </div>
+
+                {sub.authCode && (
+                  <div className="rounded-lg border p-3 bg-green-50 dark:bg-green-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">Auth Code</p>
+                    <p className="text-sm font-mono font-bold text-green-700 dark:text-green-400">{sub.authCode}</p>
+                    {sub.rgcCode && (
+                      <>
+                        <p className="text-xs text-muted-foreground mt-2 mb-1">RGC Code</p>
+                        <p className="text-sm font-mono font-bold text-green-700 dark:text-green-400">{sub.rgcCode}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {rejectionReasonsList.length > 0 && (
+                  <div className="rounded-lg border p-3 bg-red-50 dark:bg-red-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">Rejection Reasons</p>
+                    <ul className="text-sm space-y-0.5">
+                      {rejectionReasonsList.map((r: string, i: number) => (
+                        <li key={i} className="text-red-700 dark:text-red-400">&bull; {r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {sub.technicianMessage && (
+                  <div className="rounded-lg border p-3 bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-1">Message to Technician</p>
+                    <p className="text-sm">{sub.technicianMessage}</p>
+                  </div>
+                )}
+
+                {sub.agentNotes && (
+                  <div className="rounded-lg border p-3 bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-1">Agent Notes</p>
+                    <p className="text-sm">{sub.agentNotes}</p>
+                  </div>
+                )}
+
+                {sub.invalidReason && (
+                  <div className="rounded-lg border p-3 bg-gray-50 dark:bg-gray-950/20">
+                    <p className="text-xs text-muted-foreground mb-1">Invalid Reason</p>
+                    <p className="text-sm">{sub.invalidReason}</p>
+                    {sub.invalidInstructions && (
+                      <>
+                        <p className="text-xs text-muted-foreground mt-2 mb-1">Instructions</p>
+                        <p className="text-sm">{sub.invalidInstructions}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {sub.resubmissionOf && (
+                  <div className="rounded-lg border p-3 bg-blue-50 dark:bg-blue-950/20">
+                    <p className="text-xs text-muted-foreground">Resubmission of Ticket #{sub.resubmissionOf}</p>
+                  </div>
+                )}
               </div>
             )}
 
-            <Separator className="mb-4" />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Timeline</p>
-
-            <div className="relative">
-              <div className="absolute left-[17px] top-3 bottom-3 w-px bg-border" />
-              <div className="space-y-0">
-                {timeline.map((entry, i) => (
-                  <div key={i} className="relative flex items-start gap-3 py-2.5 pl-1" data-testid={`audit-entry-${i}`}>
-                    <div className="relative z-10 mt-0.5 bg-background rounded-full p-0.5">
-                      {getEventIcon(entry.event)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="text-sm font-medium">{entry.event}</p>
-                        <p className="text-xs text-muted-foreground whitespace-nowrap">{formatTs(entry.timestamp)}</p>
+            {activeTab === "timeline" && (
+              <div>
+                <div className="relative">
+                  <div className="absolute left-[17px] top-3 bottom-3 w-px bg-border" />
+                  <div className="space-y-0">
+                    {timeline.map((entry, i) => (
+                      <div key={i} className="relative flex items-start gap-3 py-2.5 pl-1" data-testid={`audit-entry-${i}`}>
+                        <div className="relative z-10 mt-0.5 bg-background rounded-full p-0.5">
+                          {getEventIcon(entry.event)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-sm font-medium">{entry.event}</p>
+                            <p className="text-xs text-muted-foreground whitespace-nowrap">{formatTs(entry.timestamp)}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{entry.actor}</p>
+                          {entry.detail && <p className="text-xs text-muted-foreground mt-0.5 break-words">{entry.detail}</p>}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">{entry.actor}</p>
-                      {entry.detail && <p className="text-xs text-muted-foreground mt-0.5 break-words">{entry.detail}</p>}
-                    </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -617,6 +742,7 @@ function TicketOverviewSection() {
                     <TableHead>Technician</TableHead>
                     <TableHead>Division</TableHead>
                     <TableHead>Warranty</TableHead>
+                    <TableHead className="text-right">Last Updated</TableHead>
                     <TableHead className="text-right">Age</TableHead>
                     <TableHead className="text-right">Time in Status</TableHead>
                     {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
@@ -677,6 +803,9 @@ function TicketOverviewSection() {
                            ticket.warrantyType === "first_american" ? "First American" :
                            ticket.warrantyType || "—"}
                         </TableCell>
+                        <TableCell className="text-sm text-right whitespace-nowrap text-muted-foreground" data-testid={`last-updated-${ticket.id}`}>
+                          {formatDate(ticket.updatedAt || ticket.statusChangedAt || ticket.createdAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+                        </TableCell>
                         <TableCell className="text-sm font-medium text-right whitespace-nowrap">
                           {getTimeInStatus(ticket.createdAt)}
                         </TableCell>
@@ -720,7 +849,7 @@ function TicketOverviewSection() {
         </p>
       )}
 
-      <TicketAuditDialog
+      <TicketDetailDialog
         ticketId={selectedTicketId}
         open={selectedTicketId !== null}
         onClose={() => setSelectedTicketId(null)}

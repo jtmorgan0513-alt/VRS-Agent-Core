@@ -848,10 +848,19 @@ export async function registerRoutes(
         if (u) userNames[uid] = u.name;
       }
 
+      function safeIso(val: any): string {
+        if (!val) return new Date().toISOString();
+        try {
+          const d = val instanceof Date ? val : new Date(val);
+          if (isNaN(d.getTime())) return new Date().toISOString();
+          return d.toISOString();
+        } catch { return new Date().toISOString(); }
+      }
+
       const timeline: { timestamp: string; event: string; actor: string; detail?: string }[] = [];
 
       timeline.push({
-        timestamp: submission.createdAt?.toISOString() || new Date().toISOString(),
+        timestamp: safeIso(submission.createdAt),
         event: "Submitted",
         actor: userNames[submission.technicianId] || "Technician",
         detail: `SO# ${submission.serviceOrder} — ${submission.applianceType}`,
@@ -864,7 +873,7 @@ export async function registerRoutes(
           : (submission.reviewedBy ? userNames[submission.reviewedBy] : null)
             || (submission.stage1ReviewedBy ? userNames[submission.stage1ReviewedBy] : null);
         timeline.push({
-          timestamp: claimSms.sentAt?.toISOString() || new Date().toISOString(),
+          timestamp: safeIso(claimSms.sentAt),
           event: "Claimed by Agent",
           actor: claimAgent || "Agent",
         });
@@ -873,7 +882,7 @@ export async function registerRoutes(
       if (submission.reassignmentNotes) {
         const reassignAgent = submission.assignedTo ? userNames[submission.assignedTo] : null;
         timeline.push({
-          timestamp: submission.updatedAt?.toISOString() || new Date().toISOString(),
+          timestamp: safeIso(submission.updatedAt),
           event: "Reassigned",
           actor: "Admin",
           detail: `${submission.reassignmentNotes}${reassignAgent ? ` → ${reassignAgent}` : ""}`,
@@ -882,7 +891,7 @@ export async function registerRoutes(
 
       if (submission.submissionApproved && submission.submissionApprovedAt) {
         timeline.push({
-          timestamp: submission.submissionApprovedAt.toISOString(),
+          timestamp: safeIso(submission.submissionApprovedAt),
           event: "Submission Approved",
           actor: userNames[submission.stage1ReviewedBy!] || userNames[submission.reviewedBy!] || "Agent",
           detail: "Submission reviewed and approved; pending authorization code",
@@ -891,7 +900,7 @@ export async function registerRoutes(
 
       if (submission.ticketStatus === "completed" && submission.reviewedAt) {
         timeline.push({
-          timestamp: submission.reviewedAt.toISOString(),
+          timestamp: safeIso(submission.reviewedAt),
           event: "Approved & Auth Code Issued",
           actor: userNames[submission.reviewedBy!] || userNames[submission.stage2ReviewedBy!] || "Agent",
           detail: submission.authCode ? `Auth Code: ${submission.authCode}` : undefined,
@@ -900,7 +909,7 @@ export async function registerRoutes(
 
       if (submission.ticketStatus === "rejected" && submission.reviewedAt) {
         timeline.push({
-          timestamp: submission.reviewedAt.toISOString(),
+          timestamp: safeIso(submission.reviewedAt),
           event: "Rejected",
           actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
           detail: submission.stage1RejectionReason || undefined,
@@ -909,7 +918,7 @@ export async function registerRoutes(
 
       if (submission.ticketStatus === "rejected_closed" && submission.reviewedAt) {
         timeline.push({
-          timestamp: submission.reviewedAt.toISOString(),
+          timestamp: safeIso(submission.reviewedAt),
           event: "Rejected & Closed",
           actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
           detail: submission.stage1RejectionReason || "Not covered under warranty",
@@ -918,10 +927,18 @@ export async function registerRoutes(
 
       if (submission.ticketStatus === "invalid" && submission.reviewedAt) {
         timeline.push({
-          timestamp: submission.reviewedAt.toISOString(),
+          timestamp: safeIso(submission.reviewedAt),
           event: "Marked Invalid",
           actor: userNames[submission.reviewedBy!] || userNames[submission.stage1ReviewedBy!] || "Agent",
           detail: submission.invalidReason || undefined,
+        });
+      }
+
+      if (submission.statusChangedAt && submission.statusChangedAt !== submission.createdAt) {
+        timeline.push({
+          timestamp: safeIso(submission.statusChangedAt),
+          event: `Status → ${submission.ticketStatus === "completed" ? "Approved" : submission.ticketStatus === "rejected" ? "Rejected" : submission.ticketStatus === "rejected_closed" ? "Closed" : submission.ticketStatus === "invalid" ? "Invalid" : submission.ticketStatus === "pending" ? "Pending" : submission.ticketStatus}`,
+          actor: "System",
         });
       }
 
@@ -936,7 +953,7 @@ export async function registerRoutes(
           auth_code_sent: "Auth Code SMS Sent",
         };
         timeline.push({
-          timestamp: sms.sentAt?.toISOString() || new Date().toISOString(),
+          timestamp: safeIso(sms.sentAt),
           event: typeLabels[sms.messageType] || `SMS: ${sms.messageType}`,
           actor: "System",
           detail: `To: ${sms.recipientPhone}`,
@@ -945,9 +962,14 @@ export async function registerRoutes(
 
       timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
+      const deduped = timeline.filter((entry, i, arr) => {
+        if (i === 0) return true;
+        return !(entry.event === arr[i - 1].event && entry.timestamp === arr[i - 1].timestamp);
+      });
+
       return res.status(200).json({
         submission,
-        timeline,
+        timeline: deduped,
         userNames,
         smsLogs,
       });
