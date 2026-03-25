@@ -559,7 +559,11 @@ export default function TechResubmitPage() {
 
               <Card>
                 <CardContent className="p-4 space-y-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Model, Serial & Estimate Screenshots</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {form.watch("requestType") === "infestation_non_accessible"
+                      ? "Model / Serial Tag Photo"
+                      : "Model, Serial & Estimate Screenshots"}
+                  </p>
                   <div className="grid grid-cols-4 gap-2">
                     {estimatePhotoUrls.map((url, i) => (
                       <div key={i} className="relative aspect-square bg-muted rounded-md overflow-hidden">

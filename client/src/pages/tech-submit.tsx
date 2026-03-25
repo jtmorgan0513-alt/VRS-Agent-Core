@@ -854,16 +854,26 @@ export default function TechSubmitPage() {
               </CardContent>
             </Card>
 
-            {watchedRequestType === "authorization" && (
-              <Card>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Model, Serial &amp; Estimate Screenshots <span className="text-destructive">*</span>
-                    </p>
-                    <HelpTooltip content="Model/serial plate and TechHub estimate screenshots showing part numbers, costs, labor, tax, and total." />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Model/serial plate and TechHub estimate screenshots</p>
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {watchedRequestType === "infestation_non_accessible"
+                      ? <>Model / Serial Tag Photo <span className="text-destructive">*</span></>
+                      : <>Model, Serial &amp; Estimate Screenshots <span className="text-destructive">*</span></>
+                    }
+                  </p>
+                  <HelpTooltip content={
+                    watchedRequestType === "infestation_non_accessible"
+                      ? "Take a clear photo of the model/serial number tag on the appliance."
+                      : "Model/serial plate and TechHub estimate screenshots showing part numbers, costs, labor, tax, and total."
+                  } />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {watchedRequestType === "infestation_non_accessible"
+                    ? "Clear photo of the model/serial number tag on the appliance"
+                    : "Model/serial plate and TechHub estimate screenshots"}
+                </p>
                   <input
                     ref={estimatePhotoInputRef}
                     type="file"
@@ -900,8 +910,7 @@ export default function TechSubmitPage() {
                     </div>
                   )}
                 </CardContent>
-              </Card>
-            )}
+            </Card>
 
             <Card>
               <CardContent className="p-4 space-y-3">
@@ -1049,9 +1058,11 @@ export default function TechSubmitPage() {
                 Please upload at least one issue photo
               </p>
             )}
-            {watchedRequestType === "authorization" && estimatePhotoUrls.length === 0 && !estimatePhotoUploading && (
+            {estimatePhotoUrls.length === 0 && !estimatePhotoUploading && (
               <p className="text-sm text-destructive" data-testid="text-estimate-photo-error">
-                Please upload at least one model/serial & estimate screenshot
+                {watchedRequestType === "infestation_non_accessible"
+                  ? "Please upload a model/serial tag photo"
+                  : "Please upload at least one model/serial & estimate screenshot"}
               </p>
             )}
 
@@ -1059,7 +1070,7 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || (watchedRequestType === "authorization" && estimatePhotoUrls.length === 0)}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || estimatePhotoUrls.length === 0}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
