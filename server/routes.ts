@@ -2473,5 +2473,22 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/clear-test-submissions", authenticateToken, requireRole("super_admin"), async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const smsResult = await db.execute(sql`DELETE FROM sms_notifications`);
+      const subResult = await db.execute(sql`DELETE FROM submissions`);
+      return res.status(200).json({
+        message: "All submissions and SMS logs cleared",
+        deletedSubmissions: subResult.rowCount,
+        deletedSms: smsResult.rowCount,
+      });
+    } catch (error) {
+      console.error("Clear submissions error:", error);
+      return res.status(500).json({ error: "Failed to clear submissions" });
+    }
+  });
+
   return httpServer;
 }
