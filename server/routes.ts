@@ -1771,11 +1771,21 @@ export async function registerRoutes(
   app.get("/api/admin/users", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const users = await storage.getUsers();
-      const sanitizedUsers = users.map(sanitizeUser).filter(u => !u.isSystemAccount);
+      const sanitizedUsers = users.map(sanitizeUser).filter(u => !u.isSystemAccount && u.role !== 'technician');
       return res.status(200).json({ users: sanitizedUsers });
     } catch (error) {
       console.error("Admin get users error:", error);
       return res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  app.get("/api/admin/technician-users", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const technicians = await storage.getTechnicianUsers();
+      return res.status(200).json({ technicians });
+    } catch (error) {
+      console.error("Admin get technician users error:", error);
+      return res.status(500).json({ error: "Failed to get technician users" });
     }
   });
 

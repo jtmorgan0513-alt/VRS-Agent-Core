@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
 import { useWebSocket } from "@/lib/websocket";
-import type { User } from "@shared/schema";
+import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
   SidebarProvider,
@@ -99,6 +99,8 @@ import {
   CircleDot,
   ArrowLeftRight,
   Undo2,
+  ArrowUpDown,
+  Wrench,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -1304,12 +1306,22 @@ export default function AdminDashboard() {
     return () => unsub();
   }, [subscribe]);
 
+  const [userTab, setUserTab] = useState<"staff" | "technicians">("staff");
+  const [techSearchQuery, setTechSearchQuery] = useState("");
+  const [techSortField, setTechSortField] = useState<"name" | "district" | "totalTickets">("name");
+  const [techSortDir, setTechSortDir] = useState<"asc" | "desc">("asc");
+
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: SafeUser[] }>({
     queryKey: ["/api/admin/users"],
   });
 
   const users = usersData?.users || [];
   const vrsAgents = users.filter((u) => u.role === "vrs_agent");
+
+  const { data: techUsersData, isLoading: techUsersLoading } = useQuery<{ technicians: TechnicianUserView[] }>({
+    queryKey: ["/api/admin/technician-users"],
+    enabled: activeView === "users",
+  });
 
   const { data: specData, isLoading: specLoading } = useQuery<{
     specializations: { id: number; userId: number; division: string }[];
@@ -1856,7 +1868,7 @@ export default function AdminDashboard() {
                 {activeView === "feedback" && "Technician Feedback"}
               </h1>
             </div>
-            {activeView === "users" && (
+            {activeView === "users" && userTab === "staff" && (
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="secondary"
@@ -1882,132 +1894,274 @@ export default function AdminDashboard() {
           <div className="flex-1 overflow-auto">
             {activeView === "users" && (
               <div className="p-4">
-                <div className="relative mb-4">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Search users by name, LDAP ID, role, or phone..."
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    className="pl-9 pr-9"
-                    data-testid="input-user-search"
-                  />
-                  {userSearchQuery && (
-                    <button
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => setUserSearchQuery("")}
-                      data-testid="button-clear-user-search"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+                <div className="flex items-center gap-1 mb-4 border-b" data-testid="user-management-tabs">
+                  <div
+                    onClick={() => setUserTab("staff")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors cursor-pointer select-none ${userTab === "staff" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                    data-testid="tab-staff"
+                    role="tab"
+                    aria-selected={userTab === "staff"}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Staff
+                      <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground" data-testid="badge-staff-count">{users.length}</span>
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => setUserTab("technicians")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors cursor-pointer select-none ${userTab === "technicians" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                    data-testid="tab-field-technicians"
+                    role="tab"
+                    aria-selected={userTab === "technicians"}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Wrench className="w-4 h-4" />
+                      Field Technicians
+                      <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground" data-testid="badge-tech-count">{techUsersData?.technicians?.length ?? 0}</span>
+                    </div>
+                  </div>
                 </div>
-                {usersLoading ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto -mx-4 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
-                    <Table data-testid="table-users" className="min-w-[700px] mx-4">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead className="hidden sm:table-cell">Phone</TableHead>
-                        <TableHead>RAC ID</TableHead>
-                        <TableHead className="hidden sm:table-cell">Password Status</TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1.5">
-                            Status
-                            <HelpTooltip content="Deactivated users cannot log in. Their pending submissions remain in the queue." />
-                          </div>
-                        </TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.filter((u) => {
-                        if (!userSearchQuery) return true;
-                        const q = userSearchQuery.toLowerCase();
-                        return (
-                          u.name?.toLowerCase().includes(q) ||
-                          u.racId?.toLowerCase().includes(q) ||
-                          u.role?.toLowerCase().includes(q) ||
-                          u.phone?.toLowerCase().includes(q) ||
-                          u.email?.toLowerCase().includes(q)
-                        );
-                      }).map((u) => (
-                        <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
-                          <TableCell data-testid={`text-user-name-${u.id}`}>{u.name}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={ROLE_BADGE_VARIANT[u.role] || "default"}
-                              data-testid={`badge-role-${u.id}`}
-                            >
-                              {ROLE_LABELS[u.role] || u.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell" data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
-                          <TableCell data-testid={`text-user-racid-${u.id}`}>{u.racId || "-"}</TableCell>
-                          <TableCell className="hidden sm:table-cell" data-testid={`text-pw-status-${u.id}`}>
-                            {u.mustChangePassword ? (
-                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">Must Change</Badge>
-                            ) : u.passwordChangedAt ? (
-                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">Changed {formatDateShort(u.passwordChangedAt)}</Badge>
-                            ) : (
-                              <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">Active</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Switch
-                              checked={u.isActive}
-                              onCheckedChange={(checked) => {
-                                if (!checked) {
-                                  setDeactivateConfirm({ id: u.id, name: u.name, isActive: false });
-                                } else {
-                                  toggleStatusMutation.mutate({ id: u.id, isActive: true });
-                                }
-                              }}
-                              data-testid={`switch-status-${u.id}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openEditDialog(u)}
-                                data-testid={`button-edit-${u.id}`}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setResetPwConfirm({ id: u.id, name: u.name })}
-                                data-testid={`button-reset-pw-${u.id}`}
-                              >
-                                <Key className="w-4 h-4" />
-                              </Button>
-                              {!u.isSystemAccount && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-red-600 dark:text-red-400 hover-elevate"
-                                  onClick={() => setDeleteConfirm({ id: u.id, name: u.name })}
-                                  data-testid={`button-delete-user-${u.id}`}
+
+                {userTab === "staff" && (
+                  <>
+                    <div className="relative mb-4">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search users by name, LDAP ID, role, or phone..."
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        className="pl-9 pr-9"
+                        data-testid="input-user-search"
+                      />
+                      {userSearchQuery && (
+                        <button
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          onClick={() => setUserSearchQuery("")}
+                          data-testid="button-clear-user-search"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {usersLoading ? (
+                      <div className="space-y-3">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto -mx-4 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
+                        <Table data-testid="table-users" className="min-w-[700px] mx-4">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead className="hidden sm:table-cell">Phone</TableHead>
+                            <TableHead>RAC ID</TableHead>
+                            <TableHead className="hidden sm:table-cell">Password Status</TableHead>
+                            <TableHead>
+                              <div className="flex items-center gap-1.5">
+                                Status
+                                <HelpTooltip content="Deactivated users cannot log in. Their pending submissions remain in the queue." />
+                              </div>
+                            </TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {users.filter((u) => {
+                            if (!userSearchQuery) return true;
+                            const q = userSearchQuery.toLowerCase();
+                            return (
+                              u.name?.toLowerCase().includes(q) ||
+                              u.racId?.toLowerCase().includes(q) ||
+                              u.role?.toLowerCase().includes(q) ||
+                              u.phone?.toLowerCase().includes(q) ||
+                              u.email?.toLowerCase().includes(q)
+                            );
+                          }).map((u) => (
+                            <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
+                              <TableCell data-testid={`text-user-name-${u.id}`}>{u.name}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={ROLE_BADGE_VARIANT[u.role] || "default"}
+                                  data-testid={`badge-role-${u.id}`}
                                 >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  </div>
+                                  {ROLE_LABELS[u.role] || u.role}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="hidden sm:table-cell" data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
+                              <TableCell data-testid={`text-user-racid-${u.id}`}>{u.racId || "-"}</TableCell>
+                              <TableCell className="hidden sm:table-cell" data-testid={`text-pw-status-${u.id}`}>
+                                {u.mustChangePassword ? (
+                                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">Must Change</Badge>
+                                ) : u.passwordChangedAt ? (
+                                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">Changed {formatDateShort(u.passwordChangedAt)}</Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">Active</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Switch
+                                  checked={u.isActive}
+                                  onCheckedChange={(checked) => {
+                                    if (!checked) {
+                                      setDeactivateConfirm({ id: u.id, name: u.name, isActive: false });
+                                    } else {
+                                      toggleStatusMutation.mutate({ id: u.id, isActive: true });
+                                    }
+                                  }}
+                                  data-testid={`switch-status-${u.id}`}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openEditDialog(u)}
+                                    data-testid={`button-edit-${u.id}`}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setResetPwConfirm({ id: u.id, name: u.name })}
+                                    data-testid={`button-reset-pw-${u.id}`}
+                                  >
+                                    <Key className="w-4 h-4" />
+                                  </Button>
+                                  {!u.isSystemAccount && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-red-600 dark:text-red-400 hover-elevate"
+                                      onClick={() => setDeleteConfirm({ id: u.id, name: u.name })}
+                                      data-testid={`button-delete-user-${u.id}`}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {userTab === "technicians" && (
+                  <>
+                    <div className="relative mb-4">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search technicians by name, RAC ID, or district..."
+                        value={techSearchQuery}
+                        onChange={(e) => setTechSearchQuery(e.target.value)}
+                        className="pl-9 pr-9"
+                        data-testid="input-tech-search"
+                      />
+                      {techSearchQuery && (
+                        <button
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          onClick={() => setTechSearchQuery("")}
+                          data-testid="button-clear-tech-search"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {techUsersLoading ? (
+                      <div className="space-y-3">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (techUsersData?.technicians?.length ?? 0) === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="tech-empty-state">
+                        <Wrench className="w-12 h-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No field technicians have logged in yet</h3>
+                        <p className="text-sm text-muted-foreground max-w-md">Technicians will appear here after their first login.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto -mx-4 pb-2" style={{ WebkitOverflowScrolling: "touch" }}>
+                        <Table data-testid="table-technicians" className="min-w-[800px] mx-4">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>
+                                <button className="flex items-center gap-1 hover:text-foreground" onClick={() => { if (techSortField === "name") { setTechSortDir(d => d === "asc" ? "desc" : "asc"); } else { setTechSortField("name"); setTechSortDir("asc"); } }} data-testid="sort-tech-name">
+                                  Name <ArrowUpDown className="w-3 h-3" />
+                                </button>
+                              </TableHead>
+                              <TableHead>RAC ID</TableHead>
+                              <TableHead>Phone</TableHead>
+                              <TableHead>
+                                <button className="flex items-center gap-1 hover:text-foreground" onClick={() => { if (techSortField === "district") { setTechSortDir(d => d === "asc" ? "desc" : "asc"); } else { setTechSortField("district"); setTechSortDir("asc"); } }} data-testid="sort-tech-district">
+                                  District <ArrowUpDown className="w-3 h-3" />
+                                </button>
+                              </TableHead>
+                              <TableHead>Manager</TableHead>
+                              <TableHead>
+                                <button className="flex items-center gap-1 hover:text-foreground" onClick={() => { if (techSortField === "totalTickets") { setTechSortDir(d => d === "asc" ? "desc" : "asc"); } else { setTechSortField("totalTickets"); setTechSortDir("desc"); } }} data-testid="sort-tech-tickets">
+                                  Total Tickets <ArrowUpDown className="w-3 h-3" />
+                                </button>
+                              </TableHead>
+                              <TableHead>Pending</TableHead>
+                              <TableHead>Approved</TableHead>
+                              <TableHead>Rejected</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(techUsersData?.technicians ?? [])
+                              .filter((t) => {
+                                if (!techSearchQuery) return true;
+                                const q = techSearchQuery.toLowerCase();
+                                return (
+                                  t.name?.toLowerCase().includes(q) ||
+                                  t.racId?.toLowerCase().includes(q) ||
+                                  t.district?.toLowerCase().includes(q)
+                                );
+                              })
+                              .sort((a, b) => {
+                                const dir = techSortDir === "asc" ? 1 : -1;
+                                if (techSortField === "totalTickets") {
+                                  return (a.totalTickets - b.totalTickets) * dir;
+                                }
+                                const aVal = (a[techSortField] || "").toLowerCase();
+                                const bVal = (b[techSortField] || "").toLowerCase();
+                                return aVal < bVal ? -dir : aVal > bVal ? dir : 0;
+                              })
+                              .map((t) => (
+                                <TableRow key={t.id} data-testid={`row-tech-${t.id}`}>
+                                  <TableCell data-testid={`text-tech-name-${t.id}`}>{t.name}</TableCell>
+                                  <TableCell data-testid={`text-tech-racid-${t.id}`}>{t.racId || "-"}</TableCell>
+                                  <TableCell data-testid={`text-tech-phone-${t.id}`}>{t.phone || "-"}</TableCell>
+                                  <TableCell data-testid={`text-tech-district-${t.id}`}>{t.district || "-"}</TableCell>
+                                  <TableCell data-testid={`text-tech-manager-${t.id}`}>{t.managerName || "-"}</TableCell>
+                                  <TableCell data-testid={`text-tech-total-${t.id}`}>
+                                    <Badge variant="secondary" className="no-default-hover-elevate no-default-active-elevate">{t.totalTickets}</Badge>
+                                  </TableCell>
+                                  <TableCell data-testid={`text-tech-pending-${t.id}`}>
+                                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 no-default-hover-elevate no-default-active-elevate">{t.pendingCount}</Badge>
+                                  </TableCell>
+                                  <TableCell data-testid={`text-tech-approved-${t.id}`}>
+                                    <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 no-default-hover-elevate no-default-active-elevate">{t.approvedCount}</Badge>
+                                  </TableCell>
+                                  <TableCell data-testid={`text-tech-rejected-${t.id}`}>
+                                    <Badge variant="secondary" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 no-default-hover-elevate no-default-active-elevate">{t.rejectedCount}</Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

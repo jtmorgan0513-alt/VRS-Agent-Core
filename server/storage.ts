@@ -24,6 +24,7 @@ import {
   feedback,
   InsertFeedback,
   Feedback,
+  TechnicianUserView,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -148,6 +149,8 @@ export interface IStorage {
     completed: number;
     avgTimeToStage1Ms: number | null;
   }[]>;
+
+  getTechnicianUsers(): Promise<TechnicianUserView[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -922,6 +925,30 @@ export class DatabaseStorage implements IStorage {
       .where(eq(feedback.id, id))
       .returning();
     return result[0];
+  }
+
+  async getTechnicianUsers(): Promise<TechnicianUserView[]> {
+    const result = await db.execute(sql`
+      SELECT
+        u.id,
+        u.name,
+        u.rac_id AS "racId",
+        u.phone,
+        t.district,
+        t.tech_un_no AS "techUnNo",
+        t.manager_name AS "managerName",
+        COUNT(s.id)::int AS "totalTickets",
+        COUNT(CASE WHEN s.ticket_status IN ('queued', 'pending') THEN 1 END)::int AS "pendingCount",
+        COUNT(CASE WHEN s.ticket_status IN ('completed', 'approved') THEN 1 END)::int AS "approvedCount",
+        COUNT(CASE WHEN s.ticket_status = 'rejected' THEN 1 END)::int AS "rejectedCount"
+      FROM users u
+      LEFT JOIN technicians t ON u.rac_id = t.ldap_id
+      LEFT JOIN submissions s ON u.rac_id = s.technician_ldap_id
+      WHERE u.role = 'technician' AND u.is_system_account = false
+      GROUP BY u.id, u.name, u.rac_id, u.phone, t.district, t.tech_un_no, t.manager_name
+      ORDER BY u.name ASC
+    `);
+    return result.rows as TechnicianUserView[];
   }
 }
 

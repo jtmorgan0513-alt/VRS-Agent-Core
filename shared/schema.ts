@@ -235,3 +235,20 @@ export const insertFeedbackSchema = createInsertSchema(feedback).omit({
 
 export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
 export type Feedback = typeof feedback.$inferSelect;
+
+// ============================================================================
+// TECHNICIAN USER VIEW (for admin Field Technicians tab)
+// ============================================================================
+export interface TechnicianUserView {
+  id: number;
+  name: string;
+  racId: string | null;
+  phone: string | null;
+  district: string | null;
+  techUnNo: string | null;
+  managerName: string | null;
+  totalTickets: number;
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+}
