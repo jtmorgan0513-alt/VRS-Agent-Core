@@ -81,7 +81,9 @@ function LandingRoute() {
 
 function OnboardingManager() {
   const { user, refreshUser } = useAuth();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    return sessionStorage.getItem("vrs_onboarding_dismissed") === "true";
+  });
 
   if (!user) return null;
 
@@ -91,6 +93,7 @@ function OnboardingManager() {
 
   const handleWizardComplete = async () => {
     setDismissed(true);
+    sessionStorage.setItem("vrs_onboarding_dismissed", "true");
     try {
       await apiRequest("PATCH", "/api/users/me", {
         firstLogin: false,
@@ -104,6 +107,7 @@ function OnboardingManager() {
 
   const handleWhatsNewDismiss = async () => {
     setDismissed(true);
+    sessionStorage.setItem("vrs_onboarding_dismissed", "true");
     try {
       await apiRequest("PATCH", "/api/users/me", {
         lastSeenVersion: appVersion,
