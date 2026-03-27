@@ -70,11 +70,11 @@ export default function TechHomePage() {
       <button
         onClick={() => navigate("/tech/feedback")}
         data-testid="button-feedback"
-        className="fixed z-50 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 text-sm font-medium"
-        style={{ top: '50%', right: '1rem', transform: 'translateY(-50%)' }}
+        className="fixed z-40 flex items-center gap-1.5 bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full shadow-md hover:shadow-lg hover:bg-primary transition-all duration-200 active:scale-95 text-xs font-medium opacity-80 hover:opacity-100"
+        style={{ top: '50%', right: '0.5rem', transform: 'translateY(-50%)' }}
       >
-        <MessageSquare className="w-4 h-4" />
-        Submit App Feedback
+        <MessageSquare className="w-3 h-3" />
+        Feedback
       </button>
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
