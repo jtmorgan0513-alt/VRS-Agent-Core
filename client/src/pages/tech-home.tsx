@@ -142,13 +142,16 @@ export default function TechHomePage() {
           )}
         </div>
 
-        <div className="pt-4 border-t">
-          <Button variant="ghost" className="w-full min-h-[44px] text-muted-foreground" size="default" data-testid="button-feedback" onClick={() => navigate("/tech/feedback")}>
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Submit Feedback
-          </Button>
-        </div>
       </div>
+
+      <button
+        onClick={() => navigate("/tech/feedback")}
+        data-testid="button-feedback"
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 text-sm font-medium"
+      >
+        <MessageSquare className="w-4 h-4" />
+        Feedback
+      </button>
     </div>
   );
 }
