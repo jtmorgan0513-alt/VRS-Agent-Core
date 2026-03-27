@@ -67,6 +67,16 @@ export default function TechHomePage() {
         </div>
       </div>
 
+      <button
+        onClick={() => navigate("/tech/feedback")}
+        data-testid="button-feedback"
+        className="fixed z-50 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 text-sm font-medium"
+        style={{ top: '50%', right: '1rem', transform: 'translateY(-50%)' }}
+      >
+        <MessageSquare className="w-4 h-4" />
+        Submit App Feedback
+      </button>
+
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <Card>
@@ -91,17 +101,6 @@ export default function TechHomePage() {
             </CardContent>
           </Card>
         </div>
-
-        <Button
-          variant="outline"
-          className="w-full min-h-[44px] border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-          size="lg"
-          data-testid="button-feedback"
-          onClick={() => navigate("/tech/feedback")}
-        >
-          <MessageSquare className="w-4 h-4 mr-2" />
-          Submit App Feedback
-        </Button>
 
         <Button className="w-full min-h-[44px]" size="lg" data-testid="button-new-submission" onClick={() => navigate("/tech/submit")}>
           <FileText className="w-4 h-4 mr-2" />
