@@ -2128,6 +2128,50 @@ export async function registerRoutes(
   // TECHNICIAN SYNC ROUTES (Admin)
   // ========================================================================
 
+  app.get("/api/admin/snowflake-schema", authenticateToken, requireRole("super_admin"), async (req, res) => {
+    try {
+      const snowflakeSdk = (await import("snowflake-sdk")).default || await import("snowflake-sdk");
+      const rawKey = process.env.SNOWFLAKE_PRIVATE_KEY;
+      if (!rawKey) return res.status(500).json({ error: "SNOWFLAKE_PRIVATE_KEY not set" });
+      let privateKey = rawKey.trim().replace(/\\n/g, "\n");
+      const headerRe = /-----BEGIN (RSA )?PRIVATE KEY-----/;
+      const footerRe = /-----END (RSA )?PRIVATE KEY-----/;
+      if (headerRe.test(privateKey) && footerRe.test(privateKey)) {
+        const header = privateKey.match(headerRe)![0];
+        const footer = privateKey.match(footerRe)![0];
+        let body = privateKey.replace(header, "").replace(footer, "").replace(/[\s\r\n]+/g, "");
+        const lines = body.match(/.{1,64}/g) || [];
+        privateKey = header + "\n" + lines.join("\n") + "\n" + footer + "\n";
+      } else if (!headerRe.test(privateKey)) {
+        const body = privateKey.replace(/[\s\r\n]+/g, "");
+        const lines = body.match(/.{1,64}/g) || [];
+        privateKey = "-----BEGIN PRIVATE KEY-----\n" + lines.join("\n") + "\n-----END PRIVATE KEY-----\n";
+      }
+      const conn = snowflakeSdk.createConnection({
+        account: process.env.SNOWFLAKE_ACCOUNT,
+        username: process.env.SNOWFLAKE_USERNAME,
+        authenticator: "SNOWFLAKE_JWT",
+        privateKey,
+        warehouse: process.env.SNOWFLAKE_WAREHOUSE,
+        database: "PRD_TPMS",
+        schema: "HSTECH",
+      });
+      await new Promise<void>((resolve, reject) => conn.connect((err: any) => err ? reject(err) : resolve()));
+      const rows: any[] = await new Promise((resolve, reject) => {
+        conn.execute({
+          sqlText: "DESCRIBE TABLE PRD_TPMS.HSTECH.COMTTU_TECH_UN",
+          complete: (err: any, _stmt: any, rows: any) => err ? reject(err) : resolve(rows || []),
+        });
+      });
+      conn.destroy(() => {});
+      const columns = rows.map((r: any) => ({ name: r.name, type: r.type, nullable: r["null?"] }));
+      return res.json({ columns });
+    } catch (error: any) {
+      console.error("Snowflake schema error:", error?.message || error);
+      return res.status(500).json({ error: error?.message || "Failed to describe table" });
+    }
+  });
+
   app.post("/api/admin/sync-technicians", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const snowflakeData = await fetchTechniciansFromSnowflake();
