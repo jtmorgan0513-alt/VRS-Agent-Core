@@ -148,7 +148,7 @@ export default function TechHomePage() {
         onClick={() => navigate("/tech/feedback")}
         data-testid="button-feedback"
         className="fixed z-50 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 text-sm font-medium"
-        style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))', right: 'calc(1.25rem + env(safe-area-inset-right, 0px))' }}
+        style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))', right: '1.25rem' }}
       >
         <MessageSquare className="w-4 h-4" />
         Feedback
