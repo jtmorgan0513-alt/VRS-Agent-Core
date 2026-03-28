@@ -238,7 +238,7 @@ export function useWebSocket(role?: string) {
   const isConnected = useRef(false);
 
   useEffect(() => {
-    if (!role || (role !== "vrs_agent" && role !== "admin" && role !== "super_admin")) {
+    if (!role || (role !== "vrs_agent" && role !== "admin" && role !== "super_admin" && role !== "technician")) {
       return;
     }
 

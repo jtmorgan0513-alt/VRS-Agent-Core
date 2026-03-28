@@ -85,6 +85,7 @@ export interface IStorage {
   getDivisionQueueCount(divisions: string[]): Promise<number>;
   getCompletedTodayCount(agentId?: number): Promise<number>;
   getQueuedCount(divisions: string[]): Promise<number>;
+  getQueuedCountAll(): Promise<number>;
   getPendingCount(agentId: number): Promise<number>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
@@ -526,6 +527,14 @@ export class DatabaseStorage implements IStorage {
       .from(submissions)
       .where(and(...conditions));
     return result[0]?.count || 0;
+  }
+
+  async getQueuedCountAll(): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(eq(submissions.ticketStatus, "queued"));
+    return Number(result[0]?.count) || 0;
   }
 
   async getPendingCount(agentId: number): Promise<number> {

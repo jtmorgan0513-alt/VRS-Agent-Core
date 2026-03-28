@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -8,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Clock, CheckCircle, XCircle, LogOut, RotateCcw, MessageSquare } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useWebSocket } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 
@@ -15,6 +17,31 @@ export default function TechHomePage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const [onlineAgents, setOnlineAgents] = useState<number>(0);
+  const [queuedTickets, setQueuedTickets] = useState<number>(0);
+
+  const { subscribe } = useWebSocket(user?.role);
+
+  const { data: availabilityData } = useQuery<{ onlineAgents: number; queuedTickets: number }>({
+    queryKey: ["/api/vrs-availability"],
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  useEffect(() => {
+    if (availabilityData) {
+      setOnlineAgents(availabilityData.onlineAgents);
+      setQueuedTickets(availabilityData.queuedTickets);
+    }
+  }, [availabilityData]);
+
+  useEffect(() => {
+    const unsub = subscribe("vrs_availability", (payload: any) => {
+      if (payload.onlineAgents !== undefined) setOnlineAgents(payload.onlineAgents);
+      if (payload.queuedTickets !== undefined) setQueuedTickets(payload.queuedTickets);
+    });
+    return unsub;
+  }, [subscribe]);
 
   const { data, isLoading } = useQuery<{ submissions: Submission[] }>({
     queryKey: ["/api/submissions"],
@@ -76,6 +103,30 @@ export default function TechHomePage() {
         <span className="text-sm">💬</span>
         Feedback
       </button>
+
+      <div className="max-w-lg mx-auto px-4 -mt-1 mb-2">
+        <div className={`flex items-center justify-center gap-3 py-2 px-3 rounded-lg text-sm font-medium ${
+          onlineAgents > 0
+            ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800'
+            : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
+        }`} data-testid="banner-vrs-availability">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            onlineAgents > 0 ? 'bg-green-500 animate-pulse' : 'bg-amber-500'
+          }`} />
+          <span data-testid="text-online-agents">
+            {onlineAgents > 0
+              ? `${onlineAgents} VRS Agent${onlineAgents !== 1 ? 's' : ''} Online`
+              : 'No VRS Agents Online'}
+          </span>
+          <span className="text-muted-foreground">&middot;</span>
+          <span data-testid="text-queued-tickets">{queuedTickets} Ticket{queuedTickets !== 1 ? 's' : ''} in Queue</span>
+        </div>
+        {onlineAgents === 0 && (
+          <p className="text-xs text-center text-amber-600 dark:text-amber-400 mt-1" data-testid="text-call-in-notice">
+            Please call in for authorization
+          </p>
+        )}
+      </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
         <div className="grid grid-cols-3 gap-3">

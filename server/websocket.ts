@@ -111,6 +111,10 @@ export function setupWebSocket(server: Server) {
                 payload: { userId: client.userId, name: client.name, status: "offline" },
               });
               log(`Agent ${client.name} auto-set offline on disconnect`, "ws");
+              broadcastToTechnicians({
+                type: 'vrs_availability',
+                payload: { onlineAgents: getOnlineAgentCount() }
+              });
             } catch (err) {
               log(`Failed to auto-offline agent ${client.name}: ${err}`, "ws");
             }
@@ -126,6 +130,22 @@ export function setupWebSocket(server: Server) {
       });
 
       sendToClient(ws, { type: "connected", payload: { userId: decoded.id } });
+
+      if (client.role === 'technician') {
+        try {
+          const onlineAgents = getOnlineAgentCount();
+          const queuedTickets = await storage.getQueuedCountAll();
+          sendToClient(ws, {
+            type: 'vrs_availability',
+            payload: { onlineAgents, queuedTickets }
+          });
+        } catch (e) {
+          sendToClient(ws, {
+            type: 'vrs_availability',
+            payload: { onlineAgents: getOnlineAgentCount(), queuedTickets: 0 }
+          });
+        }
+      }
 
     } catch (err) {
       ws.close(4003, "Invalid token");
@@ -200,4 +220,22 @@ export function getConnectedClient(userId: number): ConnectedClient | undefined 
 export function isAgentConnectedAndOnline(userId: number): boolean {
   const client = clients.get(userId);
   return !!client && client.agentStatus === "online";
+}
+
+export function getOnlineAgentCount(): number {
+  let count = 0;
+  for (const [, client] of clients) {
+    if (client.role === 'vrs_agent' && client.agentStatus === 'online') {
+      count++;
+    }
+  }
+  return count;
+}
+
+export function broadcastToTechnicians(event: WSEvent) {
+  for (const [, client] of clients) {
+    if (client.role === 'technician') {
+      sendToClient(client.ws, event);
+    }
+  }
 }

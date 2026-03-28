@@ -21,7 +21,7 @@ import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1Invalid
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
-import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel } from "./websocket";
+import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, broadcastToTechnicians, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel, getOnlineAgentCount } from "./websocket";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +55,15 @@ function signToken(user: User): string {
 }
 
 const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+
+async function broadcastVrsAvailability() {
+  const onlineAgents = getOnlineAgentCount();
+  const queuedTickets = await storage.getQueuedCountAll();
+  broadcastToTechnicians({
+    type: 'vrs_availability',
+    payload: { onlineAgents, queuedTickets }
+  });
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -621,6 +630,8 @@ export async function registerRoutes(
           },
         });
       }
+
+      await broadcastVrsAvailability();
 
       return res.status(201).json({ submission });
     } catch (error) {
@@ -1260,6 +1271,7 @@ export async function registerRoutes(
           type: "agent_status_changed",
           payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
         });
+        await broadcastVrsAvailability();
       }
 
       if (action === "reject") {
@@ -1274,6 +1286,8 @@ export async function registerRoutes(
           },
         });
       }
+
+      await broadcastVrsAvailability();
 
       return res.status(200).json({ submission: updated });
     } catch (error) {
@@ -1311,6 +1325,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/vrs-availability", authenticateToken, async (_req, res) => {
+    try {
+      const onlineAgents = getOnlineAgentCount();
+      const queuedTickets = await storage.getQueuedCountAll();
+      return res.status(200).json({ onlineAgents, queuedTickets });
+    } catch (error) {
+      console.error("VRS availability error:", error);
+      return res.status(500).json({ error: "Failed to get VRS availability" });
+    }
+  });
+
   // ========================================================================
   // AGENT STATUS ROUTES
   // ========================================================================
@@ -1337,6 +1362,7 @@ export async function registerRoutes(
         type: "agent_status_changed",
         payload: { userId: authReq.user!.id, name: authReq.user!.name, status: parsed.data.status },
       });
+      await broadcastVrsAvailability();
 
       if (parsed.data.status === "online") {
         const specs = await storage.getSpecializations(authReq.user!.id);
@@ -1393,6 +1419,7 @@ export async function registerRoutes(
         type: "agent_status_changed",
         payload: { userId: id, name: user.name, status: parsed.data.status },
       });
+      await broadcastVrsAvailability();
       return res.status(200).json({ agentStatus: updated?.agentStatus });
     } catch (error) {
       console.error("Admin set agent status error:", error);
