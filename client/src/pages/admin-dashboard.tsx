@@ -747,6 +747,7 @@ function TicketOverviewSection() {
                     <TableHead className="text-right">Last Updated</TableHead>
                     <TableHead className="text-right">Age</TableHead>
                     <TableHead className="text-right">Time in Status</TableHead>
+                    <TableHead className="text-right">Processing Time</TableHead>
                     {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
                       <TableHead className="w-[80px]"></TableHead>
                     )}
@@ -813,6 +814,9 @@ function TicketOverviewSection() {
                         </TableCell>
                         <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`time-in-status-${ticket.id}`}>
                           {getTimeInStatus(ticket.statusChangedAt || ticket.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`processing-time-${ticket.id}`}>
+                          {getTimeInStatus(ticket.createdAt, ticket.statusChangedAt)}
                         </TableCell>
                         {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
                           <TableCell className="text-right">
