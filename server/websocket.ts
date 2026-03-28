@@ -111,9 +111,11 @@ export function setupWebSocket(server: Server) {
                 payload: { userId: client.userId, name: client.name, status: "offline" },
               });
               log(`Agent ${client.name} auto-set offline on disconnect`, "ws");
+              const onlineCount = await storage.getOnlineAgentCount();
+              const queuedCount = await storage.getQueuedCountAll();
               broadcastToTechnicians({
                 type: 'vrs_availability',
-                payload: { onlineAgents: getOnlineAgentCount() }
+                payload: { onlineAgents: onlineCount, queuedTickets: queuedCount }
               });
             } catch (err) {
               log(`Failed to auto-offline agent ${client.name}: ${err}`, "ws");
@@ -133,7 +135,7 @@ export function setupWebSocket(server: Server) {
 
       if (client.role === 'technician') {
         try {
-          const onlineAgents = getOnlineAgentCount();
+          const onlineAgents = await storage.getOnlineAgentCount();
           const queuedTickets = await storage.getQueuedCountAll();
           sendToClient(ws, {
             type: 'vrs_availability',
@@ -142,7 +144,7 @@ export function setupWebSocket(server: Server) {
         } catch (e) {
           sendToClient(ws, {
             type: 'vrs_availability',
-            payload: { onlineAgents: getOnlineAgentCount(), queuedTickets: 0 }
+            payload: { onlineAgents: 0, queuedTickets: 0 }
           });
         }
       }

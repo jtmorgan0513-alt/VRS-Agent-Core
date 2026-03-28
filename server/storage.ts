@@ -86,6 +86,7 @@ export interface IStorage {
   getCompletedTodayCount(agentId?: number): Promise<number>;
   getQueuedCount(divisions: string[]): Promise<number>;
   getQueuedCountAll(): Promise<number>;
+  getOnlineAgentCount(): Promise<number>;
   getPendingCount(agentId: number): Promise<number>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
@@ -534,6 +535,18 @@ export class DatabaseStorage implements IStorage {
       .select({ count: sql<number>`count(*)` })
       .from(submissions)
       .where(eq(submissions.ticketStatus, "queued"));
+    return Number(result[0]?.count) || 0;
+  }
+
+  async getOnlineAgentCount(): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users)
+      .where(and(
+        eq(users.role, "vrs_agent"),
+        eq(users.agentStatus, "online"),
+        eq(users.isActive, true)
+      ));
     return Number(result[0]?.count) || 0;
   }
 

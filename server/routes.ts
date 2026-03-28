@@ -21,7 +21,7 @@ import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1Invalid
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
-import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, broadcastToTechnicians, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel, getOnlineAgentCount } from "./websocket";
+import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, broadcastToTechnicians, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel } from "./websocket";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,7 +57,7 @@ function signToken(user: User): string {
 const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
 
 async function broadcastVrsAvailability() {
-  const onlineAgents = getOnlineAgentCount();
+  const onlineAgents = await storage.getOnlineAgentCount();
   const queuedTickets = await storage.getQueuedCountAll();
   broadcastToTechnicians({
     type: 'vrs_availability',
@@ -1327,7 +1327,7 @@ export async function registerRoutes(
 
   app.get("/api/vrs-availability", authenticateToken, async (_req, res) => {
     try {
-      const onlineAgents = getOnlineAgentCount();
+      const onlineAgents = await storage.getOnlineAgentCount();
       const queuedTickets = await storage.getQueuedCountAll();
       return res.status(200).json({ onlineAgents, queuedTickets });
     } catch (error) {
