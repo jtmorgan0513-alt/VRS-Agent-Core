@@ -296,7 +296,6 @@ export default function AgentDashboard() {
     });
 
     const unsub4 = subscribe("pending_tickets", (payload: any) => {
-      playNotificationDing();
       const title = `Queued ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`;
       const desc = `SO #${payload.serviceOrder} waiting in queue`;
       toast({ title, description: desc, duration: 8000 });
