@@ -98,7 +98,7 @@ export default function TechHomePage() {
         onClick={() => navigate("/tech/feedback")}
         data-testid="button-feedback"
         className="fixed z-40 flex items-center gap-1.5 bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full shadow-md hover:shadow-lg hover:bg-primary transition-all duration-200 active:scale-95 text-xs font-medium opacity-85 hover:opacity-100"
-        style={{ top: '50%', right: '0.5rem', transform: 'translateY(-50%)' }}
+        style={{ bottom: '5rem', right: '0.5rem' }}
       >
         <span className="text-sm">💬</span>
         Feedback
