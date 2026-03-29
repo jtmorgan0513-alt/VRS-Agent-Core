@@ -121,11 +121,6 @@ export default function TechHomePage() {
           <span className="text-muted-foreground">&middot;</span>
           <span data-testid="text-queued-tickets">{queuedTickets} Ticket{queuedTickets !== 1 ? 's' : ''} in Queue</span>
         </div>
-        {onlineAgents === 0 && (
-          <p className="text-xs text-center text-amber-600 dark:text-amber-400 mt-1" data-testid="text-call-in-notice">
-            Please call in for authorization
-          </p>
-        )}
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-3 space-y-4">
