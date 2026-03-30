@@ -101,6 +101,12 @@ import {
   Undo2,
   ArrowUpDown,
   Wrench,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
@@ -354,7 +360,34 @@ interface AuditTimelineEntry {
 }
 
 function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | null; open: boolean; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<"details" | "timeline">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "media" | "timeline">("details");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxPhotos, setLightboxPhotos] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const openLightbox = (photos: string[], index: number) => {
+    setLightboxPhotos(photos);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setLightboxOpen(false);
+      setActiveTab("details");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setLightboxOpen(false); e.stopPropagation(); }
+      if (e.key === "ArrowLeft") setLightboxIndex((prev) => (prev - 1 + lightboxPhotos.length) % lightboxPhotos.length);
+      if (e.key === "ArrowRight") setLightboxIndex((prev) => (prev + 1) % lightboxPhotos.length);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [lightboxOpen, lightboxPhotos.length]);
+
   const { data, isLoading } = useQuery<{
     submission: any;
     timeline: AuditTimelineEntry[];
@@ -430,6 +463,13 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
                 data-testid="tab-ticket-details"
               >
                 Details
+              </button>
+              <button
+                onClick={() => setActiveTab("media")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "media" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                data-testid="tab-ticket-media"
+              >
+                Media
               </button>
               <button
                 onClick={() => setActiveTab("timeline")}
@@ -563,6 +603,118 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
               </div>
             )}
 
+            {activeTab === "media" && (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    Photos
+                  </p>
+                  {(() => {
+                    let parsed: any = null;
+                    try { parsed = sub.photos ? JSON.parse(sub.photos) : null; } catch { parsed = null; }
+                    if (!parsed) return <p className="text-sm text-muted-foreground" data-testid="text-admin-no-photos">No photos attached</p>;
+
+                    const isNewFormat = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+                    const estimatePhotos: string[] = (isNewFormat ? (parsed.estimate || []) : []).filter((u: any) => typeof u === "string" && u);
+                    const issuePhotos: string[] = (isNewFormat ? (parsed.issue || []) : []).filter((u: any) => typeof u === "string" && u);
+                    const legacyPhotos: string[] = (Array.isArray(parsed) ? parsed : []).filter((u: any) => typeof u === "string" && u);
+                    const allPhotos = [...issuePhotos, ...estimatePhotos, ...legacyPhotos];
+
+                    const renderPhotoGrid = (photos: string[], label: string, offset: number, testIdPrefix: string) => {
+                      if (photos.length === 0) return null;
+                      return (
+                        <div className="mb-4">
+                          <p className="text-xs text-muted-foreground font-medium mb-2 flex items-center gap-1.5">
+                            <ImageIcon className="w-3 h-3" />
+                            {label} ({photos.length})
+                          </p>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2" data-testid={`admin-media-${testIdPrefix}`}>
+                            {photos.map((url: string, i: number) => (
+                              <div
+                                key={i}
+                                className="relative aspect-square bg-muted rounded-md overflow-hidden cursor-pointer group"
+                                onClick={() => openLightbox(allPhotos, offset + i)}
+                                data-testid={`admin-${testIdPrefix}-photo-${i}`}
+                              >
+                                <img src={url} alt={`${label} ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <ZoomIn className="w-6 h-6 text-white" />
+                                </div>
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="absolute top-1 right-1 bg-black/60 rounded-md p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                  data-testid={`admin-${testIdPrefix}-download-${i}`}
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div>
+                        {renderPhotoGrid(issuePhotos, "Issue Photos", 0, "issue-photos")}
+                        {renderPhotoGrid(estimatePhotos, "Model, Serial & Estimate Screenshots", issuePhotos.length, "estimate-photos")}
+                        {renderPhotoGrid(legacyPhotos, "Photos", issuePhotos.length + estimatePhotos.length, "legacy-photos")}
+                        {estimatePhotos.length === 0 && issuePhotos.length === 0 && legacyPhotos.length === 0 && (
+                          <p className="text-sm text-muted-foreground" data-testid="text-admin-no-photos">No photos attached</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3 flex items-center gap-1.5">
+                    <Video className="w-3.5 h-3.5" />
+                    Video
+                  </p>
+                  {sub.videoUrl ? (
+                    <div className="rounded-md overflow-hidden bg-muted" data-testid="admin-media-video">
+                      <video
+                        src={sub.videoUrl}
+                        controls
+                        className="w-full max-h-[300px]"
+                        data-testid="admin-video-player"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground" data-testid="text-admin-no-video">No video attached</p>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5" />
+                    Voice Note
+                  </p>
+                  {sub.voiceNoteUrl ? (
+                    <div className="rounded-md overflow-hidden bg-muted p-3" data-testid="admin-media-voice">
+                      <audio
+                        src={sub.voiceNoteUrl}
+                        controls
+                        className="w-full"
+                        data-testid="admin-audio-player"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground" data-testid="text-admin-no-voice">No voice note attached</p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === "timeline" && (
               <div>
                 <div className="relative">
@@ -590,6 +742,56 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
           </div>
         )}
       </DialogContent>
+
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+          onClick={() => setLightboxOpen(false)}
+          data-testid="admin-lightbox-overlay"
+        >
+          <button
+            className="absolute top-4 right-4 text-white/80 hover:text-white z-10"
+            onClick={() => setLightboxOpen(false)}
+            data-testid="admin-lightbox-close"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          {lightboxPhotos.length > 1 && (
+            <>
+              <button
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) => (prev - 1 + lightboxPhotos.length) % lightboxPhotos.length);
+                }}
+                data-testid="admin-lightbox-prev"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) => (prev + 1) % lightboxPhotos.length);
+                }}
+                data-testid="admin-lightbox-next"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+          <img
+            src={lightboxPhotos[lightboxIndex]}
+            alt={`Photo ${lightboxIndex + 1}`}
+            className="max-w-[90vw] max-h-[90vh] object-contain"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="admin-lightbox-image"
+          />
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
+            {lightboxIndex + 1} / {lightboxPhotos.length}
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }

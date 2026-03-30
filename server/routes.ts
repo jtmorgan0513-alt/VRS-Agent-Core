@@ -1039,7 +1039,7 @@ export async function registerRoutes(
 
       broadcastToDivisionAgents(submission.applianceType, {
         type: "ticket_claimed",
-        payload: { submissionId: id },
+        payload: { submissionId: id, serviceOrder: submission.serviceOrder },
       }, authReq.user!.id);
 
       const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();

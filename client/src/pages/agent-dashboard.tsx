@@ -280,7 +280,12 @@ export default function AgentDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
-    const unsub2 = subscribe("ticket_claimed", () => {
+    const unsub2 = subscribe("ticket_claimed", (payload: any) => {
+      toast({
+        title: "Ticket claimed by another agent",
+        description: payload?.serviceOrder ? `SO #${payload.serviceOrder} is no longer available.` : "A queued ticket has been claimed by another agent.",
+        duration: 5000,
+      });
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
