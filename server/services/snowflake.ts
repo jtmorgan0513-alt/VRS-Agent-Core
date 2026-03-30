@@ -144,6 +144,48 @@ function executeQuery(connection: any, query: string): Promise<SnowflakeTechRow[
   });
 }
 
+export interface ProcIdResult {
+  procId: string;
+  clientNm: string;
+}
+
+export async function fetchProcIdForServiceOrder(rawServiceOrder: string): Promise<ProcIdResult> {
+  const soNumber = rawServiceOrder.includes("-")
+    ? rawServiceOrder.split("-")[1]
+    : rawServiceOrder;
+
+  try {
+    const connection = await getConnection();
+    try {
+      const rows: any[] = await new Promise((resolve, reject) => {
+        connection.execute({
+          sqlText: `SELECT CMB_THD_PTY_ID, CLIENT_NM FROM PRD_DB2.HS_PERM_TBLS.IH_SERVICEORDER_FULLDETAIL_TBL WHERE SO_NO = ? LIMIT 1`,
+          binds: [soNumber],
+          complete: (err: any, stmt: any, rows: any) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          },
+        });
+      });
+
+      if (rows.length > 0) {
+        return {
+          procId: String(rows[0].CMB_THD_PTY_ID ?? "").trim() || "Not Found",
+          clientNm: String(rows[0].CLIENT_NM ?? "").trim() || "Not Found",
+        };
+      }
+      return { procId: "Not Found", clientNm: "Not Found" };
+    } finally {
+      connection.destroy((err: any) => {
+        if (err) console.error("Snowflake disconnect error:", err.message);
+      });
+    }
+  } catch (err) {
+    console.error("fetchProcIdForServiceOrder error:", err);
+    return { procId: "Not Found", clientNm: "Not Found" };
+  }
+}
+
 export async function fetchTechniciansFromSnowflake(): Promise<SyncedTechnician[]> {
   const connection = await getConnection();
 

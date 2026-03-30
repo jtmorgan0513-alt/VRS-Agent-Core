@@ -118,6 +118,8 @@ export const submissions = pgTable("submissions", {
   reassignmentNotes: text("reassignment_notes"),
   appealNotes: text("appeal_notes"),
   resubmissionOf: integer("resubmission_of"),
+  procId: varchar("proc_id", { length: 50 }),
+  clientNm: varchar("client_nm", { length: 150 }),
   statusChangedAt: timestamp("status_changed_at").default(sql`now()`),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),

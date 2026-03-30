@@ -33,6 +33,6 @@ Key architectural patterns include:
 
 ## External Dependencies
 - **Twilio:** Used for sending SMS notifications to technicians.
-- **Snowflake:** Integrates for synchronizing technician data into the platform's database.
+- **Snowflake:** Integrates for synchronizing technician data into the platform's database. Also provides ProcID (CMB_THD_PTY_ID) and Client Name lookup per service order via `fetchProcIdForServiceOrder` in `server/services/snowflake.ts`, stored as `procId` and `clientNm` on the submissions table.
 - **SHSAI Service:** An external AI service for querying service order history and handling follow-up questions during the authorization process.
 - **LDAP Service:** Utilized for secure authentication of technicians (passwordless) and verifying credentials for agents and administrators.

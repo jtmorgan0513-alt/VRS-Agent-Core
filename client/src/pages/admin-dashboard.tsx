@@ -518,6 +518,14 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
                     <p className="text-xs text-muted-foreground">Request Type</p>
                     <p className="text-sm font-medium capitalize">{sub.requestType || "—"}</p>
                   </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">ProcID</p>
+                    <p className="text-sm font-medium" data-testid="text-detail-proc-id">{sub.procId || "Not Found"}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Client</p>
+                    <p className="text-sm font-medium" data-testid="text-detail-client-nm">{sub.clientNm || "Not Found"}</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

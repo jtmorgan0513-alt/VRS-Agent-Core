@@ -1261,6 +1261,14 @@ export default function AgentDashboard() {
                             <p className="text-xs text-muted-foreground">District</p>
                             <p className="text-sm font-medium" data-testid="text-detail-district">{selectedSubmission.districtCode || "\u2014"}</p>
                           </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">ProcID</p>
+                            <p className="text-sm font-medium" data-testid="text-detail-proc-id">{selectedSubmission.procId || "Not Found"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Client</p>
+                            <p className="text-sm font-medium" data-testid="text-detail-client-nm">{selectedSubmission.clientNm || "Not Found"}</p>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>

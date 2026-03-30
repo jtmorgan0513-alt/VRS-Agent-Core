@@ -15,7 +15,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
-import { fetchTechniciansFromSnowflake } from "./services/snowflake";
+import { fetchTechniciansFromSnowflake, fetchProcIdForServiceOrder } from "./services/snowflake";
 import { seedDatabase } from "./seed";
 import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildRejectAndCloseMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
@@ -565,6 +565,8 @@ export async function registerRoutes(
       }
 
 
+      const procIdResult = await fetchProcIdForServiceOrder(parsed.data.serviceOrder);
+
       const submission = await storage.createSubmission({
         technicianId: user.id,
         racId: user.racId || "",
@@ -598,6 +600,8 @@ export async function registerRoutes(
         rgcCode: null,
         appealNotes: parsed.data.appealNotes || null,
         resubmissionOf: parsed.data.resubmissionOf || null,
+        procId: procIdResult.procId,
+        clientNm: procIdResult.clientNm,
       });
 
       if (originalAgent) {
