@@ -2232,6 +2232,48 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/backfill-proc-ids", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const allSubs = await storage.getAllSubmissions();
+      const missing = allSubs.filter(s => !s.procId || !s.clientNm || s.procId === "Not Found" || s.clientNm === "Not Found");
+
+      let updated = 0;
+      let failed = 0;
+
+      for (const sub of missing) {
+        try {
+          const result = await fetchProcIdForServiceOrder(sub.serviceOrder);
+          if (result.procId !== "Not Found" || result.clientNm !== "Not Found") {
+            await storage.updateSubmission(sub.id, {
+              procId: result.procId,
+              clientNm: result.clientNm,
+            } as any);
+            updated++;
+          } else {
+            await storage.updateSubmission(sub.id, {
+              procId: result.procId,
+              clientNm: result.clientNm,
+            } as any);
+            failed++;
+          }
+        } catch (err) {
+          console.error(`Backfill failed for submission ${sub.id}:`, err);
+          failed++;
+        }
+      }
+
+      return res.status(200).json({
+        total: allSubs.length,
+        needingBackfill: missing.length,
+        updated,
+        notFound: failed,
+      });
+    } catch (error: any) {
+      console.error("ProcID backfill error:", error);
+      return res.status(500).json({ error: `Backfill failed: ${error.message || "Unknown error"}` });
+    }
+  });
+
   app.get("/api/admin/technician-metrics", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const info = await storage.getTechnicianSyncInfo();

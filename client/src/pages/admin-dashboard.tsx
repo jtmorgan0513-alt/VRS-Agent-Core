@@ -1179,6 +1179,27 @@ function TechnicianSyncSection() {
     },
   });
 
+  const [backfillResult, setBackfillResult] = useState<{
+    total: number;
+    needingBackfill: number;
+    updated: number;
+    notFound: number;
+  } | null>(null);
+
+  const backfillMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/backfill-proc-ids");
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      setBackfillResult(data);
+      toast({ title: "Backfill Complete", description: `${data.updated} tickets updated with ProcID/Client data.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Backfill Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const metrics = metricsQuery.data as { activeCount: number; lastSyncedAt: string | null } | undefined;
 
   return (
@@ -1243,6 +1264,59 @@ function TechnicianSyncSection() {
                   <div>
                     <span className="text-muted-foreground">Deactivated:</span>{" "}
                     <span className="font-medium text-red-600" data-testid="text-sync-deactivated">{syncResult.deactivated}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">ProcID / Client Backfill</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Backfill ProcID and Client Name from Snowflake for existing tickets that are missing this data.
+            New tickets are populated automatically at submission time.
+          </p>
+          <Button
+            onClick={() => backfillMutation.mutate()}
+            disabled={backfillMutation.isPending}
+            data-testid="button-backfill-proc-ids"
+          >
+            {backfillMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Backfilling from Snowflake...
+              </>
+            ) : (
+              <>
+                <Database className="w-4 h-4 mr-2" />
+                Backfill ProcIDs
+              </>
+            )}
+          </Button>
+          {backfillResult && (
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-sm font-medium mb-2">Backfill Results</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Total Tickets:</span>{" "}
+                    <span className="font-medium" data-testid="text-backfill-total">{backfillResult.total}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Needed Backfill:</span>{" "}
+                    <span className="font-medium" data-testid="text-backfill-missing">{backfillResult.needingBackfill}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Updated:</span>{" "}
+                    <span className="font-medium text-green-600" data-testid="text-backfill-updated">{backfillResult.updated}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Not Found:</span>{" "}
+                    <span className="font-medium text-muted-foreground" data-testid="text-backfill-notfound">{backfillResult.notFound}</span>
                   </div>
                 </div>
               </CardContent>
