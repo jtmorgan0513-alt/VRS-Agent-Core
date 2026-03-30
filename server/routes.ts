@@ -1144,8 +1144,10 @@ export async function registerRoutes(
         updateData.stage1Status = "approved";
         updateData.stage1ReviewedBy = authReq.user!.id;
         updateData.stage1ReviewedAt = new Date();
+        updateData.technicianMessage = technicianMessage || null;
 
-        smsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+        const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+        smsMessage = technicianMessage ? `${baseMsg}\n\nAgent notes: ${technicianMessage}` : baseMsg;
         smsType = "submission_approved";
 
         const updated = await storage.updateSubmission(id, updateData as any);
@@ -1192,8 +1194,10 @@ export async function registerRoutes(
         updateData.stage2ReviewedBy = authReq.user!.id;
         updateData.stage2ReviewedAt = new Date();
 
+        const approvalNotes = technicianMessage || (submission as any).technicianMessage || null;
+        updateData.technicianMessage = approvalNotes;
         const authDisplay = authCode || rgcCode || "";
-        smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode);
+        smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes);
         smsType = "ticket_approved";
 
       } else if (action === "reject") {

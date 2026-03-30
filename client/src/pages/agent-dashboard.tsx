@@ -712,6 +712,9 @@ export default function AgentDashboard() {
     if (selectedAction === "approve" && authCode) {
       body.authCode = authCode;
     }
+    if ((selectedAction === "approve" || selectedAction === "approve_submission") && technicianMessage) {
+      body.technicianMessage = technicianMessage;
+    }
     processMutation.mutate({ submissionId: selectedSubmission.id, body });
     setConfirmOpen(false);
   };
@@ -1728,6 +1731,21 @@ export default function AgentDashboard() {
                                 )}
                               </div>
 
+                              <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                  <Send className="w-3 h-3" />
+                                  Approval Notes to Technician (sent via SMS)
+                                </Label>
+                                <Textarea
+                                  placeholder="Add notes for the technician regarding this approval (e.g., replacement instructions, special conditions)..."
+                                  value={technicianMessage}
+                                  onChange={(e) => setTechnicianMessage(e.target.value)}
+                                  className="resize-none"
+                                  rows={3}
+                                  data-testid="input-approval-notes-stage2"
+                                />
+                              </div>
+
                               <div>
                                 <Label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1.5">
                                   Internal Agent Notes (not sent to technician)
@@ -2121,6 +2139,23 @@ export default function AgentDashboard() {
                                 </div>
                               )}
 
+                              {(selectedAction === "approve" || selectedAction === "approve_submission") && (
+                                <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                    <Send className="w-3 h-3" />
+                                    Approval Notes to Technician (sent via SMS)
+                                  </Label>
+                                  <Textarea
+                                    placeholder="Add notes for the technician regarding this approval (e.g., replacement instructions, special conditions)..."
+                                    value={technicianMessage}
+                                    onChange={(e) => setTechnicianMessage(e.target.value)}
+                                    className="resize-none"
+                                    rows={3}
+                                    data-testid="input-approval-notes"
+                                  />
+                                </div>
+                              )}
+
                               {selectedAction === "approve_submission" && (
                                 <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
                                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Submission Approval</p>
@@ -2447,10 +2482,10 @@ export default function AgentDashboard() {
               <p className="text-sm text-orange-700 dark:text-orange-400">&bull; {rejectCloseReason === "Other" && rejectCloseCustomReason.trim() ? `Other: ${rejectCloseCustomReason.trim()}` : rejectCloseReason}</p>
             </div>
           )}
-          {((selectedAction === "reject" || selectedAction === "reject_and_close") && technicianMessage || selectedAction === "invalid" && invalidMessage) && (
+          {((selectedAction === "approve" || selectedAction === "approve_submission" || selectedAction === "reject" || selectedAction === "reject_and_close") && technicianMessage || selectedAction === "invalid" && invalidMessage) && (
             <div className="px-6 pb-2">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Message to Technician:</p>
-              <p className="text-sm">{selectedAction === "reject" || selectedAction === "reject_and_close" ? technicianMessage : invalidMessage}</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">{selectedAction === "approve" || selectedAction === "approve_submission" ? "Approval Notes to Technician:" : "Message to Technician:"}</p>
+              <p className="text-sm">{selectedAction === "invalid" ? invalidMessage : technicianMessage}</p>
             </div>
           )}
           {agentNotes && (
