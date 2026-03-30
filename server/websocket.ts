@@ -18,7 +18,7 @@ interface WSEvent {
   payload: Record<string, any>;
 }
 
-const clients = new Map<number, ConnectedClient>();
+const clients = new Map<number, ConnectedClient[]>();
 
 const WARRANTY_LABELS: Record<string, string> = {
   sears_protect: "SPHW",
@@ -72,11 +72,6 @@ export function setupWebSocket(server: Server) {
         return;
       }
 
-      const existingClient = clients.get(decoded.id);
-      if (existingClient) {
-        try { existingClient.ws.close(4000, "Replaced by new connection"); } catch {}
-      }
-
       let divisions: string[] = [];
       if (user.role === "admin" || user.role === "super_admin") {
         divisions = Object.keys(DIVISION_LABELS);
@@ -94,40 +89,53 @@ export function setupWebSocket(server: Server) {
         agentStatus: (user as any).agentStatus || "offline",
       };
 
-      clients.set(decoded.id, client);
-      log(`WebSocket connected: ${client.name} (${client.role}, id=${client.userId})`, "ws");
+      const existing = clients.get(decoded.id) || [];
+      existing.push(client);
+      clients.set(decoded.id, existing);
+      log(`WebSocket connected: ${client.name} (${client.role}, id=${client.userId}, sessions=${existing.length})`, "ws");
 
       ws.on("close", async () => {
-        const current = clients.get(decoded.id);
-        if (current && current.ws === ws) {
-          clients.delete(decoded.id);
-          log(`WebSocket disconnected: ${client.name} (id=${client.userId})`, "ws");
+        const sessions = clients.get(decoded.id);
+        if (sessions) {
+          const remaining = sessions.filter(c => c.ws !== ws);
+          if (remaining.length > 0) {
+            clients.set(decoded.id, remaining);
+            log(`WebSocket session closed: ${client.name} (id=${client.userId}, remaining=${remaining.length})`, "ws");
+          } else {
+            clients.delete(decoded.id);
+            log(`WebSocket disconnected: ${client.name} (id=${client.userId}, last session)`, "ws");
 
-          if (client.role === "vrs_agent" && client.agentStatus !== "offline") {
-            try {
-              await storage.updateUser(client.userId, { agentStatus: "offline", updatedAt: new Date() } as any);
-              broadcastToAdmins({
-                type: "agent_status_changed",
-                payload: { userId: client.userId, name: client.name, status: "offline" },
-              });
-              log(`Agent ${client.name} auto-set offline on disconnect`, "ws");
-              const onlineCount = await storage.getOnlineAgentCount();
-              const queuedCount = await storage.getQueuedCountAll();
-              broadcastToTechnicians({
-                type: 'vrs_availability',
-                payload: { onlineAgents: onlineCount, queuedTickets: queuedCount }
-              });
-            } catch (err) {
-              log(`Failed to auto-offline agent ${client.name}: ${err}`, "ws");
+            if (client.role === "vrs_agent" && client.agentStatus !== "offline") {
+              try {
+                await storage.updateUser(client.userId, { agentStatus: "offline", updatedAt: new Date() } as any);
+                broadcastToAdmins({
+                  type: "agent_status_changed",
+                  payload: { userId: client.userId, name: client.name, status: "offline" },
+                });
+                log(`Agent ${client.name} auto-set offline on disconnect`, "ws");
+                const onlineCount = await storage.getOnlineAgentCount();
+                const queuedCount = await storage.getQueuedCountAll();
+                broadcastToTechnicians({
+                  type: 'vrs_availability',
+                  payload: { onlineAgents: onlineCount, queuedTickets: queuedCount }
+                });
+              } catch (err) {
+                log(`Failed to auto-offline agent ${client.name}: ${err}`, "ws");
+              }
             }
           }
         }
       });
 
       ws.on("error", () => {
-        const current = clients.get(decoded.id);
-        if (current && current.ws === ws) {
-          clients.delete(decoded.id);
+        const sessions = clients.get(decoded.id);
+        if (sessions) {
+          const remaining = sessions.filter(c => c.ws !== ws);
+          if (remaining.length > 0) {
+            clients.set(decoded.id, remaining);
+          } else {
+            clients.delete(decoded.id);
+          }
         }
       });
 
@@ -163,71 +171,91 @@ function sendToClient(ws: WebSocket, event: WSEvent) {
   }
 }
 
-export function broadcastToAgent(userId: number, event: WSEvent) {
-  const client = clients.get(userId);
-  if (client) {
-    sendToClient(client.ws, event);
+function sendToUser(userId: number, event: WSEvent) {
+  const sessions = clients.get(userId);
+  if (sessions) {
+    for (const c of sessions) {
+      sendToClient(c.ws, event);
+    }
   }
 }
 
-export function broadcastToDivisionAgents(division: string, event: WSEvent, excludeUserId?: number) {
-  for (const [userId, client] of clients) {
-    if (excludeUserId && userId === excludeUserId) continue;
-    if (client.role !== "vrs_agent") continue;
-    if (client.agentStatus !== "online") continue;
+export function broadcastToAgent(userId: number, event: WSEvent) {
+  sendToUser(userId, event);
+}
 
-    const isGeneralist = client.divisions.includes("generalist") ||
-      client.divisions.length >= Object.keys(DIVISION_LABELS).length;
-    if (isGeneralist || client.divisions.includes(division)) {
-      sendToClient(client.ws, event);
+export function broadcastToDivisionAgents(division: string, event: WSEvent, excludeUserId?: number) {
+  for (const [userId, sessions] of clients) {
+    if (excludeUserId && userId === excludeUserId) continue;
+    const primary = sessions[0];
+    if (!primary || primary.role !== "vrs_agent") continue;
+    if (primary.agentStatus !== "online") continue;
+
+    const isGeneralist = primary.divisions.includes("generalist") ||
+      primary.divisions.length >= Object.keys(DIVISION_LABELS).length;
+    if (isGeneralist || primary.divisions.includes(division)) {
+      for (const c of sessions) {
+        sendToClient(c.ws, event);
+      }
     }
   }
 }
 
 export function broadcastToAdmins(event: WSEvent) {
-  for (const [, client] of clients) {
-    if (client.role === "admin" || client.role === "super_admin") {
-      sendToClient(client.ws, event);
+  for (const [, sessions] of clients) {
+    for (const c of sessions) {
+      if (c.role === "admin" || c.role === "super_admin") {
+        sendToClient(c.ws, event);
+      }
     }
   }
 }
 
 export function broadcastToAllAgents(event: WSEvent, excludeUserId?: number) {
-  for (const [userId, client] of clients) {
+  for (const [userId, sessions] of clients) {
     if (excludeUserId && userId === excludeUserId) continue;
-    if (client.role === "vrs_agent") {
-      sendToClient(client.ws, event);
+    const primary = sessions[0];
+    if (primary && primary.role === "vrs_agent") {
+      for (const c of sessions) {
+        sendToClient(c.ws, event);
+      }
     }
   }
 }
 
 export function updateClientStatus(userId: number, status: string) {
-  const client = clients.get(userId);
-  if (client) {
-    client.agentStatus = status;
+  const sessions = clients.get(userId);
+  if (sessions) {
+    for (const c of sessions) {
+      c.agentStatus = status;
+    }
   }
 }
 
 export function updateClientDivisions(userId: number, divisions: string[]) {
-  const client = clients.get(userId);
-  if (client) {
-    client.divisions = divisions;
+  const sessions = clients.get(userId);
+  if (sessions) {
+    for (const c of sessions) {
+      c.divisions = divisions;
+    }
   }
 }
 
 export function getConnectedClient(userId: number): ConnectedClient | undefined {
-  return clients.get(userId);
+  const sessions = clients.get(userId);
+  return sessions?.[0];
 }
 
 export function isAgentConnectedAndOnline(userId: number): boolean {
-  const client = clients.get(userId);
-  return !!client && client.agentStatus === "online";
+  const sessions = clients.get(userId);
+  return !!sessions && sessions.length > 0 && sessions[0].agentStatus === "online";
 }
 
 export function getOnlineAgentCount(): number {
   let count = 0;
-  for (const [, client] of clients) {
-    if (client.role === 'vrs_agent' && client.agentStatus === 'online') {
+  for (const [, sessions] of clients) {
+    const primary = sessions[0];
+    if (primary && primary.role === 'vrs_agent' && primary.agentStatus === 'online') {
       count++;
     }
   }
@@ -235,9 +263,11 @@ export function getOnlineAgentCount(): number {
 }
 
 export function broadcastToTechnicians(event: WSEvent) {
-  for (const [, client] of clients) {
-    if (client.role === 'technician') {
-      sendToClient(client.ws, event);
+  for (const [, sessions] of clients) {
+    for (const c of sessions) {
+      if (c.role === 'technician') {
+        sendToClient(c.ws, event);
+      }
     }
   }
 }

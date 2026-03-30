@@ -1035,6 +1035,10 @@ export async function registerRoutes(
           type: "agent_status_changed",
           payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "working" },
         });
+        broadcastToAgent(authReq.user!.id, {
+          type: "own_status_changed",
+          payload: { status: "working" },
+        });
       }
 
       broadcastToDivisionAgents(submission.applianceType, {
@@ -1271,6 +1275,10 @@ export async function registerRoutes(
           type: "agent_status_changed",
           payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
         });
+        broadcastToAgent(authReq.user!.id, {
+          type: "own_status_changed",
+          payload: { status: "online" },
+        });
         await broadcastVrsAvailability();
       }
 
@@ -1362,6 +1370,10 @@ export async function registerRoutes(
         type: "agent_status_changed",
         payload: { userId: authReq.user!.id, name: authReq.user!.name, status: parsed.data.status },
       });
+      broadcastToAgent(authReq.user!.id, {
+        type: "own_status_changed",
+        payload: { status: parsed.data.status },
+      });
       await broadcastVrsAvailability();
 
       if (parsed.data.status === "online") {
@@ -1418,6 +1430,10 @@ export async function registerRoutes(
       broadcastToAdmins({
         type: "agent_status_changed",
         payload: { userId: id, name: user.name, status: parsed.data.status },
+      });
+      broadcastToAgent(id, {
+        type: "own_status_changed",
+        payload: { status: parsed.data.status },
       });
       await broadcastVrsAvailability();
       return res.status(200).json({ agentStatus: updated?.agentStatus });
@@ -1618,6 +1634,10 @@ export async function registerRoutes(
         broadcastToAdmins({
           type: "agent_status_changed",
           payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
+        });
+        broadcastToAgent(authReq.user!.id, {
+          type: "own_status_changed",
+          payload: { status: "online" },
         });
 
         broadcastToDivisionAgents(newDivision, {

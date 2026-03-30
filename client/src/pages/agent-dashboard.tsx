@@ -329,6 +329,12 @@ export default function AgentDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     });
 
+    const unsub7 = subscribe("own_status_changed", (payload: any) => {
+      if (payload?.status) {
+        setLocalAgentStatus(payload.status);
+      }
+    });
+
     return () => {
       unsub1();
       unsub2();
@@ -336,6 +342,7 @@ export default function AgentDashboard() {
       unsub4();
       unsub5();
       unsub6();
+      unsub7();
     };
   }, [subscribe, toast]);
 
