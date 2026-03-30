@@ -85,8 +85,11 @@ import {
   ScrollText,
   XCircle,
   Download,
+  Moon,
+  Sun,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useTheme } from "@/components/theme-provider";
 import PhotoLightbox from "@/components/photo-lightbox";
 
 type SubmissionWithTech = Submission & {
@@ -147,6 +150,7 @@ export default function AgentDashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed">("queue");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
@@ -942,6 +946,16 @@ export default function AgentDashboard() {
             >
               <LifeBuoy className="w-4 h-4" />
               <span>Help Center</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={toggleTheme}
+              data-testid="button-toggle-theme"
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
             </Button>
             <Button
               variant="ghost"

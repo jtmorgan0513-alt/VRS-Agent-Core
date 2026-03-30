@@ -23,6 +23,7 @@ Key architectural patterns include:
 - **Division Correction:** Agents can correct the appliance type mid-review, with intelligent handling of ticket ownership based on their assigned divisions.
 - **Comprehensive Onboarding & Help System:** Features first-login wizards, "What's New" modals, contextual help tooltips, and a searchable Help Center to guide users.
 - **Mobile-First Design:** The technician PWA and agent/admin dashboards are designed with responsiveness in mind, adapting to various screen sizes.
+- **Dark Mode:** App-wide dark mode toggle via `ThemeProvider` (`client/src/components/theme-provider.tsx`) using Tailwind's `darkMode: ["class"]`. Persists user preference to `localStorage` (key `vrs-theme`) with OS preference fallback. Toggle buttons in tech header (icon-only), agent sidebar footer, and admin sidebar footer.
 
 **Frontend Pages:**
 - **Technician:** Login, Home, Submission Form, History, Submission Detail, Help Center.

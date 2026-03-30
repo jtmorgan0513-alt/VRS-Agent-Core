@@ -101,6 +101,8 @@ import {
   Undo2,
   ArrowUpDown,
   Wrench,
+  Moon,
+  Sun,
   Image as ImageIcon,
   Video,
   Mic,
@@ -109,6 +111,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
+import { useTheme } from "@/components/theme-provider";
 
 interface AnalyticsData {
   submissionsToday: number;
@@ -1475,6 +1478,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<ActiveView>("users");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
@@ -2032,6 +2036,16 @@ export default function AdminDashboard() {
             >
               <LifeBuoy className="w-4 h-4" />
               <span>Help Center</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={toggleTheme}
+              data-testid="button-toggle-theme"
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
             </Button>
             <Button
               variant="ghost"
