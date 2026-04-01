@@ -7,11 +7,16 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+const DISMISS_KEY = "vrs-install-prompt-dismissed";
+
 export default function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
+    const dismissed = localStorage.getItem(DISMISS_KEY);
+    if (dismissed) return;
+
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
@@ -31,12 +36,14 @@ export default function InstallPrompt() {
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === "accepted") {
       setShowBanner(false);
+      localStorage.setItem(DISMISS_KEY, "true");
     }
     setDeferredPrompt(null);
   };
 
   const handleDismiss = () => {
     setShowBanner(false);
+    localStorage.setItem(DISMISS_KEY, "true");
   };
 
   if (!showBanner) return null;
@@ -44,7 +51,7 @@ export default function InstallPrompt() {
   return (
     <div
       data-testid="install-prompt-banner"
-      className="fixed bottom-16 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-3"
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 px-4 py-2 shadow-lg"
       style={{ backgroundColor: "#003366" }}
     >
       <span className="text-white text-sm font-medium">Install VRS Submit</span>
