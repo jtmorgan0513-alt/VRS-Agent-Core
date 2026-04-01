@@ -81,11 +81,11 @@ export default function TechHomePage() {
       <button
         onClick={() => navigate("/tech/feedback")}
         data-testid="button-feedback"
-        className="fixed z-40 flex items-center gap-1.5 bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full shadow-md hover:shadow-lg hover:bg-primary transition-all duration-200 active:scale-95 text-xs font-medium opacity-85 hover:opacity-100"
-        style={{ bottom: '1rem', right: '1rem' }}
+        className="fixed z-40 flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all duration-200 active:scale-95 text-sm font-semibold"
+        style={{ bottom: '1.5rem', right: '1.5rem' }}
       >
-        <span className="text-sm">💬</span>
-        Feedback
+        <span className="text-base">💬</span>
+        Submit Feedback
       </button>
 
       <div className="max-w-lg mx-auto px-4 -mt-1 space-y-4">
