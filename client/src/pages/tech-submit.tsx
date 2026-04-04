@@ -670,37 +670,7 @@ export default function TechSubmitPage() {
                   )}
                 />
 
-                {watchedRequestType === "parts_nla" ? (
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-sm font-medium">Warranty Program *</label>
-                      <HelpTooltip content="NLA parts requests are only available for these warranty programs." />
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {[
-                        { value: "sears_protect", label: "Sears Protect" },
-                        { value: "sears_pa", label: "Sears PA" },
-                        { value: "sears_home_warranty", label: "Sears Home Warranty (Cinch)" },
-                      ].map((program) => (
-                        <div
-                          key={program.value}
-                          className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer hover-elevate ${
-                            form.watch("warrantyProvider") === program.value
-                              ? "border-primary bg-primary/5"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            form.setValue("warrantyProvider", program.value);
-                            form.setValue("warrantyType", "sears_protect");
-                          }}
-                          data-testid={`provider-nla-${program.value}`}
-                        >
-                          <span className="text-sm">{program.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
+                {watchedRequestType !== "parts_nla" && (
                   <div>
                     <div className="flex items-center gap-1.5">
                       <label className="text-sm font-medium">Warranty Provider *</label>
