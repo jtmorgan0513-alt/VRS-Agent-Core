@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Vpi3_avvCSNzESxQ6HLUf"
+uri = "file://.local/architecture-audit-parts-no-longer-available.md"
+type = "text"
+title = "Architecture Audit — Parts No Longer Available"
