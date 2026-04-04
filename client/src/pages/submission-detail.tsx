@@ -285,7 +285,7 @@ export default function SubmissionDetailPage() {
           <CardContent className="p-4 space-y-3">
             <DetailRow label="Service Order" value={`#${sub.serviceOrder}`} testId="text-detail-so" />
             <DetailRow label="Appliance" value={sub.applianceType.charAt(0).toUpperCase() + sub.applianceType.slice(1)} testId="text-detail-appliance" />
-            <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : "Infestation / Non-Accessible"} testId="text-detail-request-type" />
+            <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : sub.requestType === "parts_nla" ? "Parts — No Longer Available (NLA)" : "Infestation / Non-Accessible"} testId="text-detail-request-type" />
             <DetailRow label="Status" value={
               <StatusBadge
                 status={status}
@@ -309,6 +309,23 @@ export default function SubmissionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {(sub as any).partNumbers && (() => {
+          try {
+            const parts = JSON.parse((sub as any).partNumbers);
+            if (Array.isArray(parts) && parts.length > 0) {
+              return (
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Part Number(s)</p>
+                    <p className="text-sm font-mono" data-testid="text-part-numbers">{parts.join(", ")}</p>
+                  </CardContent>
+                </Card>
+              );
+            }
+          } catch {}
+          return null;
+        })()}
 
         {(() => {
           let parsed: any = null;

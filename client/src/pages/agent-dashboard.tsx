@@ -909,6 +909,7 @@ export default function AgentDashboard() {
                   {[
                     { value: "authorization", label: "Authorization" },
                     { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
+                    { value: "parts_nla", label: "Parts — NLA" },
                   ].map((rt) => (
                     <SidebarMenuItem key={rt.value}>
                       <SidebarMenuButton
@@ -1110,6 +1111,15 @@ export default function AgentDashboard() {
                                   Infestation / Non-Accessible
                                 </Badge>
                               )}
+                              {sub.requestType === "parts_nla" && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
+                                  data-testid={`badge-request-type-${sub.id}`}
+                                >
+                                  NLA Parts
+                                </Badge>
+                              )}
                               {sub.resubmissionOf && (
                                 <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`badge-resubmission-${sub.id}`}>
                                   Resubmission
@@ -1185,6 +1195,8 @@ export default function AgentDashboard() {
                           className={
                             selectedSubmission.requestType === "infestation_non_accessible"
                               ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                              : selectedSubmission.requestType === "parts_nla"
+                              ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
                               : ""
                           }
                           variant={selectedSubmission.requestType === "authorization" ? "default" : "secondary"}
@@ -1192,6 +1204,8 @@ export default function AgentDashboard() {
                         >
                           {selectedSubmission.requestType === "authorization"
                             ? "Authorization"
+                            : selectedSubmission.requestType === "parts_nla"
+                            ? "Parts — NLA"
                             : "Infestation / Non-Accessible"}
                         </Badge>
                         {getUrgencyLevel(selectedSubmission.createdAt) !== "normal" && (
@@ -1328,6 +1342,20 @@ export default function AgentDashboard() {
                           </div>
                         </div>
                         <div>
+                          {(selectedSubmission as any).partNumbers && (() => {
+                            try {
+                              const parts = JSON.parse((selectedSubmission as any).partNumbers);
+                              if (Array.isArray(parts) && parts.length > 0) {
+                                return (
+                                  <div className="mb-3">
+                                    <p className="text-xs text-muted-foreground mb-1">Part Number(s)</p>
+                                    <p className="text-sm font-mono" data-testid="text-detail-part-numbers">{parts.join(", ")}</p>
+                                  </div>
+                                );
+                              }
+                            } catch {}
+                            return null;
+                          })()}
                           <div className="flex items-center gap-2 mb-1">
                             <p className="text-xs text-muted-foreground">Description</p>
                             {selectedSubmission.aiEnhanced && (

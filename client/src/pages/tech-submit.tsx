@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2 } from "lucide-react";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -53,10 +53,11 @@ const submissionFormSchema = z.object({
   applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"], {
     required_error: "Select an appliance type",
   }),
-  requestType: z.enum(["authorization", "infestation_non_accessible"]),
+  requestType: z.enum(["authorization", "infestation_non_accessible", "parts_nla"]),
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
+  partNumbers: z.array(z.string()).optional(),
 });
 
 type SubmissionFormData = z.infer<typeof submissionFormSchema>;
@@ -92,6 +93,7 @@ export default function TechSubmitPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const [partNumbers, setPartNumbers] = useState<string[]>([""]);
 
   async function uploadSinglePhoto(file: File): Promise<string | null> {
     const token = getToken();
@@ -463,7 +465,15 @@ export default function TechSubmitPage() {
   });
 
   function onSubmit(data: SubmissionFormData) {
+    if (data.requestType === "parts_nla") {
+      const filteredParts = partNumbers.filter(p => p.trim() !== "");
+      if (filteredParts.length === 0) {
+        toast({ title: "Part Numbers Required", description: "At least one part number is required for NLA submissions.", variant: "destructive" });
+        return;
+      }
+    }
     const payload: any = { ...data };
+    delete payload.partNumbers;
     if (aiUsed && originalBeforeAi) {
       payload.originalDescription = originalBeforeAi;
       payload.aiEnhanced = true;
@@ -476,6 +486,12 @@ export default function TechSubmitPage() {
     if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
     if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;
     if (Object.keys(photosObj).length > 0) payload.photos = JSON.stringify(photosObj);
+    if (data.requestType === "parts_nla" && partNumbers.length > 0) {
+      const filteredParts = partNumbers.filter(p => p.trim() !== "");
+      if (filteredParts.length > 0) {
+        payload.partNumbers = JSON.stringify(filteredParts);
+      }
+    }
     mutation.mutate(payload as any);
   }
 
@@ -509,6 +525,7 @@ export default function TechSubmitPage() {
                     {[
                       { value: "authorization", label: "Authorization", desc: "Request approval for repairs or non-repairable determination" },
                       { value: "infestation_non_accessible", label: "Infestation / Non-Accessible", desc: "Unable to service due to infestation or access limitations" },
+                      { value: "parts_nla", label: "Parts — No Longer Available (NLA)", desc: "Part is unavailable in TechHub. Submit for VRS parts team research. Sears Protect, Sears PA, and Sears Home Warranty (Cinch) calls only." },
                     ].map((opt) => (
                       <button
                         key={opt.value}
@@ -529,6 +546,20 @@ export default function TechSubmitPage() {
                 </FormItem>
               )}
             />
+
+            {watchedRequestType === "parts_nla" && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3" data-testid="nla-info-banner">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-800 dark:text-blue-200">NLA Submissions Only</p>
+                    <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">
+                      Submit this form ONLY when TechHub shows a part as "No Longer Available" for a Sears Protect (SPHW), Sears PA (MPA), or Sears Home Warranty (Cinch) service call. All other calls should be handled through TechHub directly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Card>
               <CardContent className="p-4 space-y-4">
@@ -791,6 +822,65 @@ export default function TechSubmitPage() {
 
               </CardContent>
             </Card>
+
+            {watchedRequestType === "parts_nla" && (
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Part Number(s) <span className="text-destructive">*</span>
+                    </p>
+                    <HelpTooltip content="Enter each unavailable part number from TechHub. Add additional parts using the + button." />
+                  </div>
+                  <div className="space-y-2">
+                    {partNumbers.map((pn, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Input
+                          placeholder="Enter part number (e.g., WPW10321304)"
+                          value={pn}
+                          onChange={(e) => {
+                            const updated = [...partNumbers];
+                            updated[idx] = e.target.value.toUpperCase();
+                            setPartNumbers(updated);
+                          }}
+                          data-testid={`input-part-number-${idx}`}
+                        />
+                        {partNumbers.length > 1 && (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                            onClick={() => setPartNumbers(partNumbers.filter((_, i) => i !== idx))}
+                            data-testid={`button-remove-part-${idx}`}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    {partNumbers.length < 10 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPartNumbers([...partNumbers, ""])}
+                        data-testid="button-add-part-number"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Add Another Part
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted-foreground ml-auto">{partNumbers.filter(p => p.trim() !== "").length}/10 parts</p>
+                  </div>
+                  {partNumbers.every(p => p.trim() === "") && (
+                    <p className="text-sm text-destructive" data-testid="text-part-number-error">At least one part number is required</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardContent className="p-4 space-y-3">
@@ -1070,11 +1160,11 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || estimatePhotoUrls.length === 0}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || estimatePhotoUrls.length === 0 || (watchedRequestType === "parts_nla" && partNumbers.every(p => p.trim() === ""))}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
-              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : isConverting ? "Converting Video..." : audioUploading ? "Uploading Audio..." : "Submit for Review"}
+              {mutation.isPending ? "Submitting..." : estimatePhotoUploading || issuePhotoUploading ? "Uploading Photos..." : isUploading ? "Uploading Video..." : isConverting ? "Converting Video..." : audioUploading ? "Uploading Audio..." : watchedRequestType === "parts_nla" ? "Submit NLA Request" : "Submit for Review"}
             </Button>
           </form>
         </Form>

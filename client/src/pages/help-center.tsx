@@ -59,6 +59,11 @@ const howToGuidesItems: HelpItem[] = [
     content:
       "If your submission is rejected, you will receive an SMS explaining the specific reasons (for example, blurry photos or incomplete estimate). The SMS includes a direct link to resubmit. Tap the link to open a resubmission form that is pre-filled with your original details. Update the information or upload new photos that address the rejection reasons, then submit again. Note: you are limited to 3 resubmissions per ticket. If all three are rejected, you will need to call VRS directly for assistance.",
   },
+  {
+    title: "Submitting an NLA Parts Request",
+    content:
+      "If TechHub shows a part as \"No Longer Available,\" tap \"New Submission\" and select \"Parts — No Longer Available (NLA)\" as the request type. This option is for Sears Protect, Sears PA, and Sears Home Warranty (Cinch) calls only. Enter the part number(s) that showed as unavailable, describe the issue, and upload photos of the failed part along with your model/serial tag. The VRS parts team will research sourcing options and notify you of the outcome.",
+  },
 ];
 
 const faqItems: HelpItem[] = [

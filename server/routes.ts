@@ -17,7 +17,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake, fetchProcIdForServiceOrder } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildRejectAndCloseMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -472,13 +472,14 @@ export async function registerRoutes(
   const createSubmissionSchema = z.object({
     serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
     applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"]),
-    requestType: z.enum(["authorization", "infestation_non_accessible"]),
+    requestType: z.enum(["authorization", "infestation_non_accessible", "parts_nla"]),
     warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
     warrantyProvider: z.string().optional(),
     issueDescription: z.string().min(1, "Issue description is required").max(2000, "Description must be 2000 characters or less"),
     originalDescription: z.string().optional(),
     aiEnhanced: z.boolean().optional(),
     estimateAmount: z.string().optional(),
+    partNumbers: z.string().optional(),
     photos: z.string().optional(),
     videoUrl: z.string().optional(),
     voiceNoteUrl: z.string().optional(),
@@ -498,6 +499,20 @@ export async function registerRoutes(
       const user = await storage.getUser(authReq.user!.id);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
+      }
+
+      if (parsed.data.requestType === "parts_nla") {
+        if (!parsed.data.partNumbers) {
+          return res.status(400).json({ error: "Part numbers are required for NLA Parts requests" });
+        }
+        try {
+          const parts = JSON.parse(parsed.data.partNumbers);
+          if (!Array.isArray(parts) || parts.length === 0 || parts.length > 10 || !parts.every((p: any) => typeof p === "string" && p.trim().length > 0)) {
+            return res.status(400).json({ error: "Please provide 1-10 valid part numbers" });
+          }
+        } catch {
+          return res.status(400).json({ error: "Invalid part numbers format" });
+        }
       }
 
       const isClosed = await storage.hasRejectedClosedForServiceOrder(parsed.data.serviceOrder);
@@ -583,6 +598,7 @@ export async function registerRoutes(
         originalDescription: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? parsed.data.originalDescription : null,
         aiEnhanced: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? true : false,
         estimateAmount: parsed.data.estimateAmount || null,
+        partNumbers: parsed.data.partNumbers || null,
         photos: parsed.data.photos || null,
         videoUrl: parsed.data.videoUrl || null,
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
@@ -1196,8 +1212,13 @@ export async function registerRoutes(
 
         const approvalNotes = technicianMessage || (submission as any).technicianMessage || null;
         updateData.technicianMessage = approvalNotes;
-        const authDisplay = authCode || rgcCode || "";
-        smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes);
+
+        if (submission.requestType === "parts_nla") {
+          smsMessage = buildNlaApprovalMessage(submission.serviceOrder, approvalNotes);
+        } else {
+          const authDisplay = authCode || rgcCode || "";
+          smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes);
+        }
         smsType = "ticket_approved";
 
       } else if (action === "reject") {

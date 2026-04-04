@@ -131,6 +131,14 @@ export function buildRejectAndCloseMessage(serviceOrder: string, reason: string)
   return `VRS Update for SO#${serviceOrder}\n\nStatus: REJECTED — NOT COVERED\nReason: ${reason}\n\nThis repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.`;
 }
 
+export function buildNlaApprovalMessage(serviceOrder: string, agentMessage?: string): string {
+  let msg = `VRS Update for SO#${serviceOrder}\n\nYour Parts NLA request has been received by the VRS Parts team. You will be contacted with further information regarding part sourcing and availability.`;
+  if (agentMessage) {
+    msg += `\n\nAgent notes: ${agentMessage}`;
+  }
+  return msg;
+}
+
 export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null, agentMessage?: string): string {
   let msg: string;
   if (rgcCode) {

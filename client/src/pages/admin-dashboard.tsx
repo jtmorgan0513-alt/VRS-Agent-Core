@@ -516,7 +516,7 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
                   </div>
                   <div className="rounded-lg border p-3">
                     <p className="text-xs text-muted-foreground">Request Type</p>
-                    <p className="text-sm font-medium capitalize">{sub.requestType || "—"}</p>
+                    <p className="text-sm font-medium">{sub.requestType === "authorization" ? "Authorization" : sub.requestType === "parts_nla" ? "Parts — NLA" : sub.requestType === "infestation_non_accessible" ? "Infestation / Non-Accessible" : (sub.requestType || "—")}</p>
                   </div>
                   <div className="rounded-lg border p-3">
                     <p className="text-xs text-muted-foreground">ProcID</p>
@@ -527,6 +527,21 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
                     <p className="text-sm font-medium" data-testid="text-detail-client-nm">{sub.clientNm || "Not Found"}</p>
                   </div>
                 </div>
+
+                {(sub as any).partNumbers && (() => {
+                  try {
+                    const parts = JSON.parse((sub as any).partNumbers);
+                    if (Array.isArray(parts) && parts.length > 0) {
+                      return (
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs text-muted-foreground">Part Number(s)</p>
+                          <p className="text-sm font-mono font-medium" data-testid="text-admin-part-numbers">{parts.join(", ")}</p>
+                        </div>
+                      );
+                    }
+                  } catch {}
+                  return null;
+                })()}
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="rounded-lg border p-3 bg-muted/20">

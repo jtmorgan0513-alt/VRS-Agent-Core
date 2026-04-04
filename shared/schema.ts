@@ -79,13 +79,14 @@ export const submissions = pgTable("submissions", {
   serviceOrder: varchar("service_order", { length: 13 }).notNull(),
   districtCode: varchar("district_code", { length: 4 }),
   applianceType: text("appliance_type").notNull(), // 'cooking', 'dishwasher', 'microwave', 'laundry', 'refrigeration', 'hvac', 'all_other'
-  requestType: text("request_type").notNull(), // 'authorization', 'infestation_non_accessible'
+  requestType: text("request_type").notNull(), // 'authorization', 'infestation_non_accessible', 'parts_nla'
   warrantyType: text("warranty_type").notNull().default("sears_protect"), // 'sears_protect', 'b2b'
   warrantyProvider: varchar("warranty_provider", { length: 100 }),
   issueDescription: text("issue_description").notNull(),
   originalDescription: text("original_description"),
   aiEnhanced: boolean("ai_enhanced").notNull().default(false),
   estimateAmount: text("estimate_amount"), // stored as text, parsed as decimal in application
+  partNumbers: text("part_numbers"), // JSON string array, e.g. '["WPW10321304","W10321304"]'
   photos: text("photos"), // JSON string of photo URLs array
   videoUrl: varchar("video_url", { length: 500 }),
   voiceNoteUrl: varchar("voice_note_url", { length: 500 }),

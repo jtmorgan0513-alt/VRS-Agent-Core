@@ -28,7 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, X, AlertTriangle, ArrowLeft, Lock, Video, Upload } from "lucide-react";
+import { Camera, Send, X, AlertTriangle, ArrowLeft, Lock, Video, Upload, Info, Plus } from "lucide-react";
+import HelpTooltip from "@/components/help-tooltip";
 import type { Submission } from "@shared/schema";
 
 const APPLIANCE_TYPES = [
@@ -47,11 +48,12 @@ const resubmitFormSchema = z.object({
   applianceType: z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"], {
     required_error: "Select an appliance type",
   }),
-  requestType: z.enum(["authorization", "infestation_non_accessible"]),
+  requestType: z.enum(["authorization", "infestation_non_accessible", "parts_nla"]),
   warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
   appealNotes: z.string().max(2000, "Appeal notes must be 2000 characters or less").optional(),
+  partNumbers: z.array(z.string()).optional(),
 });
 
 type ResubmitFormData = z.infer<typeof resubmitFormSchema>;
@@ -69,6 +71,7 @@ export default function TechResubmitPage() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoUploading, setVideoUploading] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [partNumbers, setPartNumbers] = useState<string[]>([""]);
   const issuePhotoInputRef = useRef<HTMLInputElement>(null);
   const estimatePhotoInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +133,14 @@ export default function TechResubmitPage() {
       }
     } catch {}
     if (sub.videoUrl && !isVideoRejected) setVideoUrl(sub.videoUrl);
+    if ((sub as any).partNumbers) {
+      try {
+        const parsed = JSON.parse((sub as any).partNumbers);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPartNumbers(parsed);
+        }
+      } catch {}
+    }
     setInitialized(true);
   }
 
@@ -243,6 +254,7 @@ export default function TechResubmitPage() {
 
   function onSubmit(formData: ResubmitFormData) {
     const payload: any = { ...formData };
+    delete payload.partNumbers;
     const phoneOverride = localStorage.getItem("vrs_phone_override");
     if (phoneOverride) payload.phoneOverride = phoneOverride;
     const photosObj: any = {};
@@ -252,6 +264,12 @@ export default function TechResubmitPage() {
     if (videoUrl) payload.videoUrl = videoUrl;
     if (formData.appealNotes && formData.appealNotes.trim()) {
       payload.appealNotes = formData.appealNotes.trim();
+    }
+    if (formData.requestType === "parts_nla" && partNumbers.length > 0) {
+      const filteredParts = partNumbers.filter(p => p.trim() !== "");
+      if (filteredParts.length > 0) {
+        payload.partNumbers = JSON.stringify(filteredParts);
+      }
     }
     payload.resubmissionOf = originalId;
     mutation.mutate(payload);
@@ -479,6 +497,7 @@ export default function TechResubmitPage() {
                           <SelectContent>
                             <SelectItem value="authorization">Authorization</SelectItem>
                             <SelectItem value="infestation_non_accessible">Infestation / Non-Accessible</SelectItem>
+                            <SelectItem value="parts_nla">Parts — NLA</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -515,6 +534,62 @@ export default function TechResubmitPage() {
                   />
                 </CardContent>
               </Card>
+
+              {form.watch("requestType") === "parts_nla" && (
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Part Number(s) <span className="text-destructive">*</span>
+                      </p>
+                      <HelpTooltip content="Enter each unavailable part number from TechHub. Add additional parts using the + button." />
+                    </div>
+                    <div className="space-y-2">
+                      {partNumbers.map((pn, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Input
+                            placeholder="Enter part number (e.g., WPW10321304)"
+                            value={pn}
+                            onChange={(e) => {
+                              const updated = [...partNumbers];
+                              updated[idx] = e.target.value.toUpperCase();
+                              setPartNumbers(updated);
+                            }}
+                            data-testid={`input-part-number-resubmit-${idx}`}
+                          />
+                          {partNumbers.length > 1 && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                              onClick={() => setPartNumbers(partNumbers.filter((_, i) => i !== idx))}
+                              data-testid={`button-remove-part-resubmit-${idx}`}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      {partNumbers.length < 10 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPartNumbers([...partNumbers, ""])}
+                          data-testid="button-add-part-number-resubmit"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1.5" />
+                          Add Another Part
+                        </Button>
+                      )}
+                      <p className="text-xs text-muted-foreground ml-auto">{partNumbers.filter(p => p.trim() !== "").length}/10 parts</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <Card>
                 <CardContent className="p-4 space-y-4">

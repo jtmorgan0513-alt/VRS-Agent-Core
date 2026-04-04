@@ -51,8 +51,8 @@ export default function TechHistoryPage() {
                       {formatDateShort(sub.createdAt)}
                     </p>
                   </div>
-                  <p className="text-xs text-muted-foreground capitalize mt-0.5">
-                    {sub.requestType.replace(/_/g, " ")}
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <RequestTypeBadge requestType={sub.requestType} />
                   </p>
                 </CardContent>
               </Card>
@@ -80,5 +80,18 @@ function StatusBadge({ status }: { status: string }) {
       return <Badge variant="secondary">Not Applicable</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+function RequestTypeBadge({ requestType }: { requestType: string }) {
+  switch (requestType) {
+    case "authorization":
+      return <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50 dark:text-blue-300 dark:border-blue-700 dark:bg-blue-950">Authorization</Badge>;
+    case "infestation_non_accessible":
+      return <Badge variant="outline" className="text-yellow-700 border-yellow-300 bg-yellow-50 dark:text-yellow-300 dark:border-yellow-700 dark:bg-yellow-950">Infestation</Badge>;
+    case "parts_nla":
+      return <Badge variant="outline" className="text-orange-700 border-orange-300 bg-orange-50 dark:text-orange-300 dark:border-orange-700 dark:bg-orange-950">NLA Parts</Badge>;
+    default:
+      return <Badge variant="outline">{requestType.replace(/_/g, " ")}</Badge>;
   }
 }
