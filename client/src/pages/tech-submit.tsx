@@ -670,42 +670,74 @@ export default function TechSubmitPage() {
                   )}
                 />
 
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-sm font-medium">Warranty Provider *</label>
-                    <HelpTooltip content="Select Sears Protect. B2B providers coming soon." />
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {WARRANTY_PROVIDERS.map((provider) => (
-                      <div
-                        key={provider.value}
-                        className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
-                          provider.available
-                            ? "cursor-pointer hover-elevate"
-                            : "opacity-60 cursor-not-allowed"
-                        } ${
-                          form.watch("warrantyType") === "sears_protect" && provider.value === "sears_protect"
-                            ? "border-primary bg-primary/5"
-                            : ""
-                        }`}
-                        onClick={() => {
-                          if (provider.available) {
+                {watchedRequestType === "parts_nla" ? (
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-sm font-medium">Warranty Program *</label>
+                      <HelpTooltip content="NLA parts requests are only available for these warranty programs." />
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {[
+                        { value: "sears_protect", label: "Sears Protect" },
+                        { value: "sears_pa", label: "Sears PA" },
+                        { value: "sears_home_warranty", label: "Sears Home Warranty (Cinch)" },
+                      ].map((program) => (
+                        <div
+                          key={program.value}
+                          className={`flex items-center gap-2 p-3 rounded-md border cursor-pointer hover-elevate ${
+                            form.watch("warrantyProvider") === program.value
+                              ? "border-primary bg-primary/5"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            form.setValue("warrantyProvider", program.value);
                             form.setValue("warrantyType", "sears_protect");
-                          }
-                        }}
-                        data-testid={`provider-${provider.value}`}
-                      >
-                        <span className="text-sm">{provider.label}</span>
-                        {!provider.available && (
-                          <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
-                            <Lock className="w-3 h-3 mr-1" />
-                            Coming Soon
-                          </Badge>
-                        )}
-                      </div>
-                    ))}
+                          }}
+                          data-testid={`provider-nla-${program.value}`}
+                        >
+                          <span className="text-sm">{program.label}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-sm font-medium">Warranty Provider *</label>
+                      <HelpTooltip content="Select Sears Protect. B2B providers coming soon." />
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {WARRANTY_PROVIDERS.map((provider) => (
+                        <div
+                          key={provider.value}
+                          className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
+                            provider.available
+                              ? "cursor-pointer hover-elevate"
+                              : "opacity-60 cursor-not-allowed"
+                          } ${
+                            form.watch("warrantyType") === "sears_protect" && provider.value === "sears_protect"
+                              ? "border-primary bg-primary/5"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            if (provider.available) {
+                              form.setValue("warrantyType", "sears_protect");
+                            }
+                          }}
+                          data-testid={`provider-${provider.value}`}
+                        >
+                          <span className="text-sm">{provider.label}</span>
+                          {!provider.available && (
+                            <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
+                              <Lock className="w-3 h-3 mr-1" />
+                              Coming Soon
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -717,10 +749,10 @@ export default function TechSubmitPage() {
                   name="issueDescription"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Issue Description *</FormLabel>
+                      <FormLabel>{watchedRequestType === "parts_nla" ? `Issue Description: Why is the part${partNumbers.filter(p => p.trim()).length > 1 ? "s" : ""} needed? *` : "Issue Description *"}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder={watchedRequestType === "authorization" ? "Describe the issue and required repair. For non-repairable units, explain why the unit cannot be repaired." : "Describe the issue..."}
+                          placeholder={watchedRequestType === "parts_nla" ? "Explain why the part is needed and what failed on the unit..." : watchedRequestType === "authorization" ? "Describe the issue and required repair. For non-repairable units, explain why the unit cannot be repaired." : "Describe the issue..."}
                           className="min-h-[100px]"
                           maxLength={2000}
                           {...field}
