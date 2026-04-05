@@ -5,7 +5,7 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing } from "@/lib/websocket";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -109,6 +109,7 @@ import {
   ZoomIn,
   ChevronLeft,
   ChevronRight,
+  Volume2,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 import { useTheme } from "@/components/theme-provider";
@@ -2080,6 +2081,22 @@ export default function AdminDashboard() {
                     >
                       <Users className="w-4 h-4" />
                       <span>Agent Status</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Test Sounds</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => playNotificationDing()}
+                      data-testid="btn-test-new-ticket-sound"
+                    >
+                      <Volume2 className="w-4 h-4" />
+                      <span>New Ticket Alert</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>

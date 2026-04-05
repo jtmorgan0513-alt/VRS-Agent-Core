@@ -51,9 +51,9 @@ export default function TechHistoryPage() {
                       {formatDateShort(sub.createdAt)}
                     </p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <div className="mt-0.5">
                     <RequestTypeBadge requestType={sub.requestType} />
-                  </p>
+                  </div>
                 </CardContent>
               </Card>
             </Link>
