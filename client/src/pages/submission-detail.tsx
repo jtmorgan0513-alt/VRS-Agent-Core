@@ -18,6 +18,7 @@ import {
   Mic,
   Ban,
   ScrollText,
+  Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -225,6 +226,47 @@ export default function SubmissionDetailPage() {
                 <Copy className="w-4 h-4 mr-2" />
                 Copy Code to Clipboard
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {sub.requestType === "parts_nla" && (status === "completed" || status === "approved") && sub.nlaResolution && (
+          <Card className="border-emerald-500">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Package className="w-5 h-5 text-emerald-600" />
+                <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">NLA Resolution</p>
+              </div>
+              {sub.nlaResolution === "replacement_submitted" && (
+                <div data-testid="text-nla-resolution">
+                  <p className="text-sm font-medium">Replacement Submitted</p>
+                  <p className="text-sm text-muted-foreground mt-1">A replacement request has been submitted to the warranty company. Close this call using the NLA labor code.</p>
+                </div>
+              )}
+              {sub.nlaResolution === "part_found_vrs_ordered" && (
+                <div data-testid="text-nla-resolution">
+                  <p className="text-sm font-medium">Part Ordered by VRS</p>
+                  <p className="text-sm text-muted-foreground mt-1">VRS has ordered the part for this service order. You will be contacted with further details.</p>
+                </div>
+              )}
+              {sub.nlaResolution === "part_found_tech_orders" && (
+                <div data-testid="text-nla-resolution">
+                  <p className="text-sm font-medium">Part Found — You Need to Order</p>
+                  {sub.nlaFoundPartNumber && (
+                    <div className="mt-2 bg-primary text-primary-foreground rounded-md py-3 px-4 text-center">
+                      <p className="text-xs uppercase tracking-wider opacity-80 mb-1">Part Number</p>
+                      <p className="text-lg font-mono font-bold tracking-wider">{sub.nlaFoundPartNumber}</p>
+                    </div>
+                  )}
+                  <p className="text-sm text-muted-foreground mt-2">This part is available in TechHub. Order it and reschedule the call.</p>
+                </div>
+              )}
+              {sub.technicianMessage && (
+                <div className="mt-3 pt-3 border-t">
+                  <p className="text-sm font-semibold mb-1">Instructions:</p>
+                  <p className="text-sm" data-testid="text-nla-instructions">{sub.technicianMessage}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

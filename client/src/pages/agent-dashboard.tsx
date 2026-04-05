@@ -88,6 +88,7 @@ import {
   Moon,
   Sun,
   Package,
+  CreditCard,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/components/theme-provider";
@@ -191,6 +192,9 @@ export default function AgentDashboard() {
   const [otherPhotoRejectionText, setOtherPhotoRejectionText] = useState("");
   const [otherVideoRejectionText, setOtherVideoRejectionText] = useState("");
   const [otherVoiceRejectionText, setOtherVoiceRejectionText] = useState("");
+  const [nlaAction, setNlaAction] = useState<string | null>(null);
+  const [nlaFoundPartNumber, setNlaFoundPartNumber] = useState("");
+  const [nlaConfirmOpen, setNlaConfirmOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todaysRgcCode, setTodaysRgcCode] = useState<string | null>(null);
@@ -384,6 +388,9 @@ export default function AgentDashboard() {
     setRejectCloseReason("");
     setRejectCloseCustomReason("");
     setConfirmOpen(false);
+    setNlaAction(null);
+    setNlaFoundPartNumber("");
+    setNlaConfirmOpen(false);
   };
 
   useEffect(() => {
@@ -595,6 +602,26 @@ export default function AgentDashboard() {
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const nlaProcessMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${selectedId}/process-nla`, data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+      setSelectedId(null);
+      setNlaAction(null);
+      setNlaFoundPartNumber("");
+      setNlaConfirmOpen(false);
+      setLocalAgentStatus("online");
+      toast({ title: "NLA Ticket Processed", description: "Resolution sent." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Processing Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1199,6 +1226,15 @@ export default function AgentDashboard() {
                                   NLA Parts
                                 </Badge>
                               )}
+                              {sub.nlaEscalatedBy && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                  data-testid={`badge-escalated-${sub.id}`}
+                                >
+                                  <CreditCard className="w-3 h-3 mr-0.5" />Ready for Order
+                                </Badge>
+                              )}
                               {sub.resubmissionOf && (
                                 <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`badge-resubmission-${sub.id}`}>
                                   Resubmission
@@ -1761,7 +1797,331 @@ export default function AgentDashboard() {
                       </Card>
                     )}
 
-                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && (
+                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType === "parts_nla" && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Package className="w-4 h-4" />
+                            {selectedSubmission.nlaEscalatedBy ? "NLA Parts — Escalated for P-Card Order" : "NLA Parts Resolution"}
+                          </CardTitle>
+                          {selectedSubmission.resubmissionOf && (
+                            <p className="text-xs text-blue-600" data-testid="text-nla-resubmission-indicator">
+                              This is a resubmission
+                            </p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                          {selectedSubmission.nlaEscalatedBy ? (
+                            <>
+                              <div className="border rounded-lg p-4 bg-blue-50/50 dark:bg-blue-950/10 space-y-2">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Pre-Filled by Research Agent</p>
+                                {selectedSubmission.reassignmentNotes && (
+                                  <p className="text-sm">{selectedSubmission.reassignmentNotes}</p>
+                                )}
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground text-xs">Resolution:</span>
+                                    <p className="font-medium">
+                                      {selectedSubmission.nlaResolution === "part_found_vrs_ordered" ? "Part Found — VRS Orders" :
+                                       selectedSubmission.nlaResolution === "part_found_tech_orders" ? "Part Found — Tech Orders" :
+                                       selectedSubmission.nlaResolution || "—"}
+                                    </p>
+                                  </div>
+                                  {selectedSubmission.nlaFoundPartNumber && (
+                                    <div>
+                                      <span className="text-muted-foreground text-xs">Part Number:</span>
+                                      <p className="font-mono font-medium">{selectedSubmission.nlaFoundPartNumber}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                {selectedSubmission.technicianMessage && (
+                                  <div>
+                                    <span className="text-muted-foreground text-xs">Instructions:</span>
+                                    <p className="text-sm">{selectedSubmission.technicianMessage}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                  <Send className="w-3 h-3" />
+                                  Additional Instructions (optional)
+                                </Label>
+                                <Textarea
+                                  placeholder="Add any additional instructions for the technician..."
+                                  value={technicianMessage}
+                                  onChange={(e) => setTechnicianMessage(e.target.value)}
+                                  className="resize-none"
+                                  rows={3}
+                                  data-testid="input-nla-pcard-instructions"
+                                />
+                              </div>
+
+                              <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Internal Agent Notes (not sent to technician)</Label>
+                                <Textarea
+                                  placeholder="Internal notes..."
+                                  value={agentNotes}
+                                  onChange={(e) => setAgentNotes(e.target.value)}
+                                  className="resize-none"
+                                  rows={2}
+                                  data-testid="input-nla-pcard-agent-notes"
+                                />
+                              </div>
+
+                              <Button
+                                className="w-full"
+                                size="lg"
+                                onClick={() => setNlaConfirmOpen(true)}
+                                disabled={nlaProcessMutation.isPending}
+                                data-testid="button-nla-pcard-confirm"
+                              >
+                                <CreditCard className="w-4 h-4 mr-2" />
+                                {nlaProcessMutation.isPending ? "Processing..." : "Confirm & Complete Order"}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="space-y-3">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part Not Found</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setNlaAction(nlaAction === "nla_replacement_submitted" ? null : "nla_replacement_submitted")}
+                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
+                                    nlaAction === "nla_replacement_submitted" ? "border-green-500 bg-green-50 dark:bg-green-950/30" : "border-border hover:border-green-300"
+                                  }`}
+                                  data-testid="nla-action-replacement"
+                                >
+                                  {nlaAction === "nla_replacement_submitted" ? <CheckSquare className="w-5 h-5 text-green-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
+                                  <div>
+                                    <p className="text-sm font-medium">Replacement Submitted to Warranty</p>
+                                    <p className="text-xs text-muted-foreground">Part not available. Replacement sent to warranty. Tech closes call with NLA labor code.</p>
+                                  </div>
+                                </button>
+                              </div>
+
+                              <div className="space-y-3">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part Found</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setNlaAction(nlaAction === "nla_part_found_vrs_ordered" ? null : "nla_part_found_vrs_ordered")}
+                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
+                                    nlaAction === "nla_part_found_vrs_ordered" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border hover:border-blue-300"
+                                  }`}
+                                  data-testid="nla-action-vrs-orders"
+                                >
+                                  {nlaAction === "nla_part_found_vrs_ordered" ? <CheckSquare className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
+                                  <div>
+                                    <p className="text-sm font-medium">Part Ordered by VRS</p>
+                                    <p className="text-xs text-muted-foreground">VRS located and will order the part.</p>
+                                    {!user?.canOrderParts && nlaAction === "nla_part_found_vrs_ordered" && (
+                                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                                        <CreditCard className="w-3 h-3" /> Will escalate to P-card agent for ordering
+                                      </p>
+                                    )}
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNlaAction(nlaAction === "nla_part_found_tech_orders" ? null : "nla_part_found_tech_orders")}
+                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
+                                    nlaAction === "nla_part_found_tech_orders" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border hover:border-blue-300"
+                                  }`}
+                                  data-testid="nla-action-tech-orders"
+                                >
+                                  {nlaAction === "nla_part_found_tech_orders" ? <CheckSquare className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
+                                  <div>
+                                    <p className="text-sm font-medium">Tech to Order — Part # Provided</p>
+                                    <p className="text-xs text-muted-foreground">Part available in TechHub. Tech orders it.</p>
+                                  </div>
+                                </button>
+                                {nlaAction === "nla_part_found_tech_orders" && (
+                                  <div className="ml-8 space-y-1">
+                                    <Label className="text-xs">Part Number</Label>
+                                    <Input
+                                      placeholder="Enter part number..."
+                                      value={nlaFoundPartNumber}
+                                      onChange={(e) => setNlaFoundPartNumber(e.target.value.toUpperCase())}
+                                      className="font-mono"
+                                      data-testid="input-nla-part-number"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-3">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reject / Close</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setNlaAction(nlaAction === "nla_reject" ? null : "nla_reject")}
+                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
+                                    nlaAction === "nla_reject" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : "border-border hover:border-red-300"
+                                  }`}
+                                  data-testid="nla-action-reject"
+                                >
+                                  {nlaAction === "nla_reject" ? <CheckSquare className="w-5 h-5 text-red-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
+                                  <div>
+                                    <p className="text-sm font-medium">Reject — Need More Info</p>
+                                    <p className="text-xs text-muted-foreground">Request more information from technician.</p>
+                                  </div>
+                                </button>
+                                {nlaAction === "nla_reject" && (
+                                  <div className="ml-8 space-y-2 border rounded-lg p-3 bg-red-50/50 dark:bg-red-950/10">
+                                    <p className="text-xs font-medium text-muted-foreground">Rejection Reasons</p>
+                                    {REJECTION_SUGGESTIONS.map((reason) => (
+                                      <button
+                                        key={reason}
+                                        type="button"
+                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                        onClick={() => {
+                                          setSelectedRejectionReasons((prev) =>
+                                            prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                          );
+                                        }}
+                                      >
+                                        {selectedRejectionReasons.includes(reason) ? (
+                                          <CheckSquare className="w-4 h-4 text-red-600 shrink-0" />
+                                        ) : (
+                                          <Square className="w-4 h-4 text-muted-foreground shrink-0" />
+                                        )}
+                                        <span className="text-sm">{reason}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setNlaAction(nlaAction === "nla_invalid" ? null : "nla_invalid")}
+                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
+                                    nlaAction === "nla_invalid" ? "border-gray-500 bg-gray-50 dark:bg-gray-950/30" : "border-border hover:border-gray-300"
+                                  }`}
+                                  data-testid="nla-action-invalid"
+                                >
+                                  {nlaAction === "nla_invalid" ? <CheckSquare className="w-5 h-5 text-gray-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
+                                  <div>
+                                    <p className="text-sm font-medium">Invalid NLA Request</p>
+                                    <p className="text-xs text-muted-foreground">Request does not qualify as NLA.</p>
+                                  </div>
+                                </button>
+                                {nlaAction === "nla_invalid" && (
+                                  <div className="ml-8 space-y-2 border rounded-lg p-3 bg-gray-50/50 dark:bg-gray-950/10">
+                                    <p className="text-xs font-medium text-muted-foreground">Invalid Reasons</p>
+                                    {INVALID_SUGGESTIONS.map((reason) => (
+                                      <button
+                                        key={reason}
+                                        type="button"
+                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                        onClick={() => {
+                                          setSelectedInvalidReasons((prev) =>
+                                            prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                          );
+                                        }}
+                                      >
+                                        {selectedInvalidReasons.includes(reason) ? (
+                                          <CheckSquare className="w-4 h-4 text-gray-600 shrink-0" />
+                                        ) : (
+                                          <Square className="w-4 h-4 text-muted-foreground shrink-0" />
+                                        )}
+                                        <span className="text-sm">{reason}</span>
+                                      </button>
+                                    ))}
+                                    <div className="pt-2">
+                                      <Label className="text-xs">Instructions for Technician</Label>
+                                      <Textarea
+                                        placeholder="Additional instructions..."
+                                        value={invalidMessage}
+                                        onChange={(e) => setInvalidMessage(e.target.value)}
+                                        className="resize-none mt-1"
+                                        rows={2}
+                                        data-testid="input-nla-invalid-instructions"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                  <Send className="w-3 h-3" />
+                                  Instructions for Technician (optional)
+                                </Label>
+                                <Textarea
+                                  placeholder="Add instructions for the technician..."
+                                  value={technicianMessage}
+                                  onChange={(e) => setTechnicianMessage(e.target.value)}
+                                  className="resize-none"
+                                  rows={3}
+                                  data-testid="input-nla-tech-message"
+                                />
+                              </div>
+
+                              <div>
+                                <Label className="text-xs text-muted-foreground mb-1 block">Internal Agent Notes (not sent to technician)</Label>
+                                <Textarea
+                                  placeholder="Internal notes..."
+                                  value={agentNotes}
+                                  onChange={(e) => setAgentNotes(e.target.value)}
+                                  className="resize-none"
+                                  rows={2}
+                                  data-testid="input-nla-agent-notes"
+                                />
+                              </div>
+
+                              {nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts ? (
+                                <Button
+                                  className="w-full"
+                                  size="lg"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    if (!nlaAction) {
+                                      toast({ title: "Error", description: "Select a resolution", variant: "destructive" });
+                                      return;
+                                    }
+                                    setNlaConfirmOpen(true);
+                                  }}
+                                  disabled={!nlaAction || nlaProcessMutation.isPending}
+                                  data-testid="button-nla-escalate"
+                                >
+                                  <CreditCard className="w-4 h-4 mr-2" />
+                                  {nlaProcessMutation.isPending ? "Processing..." : "Escalate to P-Card Agent"}
+                                </Button>
+                              ) : (
+                                <Button
+                                  className="w-full"
+                                  size="lg"
+                                  onClick={() => {
+                                    if (!nlaAction) {
+                                      toast({ title: "Error", description: "Select a resolution", variant: "destructive" });
+                                      return;
+                                    }
+                                    if (nlaAction === "nla_part_found_tech_orders" && !nlaFoundPartNumber.trim()) {
+                                      toast({ title: "Error", description: "Enter a part number", variant: "destructive" });
+                                      return;
+                                    }
+                                    if (nlaAction === "nla_reject" && selectedRejectionReasons.length === 0) {
+                                      toast({ title: "Error", description: "Select at least one rejection reason", variant: "destructive" });
+                                      return;
+                                    }
+                                    if (nlaAction === "nla_invalid" && selectedInvalidReasons.length === 0) {
+                                      toast({ title: "Error", description: "Select at least one invalid reason", variant: "destructive" });
+                                      return;
+                                    }
+                                    setNlaConfirmOpen(true);
+                                  }}
+                                  disabled={!nlaAction || nlaProcessMutation.isPending}
+                                  data-testid="button-nla-process"
+                                >
+                                  <Send className="w-4 h-4 mr-2" />
+                                  {nlaProcessMutation.isPending ? "Processing..." : "Process & Send NLA Resolution"}
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && (
                       <Card>
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2">
@@ -2609,6 +2969,103 @@ export default function AgentDashboard() {
               data-testid="button-confirm-process"
             >
               {selectedAction === "approve_submission" ? "Approve Submission & Notify" : selectedAction === "approve" ? "Approve & Notify" : selectedAction === "reject" ? "Reject & Notify" : selectedAction === "reject_and_close" ? "Reject, Close & Notify" : "Mark Invalid & Notify"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={nlaConfirmOpen} onOpenChange={setNlaConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-nla-confirm-title">
+              {selectedSubmission?.nlaEscalatedBy
+                ? "Confirm & Complete Order"
+                : nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts
+                ? "Escalate to P-Card Agent"
+                : "Confirm NLA Resolution"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedSubmission?.nlaEscalatedBy ? (
+                <>You are completing this escalated order. The technician will be notified via SMS with the resolution details.</>
+              ) : nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts ? (
+                <>You are escalating this ticket to a P-Card agent for ordering. Your research notes will be saved. The P-Card agent will review and complete the order.</>
+              ) : nlaAction === "nla_replacement_submitted" ? (
+                <>The technician will be notified that a replacement has been submitted to the warranty company.</>
+              ) : nlaAction === "nla_part_found_vrs_ordered" ? (
+                <>The technician will be notified that VRS has ordered the part.</>
+              ) : nlaAction === "nla_part_found_tech_orders" ? (
+                <>The technician will be notified to order part <strong className="font-mono">{nlaFoundPartNumber}</strong> from TechHub.</>
+              ) : nlaAction === "nla_reject" ? (
+                <>The technician will be notified that more information is needed.</>
+              ) : nlaAction === "nla_invalid" ? (
+                <>The technician will be notified that this NLA request is invalid.</>
+              ) : (
+                <>This will send an SMS to the technician.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {nlaAction === "nla_reject" && selectedRejectionReasons.length > 0 && (
+            <div className="px-6 pb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Rejection Reasons:</p>
+              <ul className="text-sm space-y-0.5">
+                {selectedRejectionReasons.map((r) => (
+                  <li key={r} className="text-destructive">&bull; {r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {technicianMessage && (
+            <div className="px-6 pb-2">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Instructions:</p>
+              <p className="text-sm">{technicianMessage}</p>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-nla-cancel-confirm">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (selectedSubmission?.nlaEscalatedBy) {
+                  nlaProcessMutation.mutate({
+                    action: "nla_pcard_confirm",
+                    agentNotes: agentNotes || undefined,
+                    technicianMessage: technicianMessage || undefined,
+                    nlaResolution: selectedSubmission.nlaResolution,
+                    nlaFoundPartNumber: selectedSubmission.nlaFoundPartNumber || undefined,
+                  });
+                } else if (nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts) {
+                  nlaProcessMutation.mutate({
+                    action: "nla_escalate_to_pcard",
+                    agentNotes: agentNotes || undefined,
+                    technicianMessage: technicianMessage || undefined,
+                    nlaResolution: "part_found_vrs_ordered",
+                    nlaFoundPartNumber: nlaFoundPartNumber || undefined,
+                  });
+                } else {
+                  const body: Record<string, unknown> = {
+                    action: nlaAction,
+                    agentNotes: agentNotes || undefined,
+                    technicianMessage: technicianMessage || undefined,
+                  };
+                  if (nlaAction === "nla_part_found_tech_orders") {
+                    body.nlaFoundPartNumber = nlaFoundPartNumber;
+                  }
+                  if (nlaAction === "nla_reject") {
+                    body.rejectionReasons = selectedRejectionReasons;
+                  }
+                  if (nlaAction === "nla_invalid") {
+                    body.invalidReason = selectedInvalidReasons.join("; ");
+                    body.invalidInstructions = invalidMessage || undefined;
+                  }
+                  nlaProcessMutation.mutate(body);
+                }
+              }}
+              data-testid="button-nla-confirm-process"
+            >
+              {selectedSubmission?.nlaEscalatedBy
+                ? "Confirm & Complete"
+                : nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts
+                ? "Escalate"
+                : "Confirm & Send"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -113,6 +113,7 @@ import {
   VolumeX,
   Volume1,
   Package,
+  CreditCard,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 import { useTheme } from "@/components/theme-provider";
@@ -1005,9 +1006,9 @@ function TicketOverviewSection() {
                     <TableHead>Division</TableHead>
                     <TableHead>Warranty</TableHead>
                     <TableHead className="text-right">Last Updated</TableHead>
-                    <TableHead className="text-right">Age</TableHead>
-                    <TableHead className="text-right">Time in Status</TableHead>
-                    <TableHead className="text-right">Processing Time</TableHead>
+                    <TableHead className="text-right">Queue Wait</TableHead>
+                    <TableHead className="text-right">Handle Time</TableHead>
+                    <TableHead className="text-right">Total Time</TableHead>
                     {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
                       <TableHead className="w-[80px]"></TableHead>
                     )}
@@ -1070,13 +1071,26 @@ function TicketOverviewSection() {
                           {formatDate(ticket.updatedAt || ticket.statusChangedAt || ticket.createdAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
                         </TableCell>
                         <TableCell className="text-sm font-medium text-right whitespace-nowrap">
-                          {getTimeInStatus(ticket.createdAt)}
+                          {ticket.claimedAt
+                            ? getTimeInStatus(ticket.createdAt, ticket.claimedAt)
+                            : ticket.ticketStatus === "queued"
+                            ? <span className="text-amber-600 dark:text-amber-400">{getTimeInStatus(ticket.createdAt)} ⏳</span>
+                            : getTimeInStatus(ticket.createdAt, ticket.statusChangedAt)
+                          }
                         </TableCell>
-                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`time-in-status-${ticket.id}`}>
-                          {getTimeInStatus(ticket.statusChangedAt || ticket.createdAt)}
+                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`handle-time-${ticket.id}`}>
+                          {ticket.claimedAt
+                            ? ticket.ticketStatus === "pending"
+                              ? <span className="text-blue-600 dark:text-blue-400">{getTimeInStatus(ticket.claimedAt)} ⏳</span>
+                              : getTimeInStatus(ticket.claimedAt, ticket.statusChangedAt)
+                            : "—"
+                          }
                         </TableCell>
-                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`processing-time-${ticket.id}`}>
-                          {getTimeInStatus(ticket.createdAt, ticket.statusChangedAt)}
+                        <TableCell className="text-sm text-right whitespace-nowrap" data-testid={`total-time-${ticket.id}`}>
+                          {["completed", "approved", "rejected", "rejected_closed", "invalid"].includes(ticket.ticketStatus)
+                            ? getTimeInStatus(ticket.createdAt, ticket.statusChangedAt)
+                            : <span className="text-muted-foreground">{getTimeInStatus(ticket.createdAt)}</span>
+                          }
                         </TableCell>
                         {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
                           <TableCell className="text-right">
@@ -1628,6 +1642,7 @@ export default function AdminDashboard() {
   const [formPhone, setFormPhone] = useState("");
   const [formRacId, setFormRacId] = useState("");
   const [formDivisions, setFormDivisions] = useState<string[]>([]);
+  const [formCanOrderParts, setFormCanOrderParts] = useState(false);
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const [agentSearchQuery, setAgentSearchQuery] = useState("");
   const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -1983,6 +1998,7 @@ export default function AdminDashboard() {
     setFormPhone("");
     setFormRacId("");
     setFormDivisions([]);
+    setFormCanOrderParts(false);
     setDialogOpen(true);
   };
 
@@ -1994,6 +2010,7 @@ export default function AdminDashboard() {
     setFormRole(u.role);
     setFormPhone(u.phone || "");
     setFormRacId(u.racId || "");
+    setFormCanOrderParts(u.canOrderParts || false);
     if (u.role === "vrs_agent") {
       try {
         const res = await fetch(`/api/admin/users/${u.id}/specializations`, {
@@ -2026,6 +2043,7 @@ export default function AdminDashboard() {
         role: formRole,
         phone: formPhone || null,
         racId: formRacId || null,
+        canOrderParts: formCanOrderParts,
       };
       if (formPassword) {
         data.password = formPassword;
@@ -2464,12 +2482,19 @@ export default function AdminDashboard() {
                             <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                               <TableCell data-testid={`text-user-name-${u.id}`}>{u.name}</TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={ROLE_BADGE_VARIANT[u.role] || "default"}
-                                  data-testid={`badge-role-${u.id}`}
-                                >
-                                  {ROLE_LABELS[u.role] || u.role}
-                                </Badge>
+                                <div className="flex items-center gap-1.5">
+                                  <Badge
+                                    variant={ROLE_BADGE_VARIANT[u.role] || "default"}
+                                    data-testid={`badge-role-${u.id}`}
+                                  >
+                                    {ROLE_LABELS[u.role] || u.role}
+                                  </Badge>
+                                  {u.canOrderParts && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500 text-emerald-700 dark:text-emerald-400 no-default-hover-elevate no-default-active-elevate" data-testid={`badge-pcard-${u.id}`}>
+                                      <CreditCard className="w-3 h-3 mr-0.5" />P-Card
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="hidden sm:table-cell" data-testid={`text-user-phone-${u.id}`}>{u.phone || "-"}</TableCell>
                               <TableCell data-testid={`text-user-racid-${u.id}`}>{u.racId || "-"}</TableCell>
@@ -3453,6 +3478,26 @@ export default function AdminDashboard() {
                       </label>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {(formRole === "vrs_agent" || formRole === "admin") && editingUser && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="pcard-toggle" className="flex items-center gap-1.5 cursor-pointer">
+                      <CreditCard className="w-4 h-4 text-emerald-600" />
+                      Can Order Parts (P-Card)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Enable for agents who have a P-card and can place parts orders.</p>
+                  </div>
+                  <Switch
+                    id="pcard-toggle"
+                    checked={formCanOrderParts}
+                    onCheckedChange={setFormCanOrderParts}
+                    data-testid="switch-pcard"
+                  />
                 </div>
               </div>
             )}

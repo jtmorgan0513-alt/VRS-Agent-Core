@@ -24,6 +24,7 @@ export const users = pgTable("users", {
   passwordResetToken: varchar("password_reset_token", { length: 100 }),
   passwordResetExpires: timestamp("password_reset_expires"),
   agentStatus: text("agent_status").notNull().default("offline"),
+  canOrderParts: boolean("can_order_parts").notNull().default(false),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
@@ -110,6 +111,10 @@ export const submissions = pgTable("submissions", {
   authCode: varchar("auth_code", { length: 50 }),
   rgcCode: varchar("rgc_code", { length: 50 }),
   assignedTo: integer("assigned_to").references(() => users.id),
+  claimedAt: timestamp("claimed_at"),
+  nlaResolution: text("nla_resolution"),
+  nlaFoundPartNumber: varchar("nla_found_part_number", { length: 100 }),
+  nlaEscalatedBy: integer("nla_escalated_by").references(() => users.id),
   reviewedBy: integer("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at"),
   agentNotes: text("agent_notes"),

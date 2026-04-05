@@ -603,6 +603,7 @@ export async function registerRoutes(
         videoUrl: parsed.data.videoUrl || null,
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
         assignedTo: originalAgent,
+        claimedAt: originalAgent ? new Date() : null,
         ticketStatus: originalAgent ? "pending" : "queued",
         statusChangedAt: new Date(),
         stage1Status: "pending",
@@ -1049,9 +1050,17 @@ export async function registerRoutes(
         }
       }
 
+      if (submission.nlaEscalatedBy) {
+        const claimingUser = await storage.getUser(authReq.user!.id);
+        if (!claimingUser?.canOrderParts) {
+          return res.status(403).json({ error: "This ticket requires a P-card holder. It has been pre-researched and is ready for parts ordering." });
+        }
+      }
+
       const updated = await storage.updateSubmission(id, {
         ticketStatus: "pending",
         statusChangedAt: new Date(),
+        claimedAt: new Date(),
         assignedTo: authReq.user!.id,
         updatedAt: new Date(),
       } as any);
@@ -1340,6 +1349,237 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Process ticket error:", error);
       return res.status(500).json({ error: "Failed to process ticket" });
+    }
+  });
+
+  // ========================================================================
+  // NLA TICKET PROCESS ROUTE — NLA-specific resolution actions
+  // ========================================================================
+
+  const nlaProcessActionSchema = z.object({
+    action: z.enum([
+      "nla_replacement_submitted",
+      "nla_part_found_vrs_ordered",
+      "nla_part_found_tech_orders",
+      "nla_escalate_to_pcard",
+      "nla_pcard_confirm",
+      "nla_reject",
+      "nla_invalid",
+    ]),
+    agentNotes: z.string().optional(),
+    technicianMessage: z.string().optional(),
+    nlaFoundPartNumber: z.string().optional(),
+    nlaResolution: z.string().optional(),
+    rejectionReasons: z.array(z.string()).optional(),
+    invalidReason: z.string().optional(),
+    invalidInstructions: z.string().optional(),
+  });
+
+  app.patch("/api/submissions/:id/process-nla", authenticateToken, requireRole("vrs_agent", "admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+
+      const parsed = nlaProcessActionSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) return res.status(404).json({ error: "Submission not found" });
+
+      if (submission.requestType !== "parts_nla") {
+        return res.status(400).json({ error: "This route is only for NLA tickets" });
+      }
+
+      if (submission.ticketStatus !== "pending") {
+        return res.status(400).json({ error: "Ticket must be in pending status" });
+      }
+
+      if (submission.assignedTo !== authReq.user!.id && authReq.user!.role !== "admin" && authReq.user!.role !== "super_admin") {
+        return res.status(403).json({ error: "This ticket is not assigned to you" });
+      }
+
+      const { action, agentNotes, technicianMessage, nlaFoundPartNumber, nlaResolution, rejectionReasons, invalidReason, invalidInstructions } = parsed.data;
+      const currentUser = await storage.getUser(authReq.user!.id);
+
+      const updateData: Record<string, unknown> = {
+        agentNotes: agentNotes || null,
+        updatedAt: new Date(),
+      };
+
+      let smsMessage: string = "";
+      let smsType: string = "";
+      let shouldSendSms = true;
+
+      if (action === "nla_replacement_submitted") {
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = "replacement_submitted";
+        updateData.technicianMessage = technicianMessage || null;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
+        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        smsType = "nla_replacement_submitted";
+
+      } else if (action === "nla_part_found_vrs_ordered") {
+        if (!currentUser?.canOrderParts) {
+          return res.status(403).json({ error: "You do not have a P-card. Use 'Escalate to P-Card Agent' instead." });
+        }
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = "part_found_vrs_ordered";
+        updateData.technicianMessage = technicianMessage || null;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        smsType = "nla_part_ordered_vrs";
+
+      } else if (action === "nla_part_found_tech_orders") {
+        if (!nlaFoundPartNumber || !nlaFoundPartNumber.trim()) {
+          return res.status(400).json({ error: "Part number is required when the technician needs to order" });
+        }
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = "part_found_tech_orders";
+        updateData.nlaFoundPartNumber = nlaFoundPartNumber.trim().toUpperCase();
+        updateData.technicianMessage = technicianMessage || null;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        smsType = "nla_part_tech_orders";
+
+      } else if (action === "nla_escalate_to_pcard") {
+        if (currentUser?.canOrderParts) {
+          return res.status(400).json({ error: "P-card agents should process orders directly, not escalate" });
+        }
+        if (!nlaResolution) {
+          return res.status(400).json({ error: "Resolution type is required for escalation" });
+        }
+        updateData.nlaResolution = nlaResolution;
+        updateData.nlaFoundPartNumber = nlaFoundPartNumber?.trim().toUpperCase() || null;
+        updateData.nlaEscalatedBy = authReq.user!.id;
+        updateData.technicianMessage = technicianMessage || null;
+        updateData.reassignmentNotes = `Researched by ${currentUser?.name || "agent"}. Ready for P-card order.`;
+        updateData.assignedTo = null;
+        updateData.ticketStatus = "queued";
+        updateData.statusChangedAt = new Date();
+
+        shouldSendSms = false;
+
+        broadcastToDivisionAgents("nla", {
+          type: "nla_escalated",
+          payload: {
+            submissionId: submission.id,
+            serviceOrder: submission.serviceOrder,
+            escalatedBy: currentUser?.name || "Agent",
+            resolution: nlaResolution,
+          },
+        });
+
+      } else if (action === "nla_pcard_confirm") {
+        if (!currentUser?.canOrderParts) {
+          return res.status(403).json({ error: "Only P-card agents can confirm escalated orders" });
+        }
+        if (!submission.nlaEscalatedBy) {
+          return res.status(400).json({ error: "This ticket has not been escalated for P-card confirmation" });
+        }
+        const resolution = submission.nlaResolution || nlaResolution;
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = resolution;
+        if (technicianMessage) updateData.technicianMessage = technicianMessage;
+
+        if (resolution === "part_found_vrs_ordered") {
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+        } else if (resolution === "part_found_tech_orders") {
+          const partNum = submission.nlaFoundPartNumber || nlaFoundPartNumber || "";
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nPart Number: ${partNum}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+        } else {
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nYour NLA parts request has been processed by the VRS team.`;
+        }
+        if (technicianMessage || submission.technicianMessage) {
+          smsMessage += `\n\nInstructions: ${technicianMessage || submission.technicianMessage}`;
+        }
+        smsType = "nla_pcard_confirmed";
+
+      } else if (action === "nla_reject") {
+        updateData.ticketStatus = "rejected";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.assignedTo = null;
+        updateData.rejectionReasons = rejectionReasons ? JSON.stringify(rejectionReasons) : null;
+        updateData.technicianMessage = technicianMessage || null;
+
+        const host = req.get("host") || "";
+        const protocol = req.get("x-forwarded-proto") || req.protocol || "https";
+        const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
+        const reasonText = rejectionReasons?.join(", ") || "More information needed";
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reasonText}\n\nTap to resubmit:\n${resubmitLink}`;
+        if (technicianMessage) smsMessage += `\n\nAgent notes: ${technicianMessage}`;
+        smsType = "nla_rejected";
+
+        broadcastToDivisionAgents("nla", {
+          type: "ticket_released",
+          payload: { submissionId: submission.id },
+        });
+
+      } else if (action === "nla_invalid") {
+        if (!invalidReason) return res.status(400).json({ error: "Invalid reason is required" });
+        updateData.ticketStatus = "invalid";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.invalidReason = invalidReason;
+        updateData.invalidInstructions = invalidInstructions || null;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: INVALID NLA REQUEST\nReason: ${invalidReason}`;
+        if (invalidInstructions) smsMessage += `\n\nInstructions: ${invalidInstructions}`;
+        smsType = "nla_invalid";
+
+      } else {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+
+      const updated = await storage.updateSubmission(id, updateData as any);
+
+      if (shouldSendSms && smsMessage) {
+        const smsPhone = submission.phoneOverride || submission.phone;
+        await sendSms(submission.id, smsPhone, smsType, smsMessage);
+      }
+
+      if (authReq.user!.role === "vrs_agent") {
+        await storage.updateUser(authReq.user!.id, { agentStatus: "online", updatedAt: new Date() } as any);
+        updateClientStatus(authReq.user!.id, "online");
+        broadcastToAdmins({
+          type: "agent_status_changed",
+          payload: { userId: authReq.user!.id, name: authReq.user!.name, status: "online" },
+        });
+        broadcastToAgent(authReq.user!.id, {
+          type: "own_status_changed",
+          payload: { status: "online" },
+        });
+      }
+
+      broadcastToAdmins({
+        type: "ticket_updated",
+        payload: { submissionId: id, ticketStatus: updated?.ticketStatus },
+      });
+      await broadcastVrsAvailability();
+
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("NLA process error:", error);
+      return res.status(500).json({ error: "Failed to process NLA ticket" });
     }
   });
 
@@ -1897,6 +2137,7 @@ export async function registerRoutes(
     isActive: z.boolean().optional(),
     password: z.string().min(6).optional(),
     resetPassword: z.boolean().optional(),
+    canOrderParts: z.boolean().optional(),
   });
 
   app.patch("/api/admin/users/:id", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -1949,6 +2190,9 @@ export async function registerRoutes(
       if (parsed.data.password !== undefined) {
         const hashedPassword = await bcryptjs.hash(parsed.data.password, 10);
         updateData.password = hashedPassword;
+      }
+      if (parsed.data.canOrderParts !== undefined) {
+        updateData.canOrderParts = parsed.data.canOrderParts;
       }
       if (parsed.data.resetPassword === true) {
         const authReq = req as AuthenticatedRequest;
@@ -2166,7 +2410,7 @@ export async function registerRoutes(
         "District", "Appliance Type", "Request Type", "Warranty Type", "Warranty Provider",
         "Issue Description", "Estimate Amount",
         "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
-        "Auth Code", "RGC Code", "Assigned To",
+        "Auth Code", "RGC Code", "Assigned To", "Claimed At",
         "Created At", "Updated At"
       ];
 
@@ -2214,6 +2458,7 @@ export async function registerRoutes(
           escCsv(s.authCode),
           escCsv(s.rgcCode),
           escCsv(assignedName),
+          s.claimedAt ? new Date(s.claimedAt).toISOString() : "",
           s.createdAt ? new Date(s.createdAt).toISOString() : "",
           s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
         ].join(","));
@@ -2291,7 +2536,7 @@ export async function registerRoutes(
         "District", "Appliance Type", "Request Type", "Warranty Type", "Warranty Provider",
         "Issue Description", "Estimate Amount",
         "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
-        "Auth Code", "RGC Code", "Assigned To",
+        "Auth Code", "RGC Code", "Assigned To", "Claimed At",
         "Created At", "Updated At"
       ];
 
@@ -2316,6 +2561,7 @@ export async function registerRoutes(
           s.issueDescription, s.estimateAmount,
           s.ticketStatus, reviewerName, s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
           rejReasons, s.authCode, s.rgcCode, assignedName,
+          s.claimedAt ? new Date(s.claimedAt).toISOString() : "",
           s.createdAt ? new Date(s.createdAt).toISOString() : "",
           s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
         ]);
@@ -2326,12 +2572,23 @@ export async function registerRoutes(
         col.width = 18;
       });
 
+      const nlaResolutionLabel = (r: string | null) => {
+        if (!r) return "";
+        const map: Record<string, string> = {
+          replacement_submitted: "Replacement Submitted",
+          part_found_vrs_ordered: "Part Ordered by VRS",
+          part_found_tech_orders: "Tech Orders Part",
+        };
+        return map[r] || r;
+      };
+
       const nlaHeaders = [
         "ID", "Service Order", "Technician LDAP", "Technician Name", "Phone",
         "District", "Appliance Type", "Part Numbers",
         "Issue Description",
-        "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
-        "Assigned To", "Created At", "Updated At"
+        "Ticket Status", "NLA Resolution", "Found Part Number",
+        "Reviewed By", "Reviewed At", "Rejection Reasons",
+        "Assigned To", "Claimed At", "Created At", "Updated At"
       ];
 
       const nlaSheet = workbook.addWorksheet("NLA Parts Tickets");
@@ -2359,8 +2616,10 @@ export async function registerRoutes(
           s.id, s.serviceOrder, s.technicianLdapId || s.racId, techName, s.phone,
           s.districtCode, s.applianceType, partNumbers,
           s.issueDescription,
-          s.ticketStatus, reviewerName, s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
+          s.ticketStatus, nlaResolutionLabel(s.nlaResolution), s.nlaFoundPartNumber || "",
+          reviewerName, s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
           rejReasons, assignedName,
+          s.claimedAt ? new Date(s.claimedAt).toISOString() : "",
           s.createdAt ? new Date(s.createdAt).toISOString() : "",
           s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
         ]);
