@@ -5,7 +5,7 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket, playNotificationDing, getNotificationVolume, setNotificationVolume } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, playTonePreview, getNotificationVolume, setNotificationVolume, getSelectedTone, setSelectedTone, TONE_OPTIONS, type ToneId } from "@/lib/websocket";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -1581,6 +1581,7 @@ export default function AdminDashboard() {
   const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<ActiveView>("users");
   const [notifVolume, setNotifVolume] = useState(() => getNotificationVolume());
+  const [selectedTone, setTone] = useState<ToneId>(() => getSelectedTone());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
   const [formName, setFormName] = useState("");
@@ -2093,6 +2094,30 @@ export default function AdminDashboard() {
               <SidebarGroupLabel>Notification Sounds</SidebarGroupLabel>
               <SidebarGroupContent>
                 <div className="px-3 pb-2 space-y-3">
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-muted-foreground font-medium">Alert Tone</span>
+                    <div className="grid grid-cols-1 gap-1">
+                      {TONE_OPTIONS.map((tone) => (
+                        <button
+                          key={tone.id}
+                          onClick={() => {
+                            setTone(tone.id);
+                            setSelectedTone(tone.id);
+                            playTonePreview(tone.id);
+                          }}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
+                            selectedTone === tone.id
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-muted text-foreground"
+                          }`}
+                          data-testid={`btn-tone-${tone.id}`}
+                        >
+                          <Volume2 className="w-3 h-3 shrink-0" />
+                          {tone.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
                     {notifVolume === 0 ? (
                       <VolumeX className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -2124,7 +2149,7 @@ export default function AdminDashboard() {
                     data-testid="btn-test-new-ticket-sound"
                   >
                     <Volume2 className="w-3.5 h-3.5 mr-1.5" />
-                    Test Ticket Alert
+                    Test Sound
                   </Button>
                 </div>
               </SidebarGroupContent>

@@ -107,6 +107,7 @@ let audioCtx: AudioContext | null = null;
 let notificationAudio: HTMLAudioElement | null = null;
 
 const VOLUME_KEY = "vrs_notification_volume";
+const TONE_KEY = "vrs_notification_tone";
 
 function getStoredVolume(): number {
   try {
@@ -131,22 +132,34 @@ export function setNotificationVolume(vol: number) {
   }
 }
 
-const NOTIFICATION_SOUND_DATA = (() => {
+export type ToneId = "chime" | "bell" | "pulse" | "cascade" | "alert";
+
+export const TONE_OPTIONS: { id: ToneId; label: string }[] = [
+  { id: "chime", label: "Chime" },
+  { id: "bell", label: "Bell" },
+  { id: "pulse", label: "Pulse" },
+  { id: "cascade", label: "Cascade" },
+  { id: "alert", label: "Alert" },
+];
+
+export function getSelectedTone(): ToneId {
+  try {
+    const t = localStorage.getItem(TONE_KEY);
+    if (t && TONE_OPTIONS.some(o => o.id === t)) return t as ToneId;
+  } catch {}
+  return "chime";
+}
+
+export function setSelectedTone(tone: ToneId) {
+  try { localStorage.setItem(TONE_KEY, tone); } catch {}
+  notificationAudio = null;
+}
+
+function generateWav(fillBuffer: (buffer: Float32Array, sampleRate: number) => void, duration: number): string {
   const sampleRate = 8000;
-  const duration = 0.6;
-  const samples = sampleRate * duration;
+  const samples = Math.floor(sampleRate * duration);
   const buffer = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) {
-    const t = i / sampleRate;
-    const freq1 = t < 0.1 ? 880 : 1100;
-    const freq2 = 1320;
-    const envelope = Math.exp(-t * 5);
-    let sample = Math.sin(2 * Math.PI * freq1 * t) * envelope * 0.5;
-    if (t >= 0.15) {
-      sample += Math.sin(2 * Math.PI * freq2 * t) * Math.exp(-(t - 0.15) * 5) * 0.5;
-    }
-    buffer[i] = sample;
-  }
+  fillBuffer(buffer, sampleRate);
   const numChannels = 1;
   const bitsPerSample = 16;
   const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
@@ -175,12 +188,77 @@ const NOTIFICATION_SOUND_DATA = (() => {
   }
   const blob = new Blob([arr], { type: "audio/wav" });
   return URL.createObjectURL(blob);
-})();
+}
+
+const toneGenerators: Record<ToneId, () => string> = {
+  chime: () => generateWav((buf, sr) => {
+    for (let i = 0; i < buf.length; i++) {
+      const t = i / sr;
+      const f1 = t < 0.1 ? 880 : 1100;
+      const env = Math.exp(-t * 5);
+      buf[i] = Math.sin(2 * Math.PI * f1 * t) * env * 0.5;
+      if (t >= 0.15) buf[i] += Math.sin(2 * Math.PI * 1320 * t) * Math.exp(-(t - 0.15) * 5) * 0.5;
+    }
+  }, 0.6),
+
+  bell: () => generateWav((buf, sr) => {
+    for (let i = 0; i < buf.length; i++) {
+      const t = i / sr;
+      const env = Math.exp(-t * 3);
+      buf[i] = (Math.sin(2 * Math.PI * 523 * t) * 0.4
+        + Math.sin(2 * Math.PI * 659 * t) * 0.25
+        + Math.sin(2 * Math.PI * 784 * t) * 0.2
+        + Math.sin(2 * Math.PI * 1047 * t) * 0.15) * env;
+    }
+  }, 0.8),
+
+  pulse: () => generateWav((buf, sr) => {
+    for (let i = 0; i < buf.length; i++) {
+      const t = i / sr;
+      const beat = Math.sin(2 * Math.PI * 4 * t);
+      const carrier = Math.sin(2 * Math.PI * 660 * t);
+      const env = Math.exp(-t * 4);
+      buf[i] = carrier * (0.3 + beat * 0.2) * env;
+    }
+  }, 0.7),
+
+  cascade: () => generateWav((buf, sr) => {
+    for (let i = 0; i < buf.length; i++) {
+      const t = i / sr;
+      const freq = 400 + t * 1200;
+      const env = t < 0.3 ? Math.sin(Math.PI * t / 0.3) : Math.exp(-(t - 0.3) * 5);
+      buf[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.5;
+    }
+  }, 0.6),
+
+  alert: () => generateWav((buf, sr) => {
+    for (let i = 0; i < buf.length; i++) {
+      const t = i / sr;
+      const noteIdx = Math.floor(t / 0.15);
+      const noteT = t - noteIdx * 0.15;
+      const freqs = [784, 988, 1175, 988];
+      const freq = freqs[noteIdx % freqs.length];
+      const env = Math.exp(-noteT * 10) * 0.5;
+      buf[i] = Math.sin(2 * Math.PI * freq * t) * env;
+    }
+  }, 0.6),
+};
+
+const toneCache: Partial<Record<ToneId, string>> = {};
+
+function getToneData(tone: ToneId): string {
+  if (!toneCache[tone]) {
+    toneCache[tone] = toneGenerators[tone]();
+  }
+  return toneCache[tone]!;
+}
 
 function playWithAudioElement() {
   try {
-    if (!notificationAudio) {
-      notificationAudio = new Audio(NOTIFICATION_SOUND_DATA);
+    const tone = getSelectedTone();
+    const data = getToneData(tone);
+    if (!notificationAudio || notificationAudio.src !== data) {
+      notificationAudio = new Audio(data);
     }
     notificationAudio.volume = getStoredVolume();
     notificationAudio.currentTime = 0;
@@ -188,52 +266,17 @@ function playWithAudioElement() {
   } catch {}
 }
 
-function playWithWebAudio() {
-  try {
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
-    }
-    const ctx = audioCtx;
-
-    if (ctx.state === "suspended") {
-      ctx.resume().then(() => playTone(ctx)).catch(() => {});
-      return;
-    }
-    playTone(ctx);
-  } catch {}
-}
-
-function playTone(ctx: AudioContext) {
-  const vol = getStoredVolume();
-  const osc1 = ctx.createOscillator();
-  const osc2 = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc1.type = "sine";
-  osc1.frequency.setValueAtTime(880, ctx.currentTime);
-  osc1.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
-
-  osc2.type = "sine";
-  osc2.frequency.setValueAtTime(1320, ctx.currentTime + 0.15);
-
-  gain.gain.setValueAtTime(vol * 0.7, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-
-  osc1.connect(gain);
-  osc2.connect(gain);
-  gain.connect(ctx.destination);
-
-  osc1.start(ctx.currentTime);
-  osc2.start(ctx.currentTime + 0.15);
-  osc1.stop(ctx.currentTime + 0.6);
-  osc2.stop(ctx.currentTime + 0.6);
-}
-
 export function playNotificationDing() {
   playWithAudioElement();
-  if (document.visibilityState === "visible") {
-    playWithWebAudio();
-  }
+}
+
+export function playTonePreview(tone: ToneId) {
+  try {
+    const data = getToneData(tone);
+    const audio = new Audio(data);
+    audio.volume = getStoredVolume();
+    audio.play().catch(() => {});
+  } catch {}
 }
 
 export function requestNotificationPermission() {
