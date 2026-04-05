@@ -1036,6 +1036,11 @@ function TicketOverviewSection() {
                             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(ticket.ticketStatus)}`}>
                               {getStatusLabel(ticket.ticketStatus)}
                             </span>
+                            {ticket.requestType === "parts_nla" && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                NLA
+                              </span>
+                            )}
                             {isUrgent && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500 text-white">
                                 URGENT
