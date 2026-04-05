@@ -1007,7 +1007,6 @@ function TicketOverviewSection() {
                     <TableHead>Warranty</TableHead>
                     <TableHead className="text-right">Last Updated</TableHead>
                     <TableHead className="text-right">Queue Wait</TableHead>
-                    <TableHead className="text-right">Handle Time</TableHead>
                     <TableHead className="text-right">Total Time</TableHead>
                     {(statusFilter === "queued" || statusFilter === "pending" || statusFilter === "all") && (
                       <TableHead className="w-[80px]"></TableHead>
