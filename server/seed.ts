@@ -1,7 +1,7 @@
 import bcryptjs from "bcryptjs";
 import { storage, db } from "./storage";
-import { technicians, users } from "@shared/schema";
-import { sql } from "drizzle-orm";
+import { technicians, users, submissions } from "@shared/schema";
+import { sql, isNull, isNotNull } from "drizzle-orm";
 
 const SEED_USERS = [
   {
@@ -142,6 +142,7 @@ export async function seedDatabase() {
   }
 
   await resetAllPasswords();
+  await backfillClaimedAt();
 }
 
 const TEST_RAC_IDS = ["testagent1", "TESTADMIN", "testtech1", "tmorri1", "sysadmin"];
@@ -184,4 +185,32 @@ async function resetAllPasswords() {
   });
 
   console.log(`[password-reset] Reset ${resetCount} user passwords to generic (skipped VRS_MASTER)`);
+}
+
+async function backfillClaimedAt() {
+  const BACKFILL_FLAG_RAC = "__claimed_at_backfill_done__";
+  const flagUser = await storage.getUserByRacId(BACKFILL_FLAG_RAC);
+  if (flagUser) {
+    console.log("[claimedAt-backfill] Already completed (flag found), skipping");
+    return;
+  }
+
+  const result = await db.update(submissions)
+    .set({ claimedAt: sql`${submissions.createdAt}` })
+    .where(sql`${submissions.claimedAt} IS NULL AND (${submissions.assignedTo} IS NOT NULL OR ${submissions.reviewedBy} IS NOT NULL)`);
+
+  const backfilledCount = result.rowCount ?? 0;
+
+  await db.insert(users).values({
+    email: null,
+    password: "flag",
+    name: "ClaimedAt Backfill Flag",
+    role: "technician",
+    phone: null,
+    racId: BACKFILL_FLAG_RAC,
+    isActive: false,
+    isSystemAccount: true,
+  });
+
+  console.log(`[claimedAt-backfill] Backfilled ${backfilledCount} submissions with claimedAt = createdAt`);
 }
