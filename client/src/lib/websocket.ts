@@ -108,17 +108,17 @@ let notificationAudio: HTMLAudioElement | null = null;
 
 const NOTIFICATION_SOUND_DATA = (() => {
   const sampleRate = 8000;
-  const duration = 0.4;
+  const duration = 0.6;
   const samples = sampleRate * duration;
   const buffer = new Float32Array(samples);
   for (let i = 0; i < samples; i++) {
     const t = i / sampleRate;
     const freq1 = t < 0.1 ? 880 : 1100;
     const freq2 = 1320;
-    const envelope = Math.exp(-t * 8);
-    let sample = Math.sin(2 * Math.PI * freq1 * t) * envelope * 0.08;
+    const envelope = Math.exp(-t * 5);
+    let sample = Math.sin(2 * Math.PI * freq1 * t) * envelope * 0.5;
     if (t >= 0.15) {
-      sample += Math.sin(2 * Math.PI * freq2 * t) * Math.exp(-(t - 0.15) * 8) * 0.08;
+      sample += Math.sin(2 * Math.PI * freq2 * t) * Math.exp(-(t - 0.15) * 5) * 0.5;
     }
     buffer[i] = sample;
   }
@@ -156,7 +156,7 @@ function playWithAudioElement() {
   try {
     if (!notificationAudio) {
       notificationAudio = new Audio(NOTIFICATION_SOUND_DATA);
-      notificationAudio.volume = 0.15;
+      notificationAudio.volume = 0.7;
     }
     notificationAudio.currentTime = 0;
     notificationAudio.play().catch(() => {});
@@ -190,8 +190,8 @@ function playTone(ctx: AudioContext) {
   osc2.type = "sine";
   osc2.frequency.setValueAtTime(1320, ctx.currentTime + 0.15);
 
-  gain.gain.setValueAtTime(0.08, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+  gain.gain.setValueAtTime(0.5, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
 
   osc1.connect(gain);
   osc2.connect(gain);
@@ -199,8 +199,8 @@ function playTone(ctx: AudioContext) {
 
   osc1.start(ctx.currentTime);
   osc2.start(ctx.currentTime + 0.15);
-  osc1.stop(ctx.currentTime + 0.4);
-  osc2.stop(ctx.currentTime + 0.4);
+  osc1.stop(ctx.currentTime + 0.6);
+  osc2.stop(ctx.currentTime + 0.6);
 }
 
 export function playNotificationDing() {
