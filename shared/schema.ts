@@ -240,6 +240,17 @@ export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
 export type Feedback = typeof feedback.$inferSelect;
 
 // ============================================================================
+// SYSTEM SETTINGS TABLE
+// ============================================================================
+export const systemSettings = pgTable("system_settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+
+// ============================================================================
 // TECHNICIAN USER VIEW (for admin Field Technicians tab)
 // ============================================================================
 export interface TechnicianUserView {

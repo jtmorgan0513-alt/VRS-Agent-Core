@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
-import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings } from "@/lib/websocket";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -271,6 +271,7 @@ export default function AgentDashboard() {
 
   useEffect(() => {
     requestNotificationPermission();
+    loadNotificationSettings();
   }, []);
 
   useEffect(() => {

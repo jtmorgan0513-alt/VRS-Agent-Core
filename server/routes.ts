@@ -2602,5 +2602,45 @@ export async function registerRoutes(
   });
 
 
+  const VALID_TONES = ["chime", "bell", "pulse", "cascade", "alert"];
+
+  app.get("/api/settings/notification-tone", async (_req, res) => {
+    try {
+      const tone = await storage.getSystemSetting("notification_tone");
+      const volume = await storage.getSystemSetting("notification_volume");
+      res.json({
+        tone: tone && VALID_TONES.includes(tone) ? tone : "chime",
+        volume: volume ? parseFloat(volume) : 0.5,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.put("/api/settings/notification-tone", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const { tone, volume } = req.body;
+      if (tone !== undefined) {
+        if (!VALID_TONES.includes(tone)) {
+          return res.status(400).json({ error: "Invalid tone" });
+        }
+        await storage.setSystemSetting("notification_tone", tone);
+      }
+      if (volume !== undefined) {
+        const v = Math.max(0, Math.min(1, parseFloat(volume)));
+        if (isNaN(v)) return res.status(400).json({ error: "Invalid volume" });
+        await storage.setSystemSetting("notification_volume", String(v));
+      }
+      const currentTone = await storage.getSystemSetting("notification_tone");
+      const currentVolume = await storage.getSystemSetting("notification_volume");
+      res.json({
+        tone: currentTone || "chime",
+        volume: currentVolume ? parseFloat(currentVolume) : 0.5,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
   return httpServer;
 }

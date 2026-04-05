@@ -5,7 +5,7 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket, playNotificationDing, playTonePreview, getNotificationVolume, setNotificationVolume, getSelectedTone, setSelectedTone, TONE_OPTIONS, type ToneId } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, playTonePreview, getNotificationVolume, getSelectedTone, setCachedVolume, setCachedTone, loadNotificationSettings, TONE_OPTIONS, type ToneId } from "@/lib/websocket";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -1582,6 +1582,14 @@ export default function AdminDashboard() {
   const [activeView, setActiveView] = useState<ActiveView>("users");
   const [notifVolume, setNotifVolume] = useState(() => getNotificationVolume());
   const [selectedTone, setTone] = useState<ToneId>(() => getSelectedTone());
+  const [savingSound, setSavingSound] = useState(false);
+
+  useEffect(() => {
+    loadNotificationSettings().then(({ tone, volume }) => {
+      setTone(tone);
+      setNotifVolume(volume);
+    });
+  }, []);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
   const [formName, setFormName] = useState("");
@@ -2100,10 +2108,15 @@ export default function AdminDashboard() {
                       {TONE_OPTIONS.map((tone) => (
                         <button
                           key={tone.id}
-                          onClick={() => {
+                          onClick={async () => {
                             setTone(tone.id);
-                            setSelectedTone(tone.id);
+                            setCachedTone(tone.id);
                             playTonePreview(tone.id);
+                            setSavingSound(true);
+                            try {
+                              await apiRequest("PUT", "/api/settings/notification-tone", { tone: tone.id });
+                            } catch {}
+                            setSavingSound(false);
                           }}
                           className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
                             selectedTone === tone.id
@@ -2134,13 +2147,30 @@ export default function AdminDashboard() {
                       onChange={(e) => {
                         const v = parseInt(e.target.value) / 100;
                         setNotifVolume(v);
-                        setNotificationVolume(v);
+                        setCachedVolume(v);
+                      }}
+                      onMouseUp={async () => {
+                        setSavingSound(true);
+                        try {
+                          await apiRequest("PUT", "/api/settings/notification-tone", { volume: notifVolume });
+                        } catch {}
+                        setSavingSound(false);
+                      }}
+                      onTouchEnd={async () => {
+                        setSavingSound(true);
+                        try {
+                          await apiRequest("PUT", "/api/settings/notification-tone", { volume: notifVolume });
+                        } catch {}
+                        setSavingSound(false);
                       }}
                       className="w-full h-2 accent-primary cursor-pointer"
                       data-testid="slider-notification-volume"
                     />
                     <span className="text-xs text-muted-foreground w-8 text-right shrink-0" data-testid="text-volume-level">{Math.round(notifVolume * 100)}%</span>
                   </div>
+                  {savingSound && (
+                    <p className="text-xs text-muted-foreground text-center">Saving...</p>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"

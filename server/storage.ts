@@ -25,6 +25,8 @@ import {
   InsertFeedback,
   Feedback,
   TechnicianUserView,
+  systemSettings,
+  SystemSetting,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -153,6 +155,9 @@ export interface IStorage {
   }[]>;
 
   getTechnicianUsers(): Promise<TechnicianUserView[]>;
+
+  getSystemSetting(key: string): Promise<string | undefined>;
+  setSystemSetting(key: string, value: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -971,6 +976,20 @@ export class DatabaseStorage implements IStorage {
       ORDER BY u.name ASC
     `);
     return result.rows as TechnicianUserView[];
+  }
+
+  async getSystemSetting(key: string): Promise<string | undefined> {
+    const result = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    return result[0]?.value;
+  }
+
+  async setSystemSetting(key: string, value: string): Promise<void> {
+    await db.insert(systemSettings)
+      .values({ key, value, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value, updatedAt: new Date() },
+      });
   }
 }
 

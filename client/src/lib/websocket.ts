@@ -106,32 +106,6 @@ export function onWsEvent(type: string, handler: WSEventHandler) {
 let audioCtx: AudioContext | null = null;
 let notificationAudio: HTMLAudioElement | null = null;
 
-const VOLUME_KEY = "vrs_notification_volume";
-const TONE_KEY = "vrs_notification_tone";
-
-function getStoredVolume(): number {
-  try {
-    const v = localStorage.getItem(VOLUME_KEY);
-    if (v !== null) {
-      const parsed = parseFloat(v);
-      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
-    }
-  } catch {}
-  return 0.5;
-}
-
-export function getNotificationVolume(): number {
-  return getStoredVolume();
-}
-
-export function setNotificationVolume(vol: number) {
-  const clamped = Math.max(0, Math.min(1, vol));
-  try { localStorage.setItem(VOLUME_KEY, String(clamped)); } catch {}
-  if (notificationAudio) {
-    notificationAudio.volume = clamped;
-  }
-}
-
 export type ToneId = "chime" | "bell" | "pulse" | "cascade" | "alert";
 
 export const TONE_OPTIONS: { id: ToneId; label: string }[] = [
@@ -142,17 +116,45 @@ export const TONE_OPTIONS: { id: ToneId; label: string }[] = [
   { id: "alert", label: "Alert" },
 ];
 
-export function getSelectedTone(): ToneId {
+let cachedTone: ToneId = "chime";
+let cachedVolume = 0.5;
+let settingsLoaded = false;
+
+export async function loadNotificationSettings(): Promise<{ tone: ToneId; volume: number }> {
   try {
-    const t = localStorage.getItem(TONE_KEY);
-    if (t && TONE_OPTIONS.some(o => o.id === t)) return t as ToneId;
+    const res = await fetch("/api/settings/notification-tone");
+    if (res.ok) {
+      const data = await res.json();
+      cachedTone = TONE_OPTIONS.some(o => o.id === data.tone) ? data.tone : "chime";
+      cachedVolume = typeof data.volume === "number" ? data.volume : 0.5;
+      settingsLoaded = true;
+    }
   } catch {}
-  return "chime";
+  return { tone: cachedTone, volume: cachedVolume };
 }
 
-export function setSelectedTone(tone: ToneId) {
-  try { localStorage.setItem(TONE_KEY, tone); } catch {}
+export function getNotificationVolume(): number {
+  return cachedVolume;
+}
+
+export function getSelectedTone(): ToneId {
+  return cachedTone;
+}
+
+export function setCachedVolume(vol: number) {
+  cachedVolume = Math.max(0, Math.min(1, vol));
+  if (notificationAudio) {
+    notificationAudio.volume = cachedVolume;
+  }
+}
+
+export function setCachedTone(tone: ToneId) {
+  cachedTone = tone;
   notificationAudio = null;
+}
+
+if (!settingsLoaded) {
+  loadNotificationSettings();
 }
 
 function generateWav(fillBuffer: (buffer: Float32Array, sampleRate: number) => void, duration: number): string {
@@ -260,7 +262,7 @@ function playWithAudioElement() {
     if (!notificationAudio || notificationAudio.src !== data) {
       notificationAudio = new Audio(data);
     }
-    notificationAudio.volume = getStoredVolume();
+    notificationAudio.volume = cachedVolume;
     notificationAudio.currentTime = 0;
     notificationAudio.play().catch(() => {});
   } catch {}
@@ -274,7 +276,7 @@ export function playTonePreview(tone: ToneId) {
   try {
     const data = getToneData(tone);
     const audio = new Audio(data);
-    audio.volume = getStoredVolume();
+    audio.volume = cachedVolume;
     audio.play().catch(() => {});
   } catch {}
 }
