@@ -106,6 +106,31 @@ export function onWsEvent(type: string, handler: WSEventHandler) {
 let audioCtx: AudioContext | null = null;
 let notificationAudio: HTMLAudioElement | null = null;
 
+const VOLUME_KEY = "vrs_notification_volume";
+
+function getStoredVolume(): number {
+  try {
+    const v = localStorage.getItem(VOLUME_KEY);
+    if (v !== null) {
+      const parsed = parseFloat(v);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    }
+  } catch {}
+  return 0.5;
+}
+
+export function getNotificationVolume(): number {
+  return getStoredVolume();
+}
+
+export function setNotificationVolume(vol: number) {
+  const clamped = Math.max(0, Math.min(1, vol));
+  try { localStorage.setItem(VOLUME_KEY, String(clamped)); } catch {}
+  if (notificationAudio) {
+    notificationAudio.volume = clamped;
+  }
+}
+
 const NOTIFICATION_SOUND_DATA = (() => {
   const sampleRate = 8000;
   const duration = 0.6;
@@ -156,8 +181,8 @@ function playWithAudioElement() {
   try {
     if (!notificationAudio) {
       notificationAudio = new Audio(NOTIFICATION_SOUND_DATA);
-      notificationAudio.volume = 0.7;
     }
+    notificationAudio.volume = getStoredVolume();
     notificationAudio.currentTime = 0;
     notificationAudio.play().catch(() => {});
   } catch {}
@@ -179,6 +204,7 @@ function playWithWebAudio() {
 }
 
 function playTone(ctx: AudioContext) {
+  const vol = getStoredVolume();
   const osc1 = ctx.createOscillator();
   const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -190,7 +216,7 @@ function playTone(ctx: AudioContext) {
   osc2.type = "sine";
   osc2.frequency.setValueAtTime(1320, ctx.currentTime + 0.15);
 
-  gain.gain.setValueAtTime(0.5, ctx.currentTime);
+  gain.gain.setValueAtTime(vol * 0.7, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
 
   osc1.connect(gain);

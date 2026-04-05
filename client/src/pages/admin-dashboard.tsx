@@ -5,7 +5,7 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket, playNotificationDing } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, getNotificationVolume, setNotificationVolume } from "@/lib/websocket";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -110,6 +110,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Volume2,
+  VolumeX,
+  Volume1,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 import { useTheme } from "@/components/theme-provider";
@@ -1578,6 +1580,7 @@ export default function AdminDashboard() {
   const [, navigate] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<ActiveView>("users");
+  const [notifVolume, setNotifVolume] = useState(() => getNotificationVolume());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
   const [formName, setFormName] = useState("");
@@ -2087,19 +2090,43 @@ export default function AdminDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
             <SidebarGroup>
-              <SidebarGroupLabel>Test Sounds</SidebarGroupLabel>
+              <SidebarGroupLabel>Notification Sounds</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => playNotificationDing()}
-                      data-testid="btn-test-new-ticket-sound"
-                    >
-                      <Volume2 className="w-4 h-4" />
-                      <span>New Ticket Alert</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
+                <div className="px-3 pb-2 space-y-3">
+                  <div className="flex items-center gap-2">
+                    {notifVolume === 0 ? (
+                      <VolumeX className="w-4 h-4 text-muted-foreground shrink-0" />
+                    ) : notifVolume < 0.4 ? (
+                      <Volume1 className="w-4 h-4 text-muted-foreground shrink-0" />
+                    ) : (
+                      <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                    )}
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(notifVolume * 100)}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value) / 100;
+                        setNotifVolume(v);
+                        setNotificationVolume(v);
+                      }}
+                      className="w-full h-2 accent-primary cursor-pointer"
+                      data-testid="slider-notification-volume"
+                    />
+                    <span className="text-xs text-muted-foreground w-8 text-right shrink-0" data-testid="text-volume-level">{Math.round(notifVolume * 100)}%</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => playNotificationDing()}
+                    data-testid="btn-test-new-ticket-sound"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 mr-1.5" />
+                    Test Ticket Alert
+                  </Button>
+                </div>
               </SidebarGroupContent>
             </SidebarGroup>
             <SidebarGroup>
