@@ -36,6 +36,7 @@ const DIVISION_LABELS: Record<string, string> = {
   microwave: "Microwave",
   hvac: "HVAC",
   all_other: "All Other",
+  nla: "NLA Parts",
 };
 
 export function getWarrantyLabel(warrantyKey: string): string {

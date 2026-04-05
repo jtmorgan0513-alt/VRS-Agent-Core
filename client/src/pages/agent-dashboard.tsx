@@ -87,6 +87,7 @@ import {
   Download,
   Moon,
   Sun,
+  Package,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/components/theme-provider";
@@ -106,6 +107,7 @@ const DIVISION_LABELS: Record<string, string> = {
   microwave: "Microwave",
   hvac: "HVAC",
   all_other: "All Other",
+  nla: "NLA Parts",
 };
 
 const APPLIANCE_LABELS: Record<string, string> = {
@@ -151,9 +153,12 @@ export default function AgentDashboard() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const { theme, toggleTheme } = useTheme();
-  const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed">("queue");
+  const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed" | "nla_queue" | "nla_mytickets" | "nla_completed">("queue");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
+  const isMyTicketsView = activeView === "mytickets" || activeView === "nla_mytickets";
+  const isQueueView = activeView === "queue" || activeView === "nla_queue";
+  const isCompletedView = activeView === "completed" || activeView === "nla_completed";
 
   useEffect(() => {
     if (isAdminViewing) return;
@@ -387,17 +392,31 @@ export default function AgentDashboard() {
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
+    const isNlaView = activeView.startsWith("nla_");
+
     if (activeView === "queue") {
       params.set("ticketStatus", "queued");
+      params.set("excludeRequestType", "parts_nla");
     } else if (activeView === "mytickets") {
       params.set("ticketStatus", "pending");
+      params.set("excludeRequestType", "parts_nla");
     } else if (activeView === "completed") {
       params.set("completedToday", "true");
+      params.set("excludeRequestType", "parts_nla");
+    } else if (activeView === "nla_queue") {
+      params.set("ticketStatus", "queued");
+      params.set("requestType", "parts_nla");
+    } else if (activeView === "nla_mytickets") {
+      params.set("ticketStatus", "pending");
+      params.set("requestType", "parts_nla");
+    } else if (activeView === "nla_completed") {
+      params.set("completedToday", "true");
+      params.set("requestType", "parts_nla");
     }
-    if (divisionFilter) {
+    if (!isNlaView && divisionFilter) {
       params.set("applianceType", divisionFilter);
     }
-    if (requestTypeFilter) {
+    if (!isNlaView && requestTypeFilter) {
       params.set("requestType", requestTypeFilter);
     }
     if (searchQuery.trim()) {
@@ -414,7 +433,7 @@ export default function AgentDashboard() {
     staleTime: 10000,
   });
 
-  const { data: statsData } = useQuery<{ queueCount: number; pendingCount: number; completedToday: number }>({
+  const { data: statsData } = useQuery<{ queueCount: number; pendingCount: number; completedToday: number; nlaQueueCount?: number; nlaPendingCount?: number; nlaCompletedToday?: number }>({
     queryKey: ["/api/agent/stats"],
     refetchInterval: 15000,
     staleTime: 10000,
@@ -473,9 +492,9 @@ export default function AgentDashboard() {
   };
 
   useEffect(() => {
-    if (activeView === "mytickets" && selectedId && shsaiVisible) {
+    if (isMyTicketsView && selectedId && shsaiVisible) {
       const sub = (submissionsData?.submissions || []).find((s) => s.id === selectedId);
-      if (sub && sub.id !== lastQueriedSubmissionId) {
+      if (sub && sub.requestType !== "parts_nla" && sub.id !== lastQueriedSubmissionId) {
         fetchShsaiData(sub.serviceOrder, sub.id);
       }
     }
@@ -649,7 +668,7 @@ export default function AgentDashboard() {
   const handleClaimAndOpen = (submissionId: number) => {
     claimMutation.mutate(submissionId);
     setSelectedId(submissionId);
-    setActiveView("mytickets");
+    setActiveView(activeView === "nla_queue" ? "nla_mytickets" : "mytickets");
   };
 
   const handleProcessSubmit = () => {
@@ -859,73 +878,129 @@ export default function AgentDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <Separator className="my-2" />
+            {!activeView.startsWith("nla_") && (
+              <>
+                <Separator className="my-2" />
 
-            <SidebarGroup>
-              <SidebarGroupLabel>Division Filters</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => setDivisionFilter(null)}
-                      data-active={divisionFilter === null}
-                      data-testid="filter-all"
-                    >
-                      <Filter className="w-4 h-4" />
-                      <span>All Divisions</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  {Object.entries(DIVISION_LABELS)
-                    .filter(([key]) => isGeneralist || agentDivisions.includes(key))
-                    .map(([key, label]) => (
-                    <SidebarMenuItem key={key}>
-                      <SidebarMenuButton
-                        onClick={() => setDivisionFilter(key)}
-                        data-active={divisionFilter === key}
-                        data-testid={`filter-${key}`}
-                      >
-                        <Wrench className="w-4 h-4" />
-                        <span>{label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+                <SidebarGroup>
+                  <SidebarGroupLabel>Division Filters</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => setDivisionFilter(null)}
+                          data-active={divisionFilter === null}
+                          data-testid="filter-all"
+                        >
+                          <Filter className="w-4 h-4" />
+                          <span>All Divisions</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {Object.entries(DIVISION_LABELS)
+                        .filter(([key]) => key !== "nla" && (isGeneralist || agentDivisions.includes(key)))
+                        .map(([key, label]) => (
+                        <SidebarMenuItem key={key}>
+                          <SidebarMenuButton
+                            onClick={() => setDivisionFilter(key)}
+                            data-active={divisionFilter === key}
+                            data-testid={`filter-${key}`}
+                          >
+                            <Wrench className="w-4 h-4" />
+                            <span>{label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
 
-            <SidebarGroup>
-              <SidebarGroupLabel>Request Type</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => setRequestTypeFilter(null)}
-                      data-active={requestTypeFilter === null}
-                      data-testid="filter-request-all"
-                    >
-                      <Filter className="w-4 h-4" />
-                      <span>All Types</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  {[
-                    { value: "authorization", label: "Authorization" },
-                    { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
-                    { value: "parts_nla", label: "Parts — NLA" },
-                  ].map((rt) => (
-                    <SidebarMenuItem key={rt.value}>
-                      <SidebarMenuButton
-                        onClick={() => setRequestTypeFilter(rt.value)}
-                        data-active={requestTypeFilter === rt.value}
-                        data-testid={`filter-request-${rt.value}`}
-                      >
-                        <ClipboardList className="w-4 h-4" />
-                        <span>{rt.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+                <SidebarGroup>
+                  <SidebarGroupLabel>Request Type</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => setRequestTypeFilter(null)}
+                          data-active={requestTypeFilter === null}
+                          data-testid="filter-request-all"
+                        >
+                          <Filter className="w-4 h-4" />
+                          <span>All Types</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {[
+                        { value: "authorization", label: "Authorization" },
+                        { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
+                      ].map((rt) => (
+                        <SidebarMenuItem key={rt.value}>
+                          <SidebarMenuButton
+                            onClick={() => setRequestTypeFilter(rt.value)}
+                            data-active={requestTypeFilter === rt.value}
+                            data-testid={`filter-request-${rt.value}`}
+                          >
+                            <ClipboardList className="w-4 h-4" />
+                            <span>{rt.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              </>
+            )}
+
+            {(agentDivisions.includes("nla") || isAdminViewing) && (
+              <>
+                <Separator className="my-2" />
+                <SidebarGroup>
+                  <SidebarGroupLabel>NLA Parts</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => { setActiveView("nla_queue"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          data-active={activeView === "nla_queue"}
+                          data-testid="nav-nla-queue"
+                        >
+                          <Package className="w-4 h-4" />
+                          <span>NLA Queue</span>
+                          {statsData?.nlaQueueCount != null && statsData.nlaQueueCount > 0 && activeView !== "nla_queue" && (
+                            <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                              {statsData.nlaQueueCount}
+                            </Badge>
+                          )}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => { setActiveView("nla_mytickets"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          data-active={activeView === "nla_mytickets"}
+                          data-testid="nav-nla-mytickets"
+                        >
+                          <Package className="w-4 h-4" />
+                          <span>My NLA Tickets</span>
+                          {statsData?.nlaPendingCount != null && statsData.nlaPendingCount > 0 && activeView !== "nla_mytickets" && (
+                            <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                              {statsData.nlaPendingCount}
+                            </Badge>
+                          )}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => { setActiveView("nla_completed"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          data-active={activeView === "nla_completed"}
+                          data-testid="nav-nla-completed"
+                        >
+                          <Package className="w-4 h-4" />
+                          <span>NLA Completed Today</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              </>
+            )}
 
           </SidebarContent>
 
@@ -1020,6 +1095,9 @@ export default function AgentDashboard() {
                 {activeView === "queue" && `Queue (${statsData?.queueCount ?? 0})`}
                 {activeView === "mytickets" && `My Tickets (${statsData?.pendingCount ?? 0})`}
                 {activeView === "completed" && "Completed Today"}
+                {activeView === "nla_queue" && `NLA Parts Queue (${statsData?.nlaQueueCount ?? 0})`}
+                {activeView === "nla_mytickets" && `My NLA Tickets (${statsData?.nlaPendingCount ?? 0})`}
+                {activeView === "nla_completed" && "NLA Completed Today"}
               </h1>
             </div>
             <div className="flex items-center gap-3">
@@ -1077,7 +1155,7 @@ export default function AgentDashboard() {
                         >
                           <button
                             onClick={() => {
-                              if (activeView === "queue") {
+                              if (isQueueView) {
                                 handleClaimAndOpen(sub.id);
                               } else {
                                 setSelectedId(sub.id);
@@ -1151,13 +1229,13 @@ export default function AgentDashboard() {
                   <div className="text-center">
                     <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p className="text-sm">
-                      {activeView === "queue" ? "Click a ticket to claim and review it" : "Select a ticket to review"}
+                      {isQueueView ? "Click a ticket to claim and review it" : "Select a ticket to review"}
                     </p>
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-1 min-h-0">
-                <ScrollArea className={activeView === "mytickets" && shsaiVisible ? "w-full md:w-[60%] border-r" : "flex-1"}>
+                <ScrollArea className={isMyTicketsView && shsaiVisible ? "w-full md:w-[60%] border-r" : "flex-1"}>
                   <div className="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
                     <Button
                       variant="ghost"
@@ -1215,7 +1293,7 @@ export default function AgentDashboard() {
                             {getUrgencyLevel(selectedSubmission.createdAt) === "urgent" ? "Urgent" : "Aging"}
                           </Badge>
                         )}
-                        {activeView === "mytickets" && !shsaiVisible && (
+                        {isMyTicketsView && !shsaiVisible && selectedSubmission?.requestType !== "parts_nla" && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1226,7 +1304,7 @@ export default function AgentDashboard() {
                             Service History
                           </Button>
                         )}
-                        {activeView === "mytickets" && (user?.role === "admin" || user?.role === "super_admin") && (
+                        {isMyTicketsView && (user?.role === "admin" || user?.role === "super_admin") && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1306,7 +1384,7 @@ export default function AgentDashboard() {
                               <p className="text-sm font-medium" data-testid="text-detail-appliance">
                                 {APPLIANCE_LABELS[selectedSubmission.applianceType] || selectedSubmission.applianceType}
                               </p>
-                              {activeView === "mytickets" && selectedSubmission.ticketStatus === "pending" && selectedSubmission.assignedTo === user?.id && (
+                              {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.assignedTo === user?.id && (
                                 <Select
                                   value=""
                                   onValueChange={(val) => {
@@ -1683,7 +1761,7 @@ export default function AgentDashboard() {
                       </Card>
                     )}
 
-                    {activeView === "mytickets" && selectedSubmission.ticketStatus === "pending" && (
+                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && (
                       <Card>
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2">
@@ -2318,7 +2396,7 @@ export default function AgentDashboard() {
                     )}
                   </div>
                 </ScrollArea>
-                {activeView === "mytickets" && shsaiVisible && selectedSubmission && (
+                {isMyTicketsView && shsaiVisible && selectedSubmission && selectedSubmission.requestType !== "parts_nla" && (
                   <div className="hidden md:flex w-[40%] flex-col min-h-0" data-testid="panel-shsai">
                     <div className="px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2">

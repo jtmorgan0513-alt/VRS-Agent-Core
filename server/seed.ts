@@ -127,7 +127,7 @@ export async function seedDatabase() {
     }
   }
 
-  const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+  const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"];
   const allUsers = await db.select({ id: users.id, role: users.role }).from(users);
   for (const u of allUsers) {
     if (u.role === "admin" || u.role === "super_admin") {

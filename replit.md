@@ -27,9 +27,25 @@ Key architectural patterns include:
 
 **Frontend Pages:**
 - **Technician:** Login, Home, Submission Form, History, Submission Detail, Help Center.
-- **VRS Agent:** Login, Dashboard (unified Queue, My Tickets, Completed views), supporting claim-to-process workflow, division correction.
-- **Admin:** Login, Dashboard (user management, division assignments, analytics with resubmission rate tracking and district-level rollup, real-time agent status, ticket overview with FIFO queue, clickable audit trail per ticket, technician feedback management).
+- **VRS Agent:** Login, Dashboard (unified Queue, My Tickets, Completed views + dedicated NLA Queue, NLA My Tickets, NLA Completed sub-tabs), supporting claim-to-process workflow, division correction. SHSAI panel is suppressed for NLA tickets.
+- **Admin:** Login, Dashboard (user management, division assignments, analytics with resubmission rate tracking, district-level rollup, and NLA analytics card, real-time agent status, ticket overview with FIFO queue and request type filter (All/Authorization Only/NLA Only), clickable audit trail per ticket, technician feedback management, export with CSV + XLSX).
 - **Technician Feedback:** Technicians can submit feedback (issue, improvement, general) with priority and optional attachments from /tech/feedback. Admins manage feedback from the "Technician Feedback" view in the admin dashboard with status tracking (new, in_progress, resolved, dismissed) and admin notes.
+
+## NLA (Parts No Longer Available)
+- "nla" is a standalone agent specialization/division, independent of appliance type divisions.
+- NLA tickets (`requestType === "parts_nla"`) route to agents with the "nla" specialization via WebSocket `broadcastToDivisionAgents`.
+- Agent dashboard has dedicated NLA sub-tabs (NLA Queue, NLA My Tickets, NLA Completed) in the sidebar, using amber-colored badges and `Package` icon.
+- NLA tickets are excluded from standard queue/pending/completed counts; separate `getNlaQueuedCount`, `getNlaPendingCount`, `getNlaCompletedTodayCount` storage methods provide NLA-specific counts.
+- Admin ticket overview supports filtering by request type (All / Authorization Only / NLA Only).
+- Admin analytics includes an NLA Parts Submissions card (Today/Week/Month/All Time).
+- XLSX export (`/api/admin/export-xlsx`) produces a 2-sheet workbook: Sheet 1 "Authorization Tickets" and Sheet 2 "NLA Parts Tickets" with a Part Numbers column. Uses `exceljs` package.
+- Admins and super_admins automatically receive "nla" division assignment via seed.ts.
+
+## Notification Sound System
+- 5 tone options: Chime, Bell, Pulse, Cascade, Alert — selectable by admins in the sidebar sound controls.
+- Volume slider 0–100%.
+- Settings saved server-side in `system_settings` table (`notification_tone`, `notification_volume`) via `/api/settings/notification-tone` GET/PUT.
+- All agents load settings on dashboard init via `loadNotificationSettings()` in `client/src/lib/websocket.ts`.
 
 ## External Dependencies
 - **Twilio:** Used for sending SMS notifications to technicians.

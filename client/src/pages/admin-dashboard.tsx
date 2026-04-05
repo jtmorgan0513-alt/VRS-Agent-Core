@@ -112,6 +112,7 @@ import {
   Volume2,
   VolumeX,
   Volume1,
+  Package,
 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 import { useTheme } from "@/components/theme-provider";
@@ -157,7 +158,7 @@ type SafeUser = Omit<User, "password">;
 
 type ActiveView = "users" | "divisions" | "rgc" | "analytics" | "technicians" | "agent-status" | "tickets" | "feedback";
 
-const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"] as const;
+const DIVISION_KEYS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"] as const;
 
 const DIVISION_LABELS: Record<string, string> = {
   cooking: "Cooking",
@@ -167,6 +168,7 @@ const DIVISION_LABELS: Record<string, string> = {
   refrigeration: "Refrigeration",
   hvac: "HVAC",
   all_other: "All Other",
+  nla: "NLA Parts",
 };
 
 const ROLE_BADGE_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
@@ -828,6 +830,7 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
 function TicketOverviewSection() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("all");
+  const [requestTypeFilter, setRequestTypeFilter] = useState<"all" | "auth" | "nla">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [reassignTicket, setReassignTicket] = useState<any | null>(null);
@@ -879,7 +882,12 @@ function TicketOverviewSection() {
     }
   }
 
-  const allTickets = allData?.submissions || [];
+  const rawTickets = allData?.submissions || [];
+  const allTickets = requestTypeFilter === "all"
+    ? rawTickets
+    : requestTypeFilter === "nla"
+    ? rawTickets.filter((t: any) => t.requestType === "parts_nla")
+    : rawTickets.filter((t: any) => t.requestType !== "parts_nla");
 
   const statusCounts = {
     all: allTickets.length,
@@ -921,6 +929,27 @@ function TicketOverviewSection() {
 
   return (
     <div className="space-y-4 p-4">
+      <div className="flex items-center gap-1 border rounded-lg p-1 w-fit bg-muted/30" data-testid="request-type-filter">
+        {([
+          { key: "all" as const, label: "All Tickets" },
+          { key: "auth" as const, label: "Authorization Only" },
+          { key: "nla" as const, label: "NLA Only" },
+        ]).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setRequestTypeFilter(opt.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              requestTypeFilter === opt.key
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid={`filter-request-type-${opt.key}`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {tabs.map((tab) => (
           <button
@@ -1665,6 +1694,11 @@ export default function AdminDashboard() {
     enabled: activeView === "analytics",
   });
 
+  const { data: nlaAnalytics } = useQuery<{ today: number; week: number; month: number; allTime: number }>({
+    queryKey: ["/api/admin/nla-analytics"],
+    enabled: activeView === "analytics",
+  });
+
   const [exportingRange, setExportingRange] = useState<string | null>(null);
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
@@ -1717,6 +1751,36 @@ export default function AdminDashboard() {
       toast({ title: "Export Complete", description: "CSV file downloaded successfully." });
     } catch {
       toast({ title: "Export Failed", description: "Could not export CSV file.", variant: "destructive" });
+    } finally {
+      setExportingRange(null);
+    }
+  };
+
+  const handleExportXlsx = async () => {
+    try {
+      setExportingRange("exporting_xlsx");
+      const token = getToken();
+      const params = new URLSearchParams();
+      if (exportStartDate) params.set("startDate", exportStartDate);
+      if (exportEndDate) params.set("endDate", exportEndDate);
+      if (exportTechLdap.trim()) params.set("techLdap", exportTechLdap.trim());
+      if (!exportStartDate && !exportEndDate) params.set("range", "all");
+      const res = await fetch(`/api/admin/export-xlsx?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || "vrs-export.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Export Complete", description: "XLSX file downloaded successfully (2 sheets: Authorization + NLA)." });
+    } catch {
+      toast({ title: "Export Failed", description: "Could not export XLSX file.", variant: "destructive" });
     } finally {
       setExportingRange(null);
     }
@@ -2926,6 +2990,37 @@ export default function AdminDashboard() {
                       </Card>
                     </div>
 
+                    {nlaAnalytics && (
+                      <Card data-testid="card-nla-analytics">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 text-amber-500" />
+                            <CardTitle className="text-base">NLA Parts Submissions</CardTitle>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="rounded-lg border p-3 bg-amber-50 dark:bg-amber-950/20">
+                              <p className="text-2xl font-bold" data-testid="text-nla-today">{nlaAnalytics.today}</p>
+                              <p className="text-xs text-muted-foreground">Today</p>
+                            </div>
+                            <div className="rounded-lg border p-3 bg-amber-50 dark:bg-amber-950/20">
+                              <p className="text-2xl font-bold" data-testid="text-nla-week">{nlaAnalytics.week}</p>
+                              <p className="text-xs text-muted-foreground">This Week</p>
+                            </div>
+                            <div className="rounded-lg border p-3 bg-amber-50 dark:bg-amber-950/20">
+                              <p className="text-2xl font-bold" data-testid="text-nla-month">{nlaAnalytics.month}</p>
+                              <p className="text-xs text-muted-foreground">This Month</p>
+                            </div>
+                            <div className="rounded-lg border p-3 bg-amber-50 dark:bg-amber-950/20">
+                              <p className="text-2xl font-bold" data-testid="text-nla-alltime">{nlaAnalytics.allTime}</p>
+                              <p className="text-xs text-muted-foreground">All Time</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Card>
                         <CardHeader>
@@ -3028,12 +3123,12 @@ export default function AdminDashboard() {
                     <Card>
                       <CardHeader>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <CardTitle className="text-base">Export Tickets (CSV)</CardTitle>
+                          <CardTitle className="text-base">Export Tickets</CardTitle>
                           <Download className="w-4 h-4 text-muted-foreground" />
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <p className="text-sm text-muted-foreground">Download tickets as CSV. Use presets or pick custom dates. Optionally filter by technician LDAP ID for coaching review.</p>
+                        <p className="text-sm text-muted-foreground">Download tickets as CSV or XLSX. XLSX includes separate sheets for Authorization and NLA Parts tickets. Use presets or pick custom dates. Optionally filter by technician LDAP ID for coaching review.</p>
                         <div className="flex flex-wrap gap-2">
                           {[
                             { preset: "today", label: "Today" },
@@ -3083,18 +3178,34 @@ export default function AdminDashboard() {
                             />
                           </div>
                         </div>
-                        <Button
-                          onClick={handleExportCsv}
-                          disabled={exportingRange !== null}
-                          data-testid="button-export-csv"
-                        >
-                          {exportingRange ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          ) : (
-                            <Download className="w-4 h-4 mr-2" />
-                          )}
-                          Export CSV
-                        </Button>
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            onClick={handleExportCsv}
+                            disabled={exportingRange !== null}
+                            variant="outline"
+                            data-testid="button-export-csv"
+                          >
+                            {exportingRange === "exporting" ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Export CSV
+                          </Button>
+                          <Button
+                            onClick={handleExportXlsx}
+                            disabled={exportingRange !== null}
+                            data-testid="button-export-xlsx"
+                          >
+                            {exportingRange === "exporting_xlsx" ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Export XLSX
+                            <span className="ml-1 text-[10px] font-normal opacity-70">(2 sheets)</span>
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
 

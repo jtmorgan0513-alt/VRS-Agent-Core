@@ -75,6 +75,7 @@ export interface IStorage {
     applianceType?: string;
     assignedTo?: number;
     requestType?: string;
+    excludeRequestType?: string;
     divisionFilter?: string[];
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]>;
   updateSubmission(
@@ -90,6 +91,11 @@ export interface IStorage {
   getQueuedCountAll(): Promise<number>;
   getOnlineAgentCount(): Promise<number>;
   getPendingCount(agentId: number): Promise<number>;
+
+  getNlaQueuedCount(): Promise<number>;
+  getNlaPendingCount(agentId: number): Promise<number>;
+  getNlaCompletedTodayCount(agentId?: number): Promise<number>;
+  getNlaAnalytics(): Promise<{ today: number; week: number; month: number; allTime: number }>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
   getWarrantyProviderCounts(assignedTo?: number): Promise<{ warrantyProvider: string; count: number }[]>;
@@ -327,7 +333,18 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
-      conditions.push(inArray(submissions.applianceType, filters.divisionFilter) as any);
+      const hasNla = filters.divisionFilter.includes("nla");
+      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla");
+      if (hasNla && applianceDivisions.length > 0) {
+        conditions.push(or(
+          inArray(submissions.applianceType, applianceDivisions),
+          eq(submissions.requestType, "parts_nla")
+        ) as any);
+      } else if (hasNla) {
+        conditions.push(eq(submissions.requestType, "parts_nla"));
+      } else {
+        conditions.push(inArray(submissions.applianceType, applianceDivisions) as any);
+      }
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -377,6 +394,7 @@ export class DatabaseStorage implements IStorage {
     applianceType?: string;
     assignedTo?: number;
     requestType?: string;
+    excludeRequestType?: string;
     divisionFilter?: string[];
   }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]> {
     const conditions: ReturnType<typeof eq>[] = [];
@@ -402,8 +420,22 @@ export class DatabaseStorage implements IStorage {
     if (filters?.requestType !== undefined) {
       conditions.push(eq(submissions.requestType, filters.requestType));
     }
+    if (filters?.excludeRequestType !== undefined) {
+      conditions.push(sql`${submissions.requestType} != ${filters.excludeRequestType}` as any);
+    }
     if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
-      conditions.push(inArray(submissions.applianceType, filters.divisionFilter) as any);
+      const hasNla = filters.divisionFilter.includes("nla");
+      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla");
+      if (hasNla && applianceDivisions.length > 0) {
+        conditions.push(or(
+          inArray(submissions.applianceType, applianceDivisions),
+          eq(submissions.requestType, "parts_nla")
+        ) as any);
+      } else if (hasNla) {
+        conditions.push(eq(submissions.requestType, "parts_nla"));
+      } else {
+        conditions.push(inArray(submissions.applianceType, applianceDivisions) as any);
+      }
     }
     if (completedToday) {
       const today = new Date();
@@ -448,12 +480,13 @@ export class DatabaseStorage implements IStorage {
   async getCompletedTodayCount(agentId?: number): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const conditions = [
+    const conditions: any[] = [
       or(
         eq(submissions.stage1Status, "approved"),
         eq(submissions.stage1Status, "rejected")
       ),
       sql`${submissions.stage1ReviewedAt} >= ${today}`,
+      sql`${submissions.requestType} != 'parts_nla'`,
     ];
     if (agentId !== undefined) {
       conditions.push(eq(submissions.assignedTo, agentId));
@@ -486,7 +519,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDivisionQueueCount(divisions: string[]): Promise<number> {
-    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"];
     const isGeneralist = divisions.length >= allDivisions.length;
 
     const conditions: any[] = [
@@ -520,13 +553,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getQueuedCount(divisions: string[]): Promise<number> {
-    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+    const allDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"];
     const isGeneralist = divisions.length >= allDivisions.length;
     const conditions: any[] = [
       eq(submissions.ticketStatus, "queued"),
+      sql`${submissions.requestType} != 'parts_nla'`,
     ];
     if (!isGeneralist && divisions.length > 0) {
-      conditions.push(inArray(submissions.applianceType, divisions));
+      const appDivisions = divisions.filter(d => d !== "nla");
+      if (appDivisions.length > 0) {
+        conditions.push(inArray(submissions.applianceType, appDivisions));
+      }
     }
     const result = await db
       .select({ count: sql<number>`count(*)` })
@@ -561,7 +598,8 @@ export class DatabaseStorage implements IStorage {
       .from(submissions)
       .where(and(
         eq(submissions.ticketStatus, "pending"),
-        eq(submissions.assignedTo, agentId)
+        eq(submissions.assignedTo, agentId),
+        sql`${submissions.requestType} != 'parts_nla'`
       ));
     return result[0]?.count || 0;
   }
@@ -976,6 +1014,70 @@ export class DatabaseStorage implements IStorage {
       ORDER BY u.name ASC
     `);
     return result.rows as TechnicianUserView[];
+  }
+
+  async getNlaQueuedCount(): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(
+        eq(submissions.ticketStatus, "queued"),
+        eq(submissions.requestType, "parts_nla")
+      ));
+    return Number(result[0]?.count) || 0;
+  }
+
+  async getNlaPendingCount(agentId: number): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(
+        eq(submissions.ticketStatus, "pending"),
+        eq(submissions.requestType, "parts_nla"),
+        eq(submissions.assignedTo, agentId)
+      ));
+    return Number(result[0]?.count) || 0;
+  }
+
+  async getNlaCompletedTodayCount(agentId?: number): Promise<number> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const conditions: any[] = [
+      eq(submissions.requestType, "parts_nla"),
+      gte(submissions.statusChangedAt, today),
+      inArray(submissions.ticketStatus, ["completed", "approved"]),
+    ];
+    if (agentId) {
+      conditions.push(eq(submissions.reviewedBy, agentId));
+    }
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(and(...conditions));
+    return Number(result[0]?.count) || 0;
+  }
+
+  async getNlaAnalytics(): Promise<{ today: number; week: number; month: number; allTime: number }> {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const nlaCondition = eq(submissions.requestType, "parts_nla");
+
+    const [allTimeResult] = await db.select({ count: sql<number>`count(*)` }).from(submissions).where(nlaCondition);
+    const [todayResult] = await db.select({ count: sql<number>`count(*)` }).from(submissions).where(and(nlaCondition, gte(submissions.createdAt, todayStart)));
+    const [weekResult] = await db.select({ count: sql<number>`count(*)` }).from(submissions).where(and(nlaCondition, gte(submissions.createdAt, weekStart)));
+    const [monthResult] = await db.select({ count: sql<number>`count(*)` }).from(submissions).where(and(nlaCondition, gte(submissions.createdAt, monthStart)));
+
+    return {
+      today: Number(todayResult?.count) || 0,
+      week: Number(weekResult?.count) || 0,
+      month: Number(monthResult?.count) || 0,
+      allTime: Number(allTimeResult?.count) || 0,
+    };
   }
 
   async getSystemSetting(key: string): Promise<string | undefined> {

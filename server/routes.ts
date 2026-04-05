@@ -54,7 +54,7 @@ function signToken(user: User): string {
   );
 }
 
-const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+const ALL_DIVISIONS = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"];
 
 async function broadcastVrsAvailability() {
   const onlineAgents = await storage.getOnlineAgentCount();
@@ -639,7 +639,8 @@ export async function registerRoutes(
           console.error("Failed to send resubmission claim SMS:", err);
         });
       } else {
-        broadcastToDivisionAgents(parsed.data.applianceType, {
+        const broadcastDivision = parsed.data.requestType === "parts_nla" ? "nla" : parsed.data.applianceType;
+        broadcastToDivisionAgents(broadcastDivision, {
           type: "new_ticket",
           payload: {
             submissionId: submission.id,
@@ -647,6 +648,7 @@ export async function registerRoutes(
             applianceType: parsed.data.applianceType,
             applianceLabel: getDivisionLabel(parsed.data.applianceType),
             warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+            requestType: parsed.data.requestType,
           },
         });
       }
@@ -673,6 +675,7 @@ export async function registerRoutes(
         assignedTo?: number;
         applianceType?: string;
         requestType?: string;
+        excludeRequestType?: string;
         divisionFilter?: string[];
       } = {};
 
@@ -715,6 +718,9 @@ export async function registerRoutes(
       }
       if (req.query.requestType) {
         filters.requestType = req.query.requestType as string;
+      }
+      if (req.query.excludeRequestType) {
+        filters.excludeRequestType = req.query.excludeRequestType as string;
       }
 
       const completedToday = req.query.completedToday === "true";
@@ -781,7 +787,8 @@ export async function registerRoutes(
           const specs = await storage.getSpecializations(user.id);
           const divisions = specs.map(s => s.division);
           const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
-          if (!isGeneralist && !divisions.includes(submission.applianceType)) {
+          const isNlaTicket = submission.requestType === "parts_nla";
+          if (!isGeneralist && !(isNlaTicket ? divisions.includes("nla") : divisions.includes(submission.applianceType))) {
             return res.status(403).json({ error: "Access denied" });
           }
         }
@@ -1036,7 +1043,8 @@ export async function registerRoutes(
         const divisions = specs.map(s => s.division);
         
         const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
-        if (!isGeneralist && !divisions.includes(submission.applianceType)) {
+        const isNlaTicket = submission.requestType === "parts_nla";
+        if (!isGeneralist && !(isNlaTicket ? divisions.includes("nla") : divisions.includes(submission.applianceType))) {
           return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
         }
       }
@@ -1061,7 +1069,8 @@ export async function registerRoutes(
         });
       }
 
-      broadcastToDivisionAgents(submission.applianceType, {
+      const claimBroadcastDiv = submission.requestType === "parts_nla" ? "nla" : submission.applianceType;
+      broadcastToDivisionAgents(claimBroadcastDiv, {
         type: "ticket_claimed",
         payload: { submissionId: id, serviceOrder: submission.serviceOrder },
       }, authReq.user!.id);
@@ -1312,7 +1321,8 @@ export async function registerRoutes(
       }
 
       if (action === "reject") {
-        broadcastToDivisionAgents(submission.applianceType, {
+        const rejectBroadcastDiv = submission.requestType === "parts_nla" ? "nla" : submission.applianceType;
+        broadcastToDivisionAgents(rejectBroadcastDiv, {
           type: "ticket_queued",
           payload: {
             submissionId: id,
@@ -1348,14 +1358,25 @@ export async function registerRoutes(
         const queueCount = await storage.getQueuedCount(divisions);
         const pendingCount = await storage.getPendingCount(authReq.user!.id);
         const completedToday = await storage.getCompletedTodayCount(authReq.user!.id);
-        return res.status(200).json({ queueCount, pendingCount, completedToday });
+
+        let nlaQueueCount = 0;
+        let nlaPendingCount = 0;
+        let nlaCompletedToday = 0;
+        if (divisions.includes("nla")) {
+          nlaQueueCount = await storage.getNlaQueuedCount();
+          nlaPendingCount = await storage.getNlaPendingCount(authReq.user!.id);
+          nlaCompletedToday = await storage.getNlaCompletedTodayCount(authReq.user!.id);
+        }
+
+        return res.status(200).json({ queueCount, pendingCount, completedToday, nlaQueueCount, nlaPendingCount, nlaCompletedToday });
       }
 
-      
       const queueCount = await storage.getQueuedCount(ALL_DIVISIONS);
       const completedToday = await storage.getCompletedTodayCount();
+      const nlaQueueCount = await storage.getNlaQueuedCount();
+      const nlaCompletedToday = await storage.getNlaCompletedTodayCount();
 
-      return res.status(200).json({ queueCount, pendingCount: 0, completedToday });
+      return res.status(200).json({ queueCount, pendingCount: 0, completedToday, nlaQueueCount, nlaPendingCount: 0, nlaCompletedToday });
     } catch (error) {
       console.error("Agent stats error:", error);
       return res.status(500).json({ error: "Failed to get agent stats" });
@@ -1415,6 +1436,7 @@ export async function registerRoutes(
         const queuedTickets = (allSubmissions as any[]).filter((s: any) => {
           if (s.ticketStatus !== "queued") return false;
           if (isGeneralist) return true;
+          if (s.requestType === "parts_nla") return divisions.includes("nla");
           return divisions.includes(s.applianceType);
         });
 
@@ -1563,7 +1585,8 @@ export async function registerRoutes(
         updatedAt: new Date(),
       } as any);
 
-      broadcastToDivisionAgents(updated.applianceType, {
+      const reassignBroadcastDiv = updated.requestType === "parts_nla" ? "nla" : updated.applianceType;
+      broadcastToDivisionAgents(reassignBroadcastDiv, {
         type: "ticket_queued",
         payload: {
           submissionId: updated.id,
@@ -2038,7 +2061,7 @@ export async function registerRoutes(
   });
 
   const setSpecializationsSchema = z.object({
-    divisions: z.array(z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"])),
+    divisions: z.array(z.enum(["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other", "nla"])),
   });
 
   app.patch("/api/admin/users/:id/specializations", authenticateToken, requireRole("admin"), async (req, res) => {
@@ -2207,6 +2230,158 @@ export async function registerRoutes(
     } catch (error) {
       console.error("CSV export error:", error);
       return res.status(500).json({ error: "Failed to export CSV" });
+    }
+  });
+
+  app.get("/api/admin/nla-analytics", authenticateToken, requireRole("admin"), async (_req, res) => {
+    try {
+      const analytics = await storage.getNlaAnalytics();
+      return res.json(analytics);
+    } catch (error) {
+      console.error("NLA analytics error:", error);
+      return res.status(500).json({ error: "Failed to fetch NLA analytics" });
+    }
+  });
+
+  app.get("/api/admin/export-xlsx", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const range = (req.query.range as string) || "all";
+      const customStart = req.query.startDate as string | undefined;
+      const customEnd = req.query.endDate as string | undefined;
+      const techLdap = req.query.techLdap as string | undefined;
+      const now = new Date();
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
+      if (customStart) {
+        startDate = new Date(customStart);
+        if (customEnd) {
+          const end = new Date(customEnd);
+          end.setHours(23, 59, 59, 999);
+          endDate = end;
+        }
+      } else if (range === "today") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      } else if (range === "week") {
+        const day = now.getDay();
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+      } else if (range === "month") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      const allSubmissions = await storage.getAllSubmissions(startDate, endDate, techLdap || null);
+
+      const userCache: Record<number, string> = {};
+      const getUserName = async (userId: number | null): Promise<string> => {
+        if (!userId) return "";
+        if (userCache[userId]) return userCache[userId];
+        const u = await storage.getUser(userId);
+        userCache[userId] = u?.name || "";
+        return userCache[userId];
+      };
+
+      const authTickets = allSubmissions.filter(s => s.requestType !== "parts_nla");
+      const nlaTickets = allSubmissions.filter(s => s.requestType === "parts_nla");
+
+      const workbook = new ExcelJS.Workbook();
+
+      const authHeaders = [
+        "ID", "Service Order", "Technician LDAP", "Technician Name", "Phone",
+        "District", "Appliance Type", "Request Type", "Warranty Type", "Warranty Provider",
+        "Issue Description", "Estimate Amount",
+        "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
+        "Auth Code", "RGC Code", "Assigned To",
+        "Created At", "Updated At"
+      ];
+
+      const authSheet = workbook.addWorksheet("Authorization Tickets");
+      authSheet.addRow(authHeaders);
+      const authHeaderRow = authSheet.getRow(1);
+      authHeaderRow.font = { bold: true };
+      authHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } };
+      authHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+      for (const s of authTickets) {
+        const techName = await getUserName(s.technicianId);
+        const reviewerName = await getUserName(s.reviewedBy);
+        const assignedName = await getUserName(s.assignedTo);
+        let rejReasons = "";
+        if (s.rejectionReasons) {
+          try { rejReasons = JSON.parse(s.rejectionReasons).join("; "); } catch { rejReasons = s.rejectionReasons; }
+        }
+        authSheet.addRow([
+          s.id, s.serviceOrder, s.technicianLdapId || s.racId, techName, s.phone,
+          s.districtCode, s.applianceType, s.requestType, s.warrantyType, s.warrantyProvider,
+          s.issueDescription, s.estimateAmount,
+          s.ticketStatus, reviewerName, s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
+          rejReasons, s.authCode, s.rgcCode, assignedName,
+          s.createdAt ? new Date(s.createdAt).toISOString() : "",
+          s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
+        ]);
+      }
+
+      authHeaders.forEach((_h, i) => {
+        const col = authSheet.getColumn(i + 1);
+        col.width = 18;
+      });
+
+      const nlaHeaders = [
+        "ID", "Service Order", "Technician LDAP", "Technician Name", "Phone",
+        "District", "Appliance Type", "Part Numbers",
+        "Issue Description",
+        "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
+        "Assigned To", "Created At", "Updated At"
+      ];
+
+      const nlaSheet = workbook.addWorksheet("NLA Parts Tickets");
+      nlaSheet.addRow(nlaHeaders);
+      const nlaHeaderRow = nlaSheet.getRow(1);
+      nlaHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      nlaHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFED7D31" } };
+
+      for (const s of nlaTickets) {
+        const techName = await getUserName(s.technicianId);
+        const reviewerName = await getUserName(s.reviewedBy);
+        const assignedName = await getUserName(s.assignedTo);
+        let rejReasons = "";
+        if (s.rejectionReasons) {
+          try { rejReasons = JSON.parse(s.rejectionReasons).join("; "); } catch { rejReasons = s.rejectionReasons; }
+        }
+        let partNumbers = "";
+        if ((s as any).partNumbers) {
+          try {
+            const arr = typeof (s as any).partNumbers === "string" ? JSON.parse((s as any).partNumbers) : (s as any).partNumbers;
+            partNumbers = Array.isArray(arr) ? arr.join(", ") : String(arr);
+          } catch { partNumbers = String((s as any).partNumbers); }
+        }
+        nlaSheet.addRow([
+          s.id, s.serviceOrder, s.technicianLdapId || s.racId, techName, s.phone,
+          s.districtCode, s.applianceType, partNumbers,
+          s.issueDescription,
+          s.ticketStatus, reviewerName, s.reviewedAt ? new Date(s.reviewedAt).toISOString() : "",
+          rejReasons, assignedName,
+          s.createdAt ? new Date(s.createdAt).toISOString() : "",
+          s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
+        ]);
+      }
+
+      nlaHeaders.forEach((_h, i) => {
+        const col = nlaSheet.getColumn(i + 1);
+        col.width = 18;
+      });
+
+      let rangeLabel = customStart ? `${customStart}${customEnd ? '_to_' + customEnd : ''}` : range === "today" ? "today" : range === "week" ? "this-week" : range === "month" ? "this-month" : "all-time";
+      if (techLdap) rangeLabel += `-tech-${techLdap}`;
+      const filename = `vrs-tickets-${rangeLabel}-${now.toISOString().slice(0, 10)}.xlsx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error) {
+      console.error("XLSX export error:", error);
+      return res.status(500).json({ error: "Failed to export XLSX" });
     }
   });
 
