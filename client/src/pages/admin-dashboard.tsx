@@ -5,7 +5,8 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket, playNotificationDing, playTonePreview, getNotificationVolume, getSelectedTone, setCachedVolume, setCachedTone, loadNotificationSettings, TONE_OPTIONS, type ToneId } from "@/lib/websocket";
+import { useWebSocket, loadNotificationSettings } from "@/lib/websocket";
+import NotificationSettings from "@/components/notification-settings";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -109,9 +110,6 @@ import {
   ZoomIn,
   ChevronLeft,
   ChevronRight,
-  Volume2,
-  VolumeX,
-  Volume1,
   Package,
   CreditCard,
 } from "lucide-react";
@@ -1628,15 +1626,8 @@ export default function AdminDashboard() {
   const [, navigate] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<ActiveView>("users");
-  const [notifVolume, setNotifVolume] = useState(() => getNotificationVolume());
-  const [selectedTone, setTone] = useState<ToneId>(() => getSelectedTone());
-  const [savingSound, setSavingSound] = useState(false);
-
   useEffect(() => {
-    loadNotificationSettings().then(({ tone, volume }) => {
-      setTone(tone);
-      setNotifVolume(volume);
-    });
+    loadNotificationSettings();
   }, []);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SafeUser | null>(null);
@@ -2186,92 +2177,6 @@ export default function AdminDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
             <SidebarGroup>
-              <SidebarGroupLabel>Notification Sounds</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <div className="px-3 pb-2 space-y-3">
-                  <div className="space-y-1.5">
-                    <span className="text-xs text-muted-foreground font-medium">Alert Tone</span>
-                    <div className="grid grid-cols-1 gap-1">
-                      {TONE_OPTIONS.map((tone) => (
-                        <button
-                          key={tone.id}
-                          onClick={async () => {
-                            setTone(tone.id);
-                            setCachedTone(tone.id);
-                            playTonePreview(tone.id);
-                            setSavingSound(true);
-                            try {
-                              await apiRequest("PUT", "/api/settings/notification-tone", { tone: tone.id });
-                            } catch {}
-                            setSavingSound(false);
-                          }}
-                          className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
-                            selectedTone === tone.id
-                              ? "bg-primary text-primary-foreground"
-                              : "hover:bg-muted text-foreground"
-                          }`}
-                          data-testid={`btn-tone-${tone.id}`}
-                        >
-                          <Volume2 className="w-3 h-3 shrink-0" />
-                          {tone.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {notifVolume === 0 ? (
-                      <VolumeX className="w-4 h-4 text-muted-foreground shrink-0" />
-                    ) : notifVolume < 0.4 ? (
-                      <Volume1 className="w-4 h-4 text-muted-foreground shrink-0" />
-                    ) : (
-                      <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                    )}
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={Math.round(notifVolume * 100)}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value) / 100;
-                        setNotifVolume(v);
-                        setCachedVolume(v);
-                      }}
-                      onMouseUp={async () => {
-                        setSavingSound(true);
-                        try {
-                          await apiRequest("PUT", "/api/settings/notification-tone", { volume: notifVolume });
-                        } catch {}
-                        setSavingSound(false);
-                      }}
-                      onTouchEnd={async () => {
-                        setSavingSound(true);
-                        try {
-                          await apiRequest("PUT", "/api/settings/notification-tone", { volume: notifVolume });
-                        } catch {}
-                        setSavingSound(false);
-                      }}
-                      className="w-full h-2 accent-primary cursor-pointer"
-                      data-testid="slider-notification-volume"
-                    />
-                    <span className="text-xs text-muted-foreground w-8 text-right shrink-0" data-testid="text-volume-level">{Math.round(notifVolume * 100)}%</span>
-                  </div>
-                  {savingSound && (
-                    <p className="text-xs text-muted-foreground text-center">Saving...</p>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => playNotificationDing()}
-                    data-testid="btn-test-new-ticket-sound"
-                  >
-                    <Volume2 className="w-3.5 h-3.5 mr-1.5" />
-                    Test Sound
-                  </Button>
-                </div>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
               <SidebarGroupLabel>Views</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -2310,6 +2215,7 @@ export default function AdminDashboard() {
           </SidebarContent>
 
           <SidebarFooter className="p-4 space-y-1">
+            <NotificationSettings />
             <Button
               variant="ghost"
               size="sm"

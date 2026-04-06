@@ -122,7 +122,10 @@ let settingsLoaded = false;
 
 export async function loadNotificationSettings(): Promise<{ tone: ToneId; volume: number }> {
   try {
-    const res = await fetch("/api/settings/notification-tone");
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch("/api/settings/notification-tone", { headers });
     if (res.ok) {
       const data = await res.json();
       cachedTone = TONE_OPTIONS.some(o => o.id === data.tone) ? data.tone : "chime";

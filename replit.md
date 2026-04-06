@@ -54,10 +54,11 @@ Key architectural patterns include:
 - Graceful fallbacks for tickets without claimedAt (pre-existing data).
 
 ## Notification Sound System
-- 5 tone options: Chime, Bell, Pulse, Cascade, Alert — selectable by admins in the sidebar sound controls.
-- Volume slider 0–100%.
-- Settings saved server-side in `system_settings` table (`notification_tone`, `notification_volume`) via `/api/settings/notification-tone` GET/PUT.
-- All agents load settings on dashboard init via `loadNotificationSettings()` in `client/src/lib/websocket.ts`.
+- 5 tone options: Chime, Bell, Pulse, Cascade, Alert — each user can choose their own.
+- Volume slider 0–100% per user.
+- Settings stored per-user on the `users` table (`notificationTone`, `notificationVolume` columns) via `/api/settings/notification-tone` GET/PUT (authenticated, any role).
+- Shared `NotificationSettings` dialog component (`client/src/components/notification-settings.tsx`) with gear icon, accessible from both admin and agent sidebar footers above Help Center.
+- All users load their settings on dashboard init via `loadNotificationSettings()` in `client/src/lib/websocket.ts` (sends Bearer token).
 
 ## External Dependencies
 - **Twilio:** Used for sending SMS notifications to technicians.

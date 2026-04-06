@@ -6,6 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings } from "@/lib/websocket";
+import NotificationSettings from "@/components/notification-settings";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -1090,6 +1091,7 @@ export default function AgentDashboard() {
                 <span>Back to Admin</span>
               </Button>
             )}
+            <NotificationSettings />
             <Button
               variant="ghost"
               size="sm"
