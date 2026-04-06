@@ -243,6 +243,14 @@ export default function SubmissionDetailPage() {
                   <p className="text-sm text-muted-foreground mt-1">A replacement request has been submitted to the warranty company. Close this call using the NLA labor code.</p>
                 </div>
               )}
+              {sub.nlaResolution === "replacement_tech_initiates" && (
+                <div data-testid="text-nla-resolution">
+                  <p className="font-semibold text-emerald-700 dark:text-emerald-400">NLA Replacement Approved</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    The part(s) could not be sourced. VRS has approved a replacement. You must initiate the replacement in TechHub using standard replacement procedures.
+                  </p>
+                </div>
+              )}
               {sub.nlaResolution === "part_found_vrs_ordered" && (
                 <div data-testid="text-nla-resolution">
                   <p className="text-sm font-medium">Part Ordered by VRS</p>

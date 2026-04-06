@@ -92,9 +92,9 @@ export interface IStorage {
   getOnlineAgentCount(): Promise<number>;
   getPendingCount(agentId: number): Promise<number>;
 
-  getNlaQueuedCount(): Promise<number>;
+  getNlaQueuedCount(divisions?: string[]): Promise<number>;
   getNlaPendingCount(agentId: number): Promise<number>;
-  getNlaCompletedTodayCount(agentId?: number): Promise<number>;
+  getNlaCompletedTodayCount(agentId?: number, divisions?: string[]): Promise<number>;
   getNlaAnalytics(): Promise<{ today: number; week: number; month: number; allTime: number }>;
 
   getStage2QueueCount(agentId?: number): Promise<number>;
@@ -334,7 +334,7 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
       const hasNla = filters.divisionFilter.includes("nla");
-      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla");
+      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla" && d !== "generalist");
       if (hasNla && applianceDivisions.length > 0) {
         conditions.push(or(
           inArray(submissions.applianceType, applianceDivisions),
@@ -425,15 +425,17 @@ export class DatabaseStorage implements IStorage {
     }
     if (filters?.divisionFilter !== undefined && filters.divisionFilter.length > 0) {
       const hasNla = filters.divisionFilter.includes("nla");
-      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla");
-      if (hasNla && applianceDivisions.length > 0) {
+      const applianceDivisions = filters.divisionFilter.filter(d => d !== "nla" && d !== "generalist");
+      const isNlaSpecificQuery = filters.requestType === "parts_nla";
+      if (isNlaSpecificQuery && applianceDivisions.length > 0) {
+        conditions.push(inArray(submissions.applianceType, applianceDivisions) as any);
+      } else if (hasNla && applianceDivisions.length > 0 && !isNlaSpecificQuery) {
         conditions.push(or(
           inArray(submissions.applianceType, applianceDivisions),
           eq(submissions.requestType, "parts_nla")
         ) as any);
       } else if (hasNla) {
-        conditions.push(eq(submissions.requestType, "parts_nla"));
-      } else {
+      } else if (applianceDivisions.length > 0) {
         conditions.push(inArray(submissions.applianceType, applianceDivisions) as any);
       }
     }
@@ -1016,14 +1018,23 @@ export class DatabaseStorage implements IStorage {
     return result.rows as TechnicianUserView[];
   }
 
-  async getNlaQueuedCount(): Promise<number> {
+  async getNlaQueuedCount(divisions?: string[]): Promise<number> {
+    const allApplianceDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
+    const conditions: any[] = [
+      eq(submissions.ticketStatus, "queued"),
+      eq(submissions.requestType, "parts_nla"),
+    ];
+    if (divisions && divisions.length > 0) {
+      const applianceDivisions = divisions.filter(d => d !== "nla" && d !== "generalist");
+      const isApplianceGeneralist = applianceDivisions.length >= allApplianceDivisions.length;
+      if (!isApplianceGeneralist && applianceDivisions.length > 0) {
+        conditions.push(inArray(submissions.applianceType, applianceDivisions));
+      }
+    }
     const result = await db
       .select({ count: sql<number>`count(*)` })
       .from(submissions)
-      .where(and(
-        eq(submissions.ticketStatus, "queued"),
-        eq(submissions.requestType, "parts_nla")
-      ));
+      .where(and(...conditions));
     return Number(result[0]?.count) || 0;
   }
 
@@ -1039,7 +1050,8 @@ export class DatabaseStorage implements IStorage {
     return Number(result[0]?.count) || 0;
   }
 
-  async getNlaCompletedTodayCount(agentId?: number): Promise<number> {
+  async getNlaCompletedTodayCount(agentId?: number, divisions?: string[]): Promise<number> {
+    const allApplianceDivisions = ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "all_other"];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const conditions: any[] = [
@@ -1049,6 +1061,13 @@ export class DatabaseStorage implements IStorage {
     ];
     if (agentId) {
       conditions.push(eq(submissions.reviewedBy, agentId));
+    }
+    if (divisions && divisions.length > 0) {
+      const applianceDivisions = divisions.filter(d => d !== "nla" && d !== "generalist");
+      const isApplianceGeneralist = applianceDivisions.length >= allApplianceDivisions.length;
+      if (!isApplianceGeneralist && applianceDivisions.length > 0) {
+        conditions.push(inArray(submissions.applianceType, applianceDivisions));
+      }
     }
     const result = await db
       .select({ count: sql<number>`count(*)` })

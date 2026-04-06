@@ -21,7 +21,7 @@ import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1Invalid
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
-import { broadcastToDivisionAgents, broadcastToAdmins, broadcastToAgent, broadcastToTechnicians, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel } from "./websocket";
+import { broadcastToDivisionAgents, broadcastToNlaDivisionAgents, broadcastToAdmins, broadcastToAgent, broadcastToTechnicians, updateClientStatus, updateClientDivisions, getWarrantyLabel, getDivisionLabel } from "./websocket";
 
 const execFileAsync = promisify(execFile);
 
@@ -640,18 +640,31 @@ export async function registerRoutes(
           console.error("Failed to send resubmission claim SMS:", err);
         });
       } else {
-        const broadcastDivision = parsed.data.requestType === "parts_nla" ? "nla" : parsed.data.applianceType;
-        broadcastToDivisionAgents(broadcastDivision, {
-          type: "new_ticket",
-          payload: {
-            submissionId: submission.id,
-            serviceOrder: submission.serviceOrder,
-            applianceType: parsed.data.applianceType,
-            applianceLabel: getDivisionLabel(parsed.data.applianceType),
-            warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
-            requestType: parsed.data.requestType,
-          },
-        });
+        if (parsed.data.requestType === "parts_nla") {
+          broadcastToNlaDivisionAgents(parsed.data.applianceType, {
+            type: "new_ticket",
+            payload: {
+              submissionId: submission.id,
+              serviceOrder: submission.serviceOrder,
+              applianceType: parsed.data.applianceType,
+              applianceLabel: getDivisionLabel(parsed.data.applianceType),
+              warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+              requestType: parsed.data.requestType,
+            },
+          });
+        } else {
+          broadcastToDivisionAgents(parsed.data.applianceType, {
+            type: "new_ticket",
+            payload: {
+              submissionId: submission.id,
+              serviceOrder: submission.serviceOrder,
+              applianceType: parsed.data.applianceType,
+              applianceLabel: getDivisionLabel(parsed.data.applianceType),
+              warrantyLabel: getWarrantyLabel(parsed.data.warrantyType),
+              requestType: parsed.data.requestType,
+            },
+          });
+        }
       }
 
       await broadcastVrsAvailability();
@@ -1045,7 +1058,16 @@ export async function registerRoutes(
         
         const isGeneralist = divisions.length >= ALL_DIVISIONS.length;
         const isNlaTicket = submission.requestType === "parts_nla";
-        if (!isGeneralist && !(isNlaTicket ? divisions.includes("nla") : divisions.includes(submission.applianceType))) {
+        if (isNlaTicket) {
+          if (!divisions.includes("nla")) {
+            return res.status(403).json({ error: "You don't have the NLA specialization for this ticket" });
+          }
+          const agentApplianceDivisions = divisions.filter(d => d !== "nla" && d !== "generalist");
+          const isApplianceGeneralist = agentApplianceDivisions.length >= ALL_DIVISIONS.filter(d => d !== "nla").length;
+          if (!isApplianceGeneralist && !agentApplianceDivisions.includes(submission.applianceType)) {
+            return res.status(403).json({ error: `You don't have the ${submission.applianceType} division to handle this NLA ticket` });
+          }
+        } else if (!isGeneralist && !divisions.includes(submission.applianceType)) {
           return res.status(403).json({ error: "You don't have the division specialization for this ticket" });
         }
       }
@@ -1078,11 +1100,17 @@ export async function registerRoutes(
         });
       }
 
-      const claimBroadcastDiv = submission.requestType === "parts_nla" ? "nla" : submission.applianceType;
-      broadcastToDivisionAgents(claimBroadcastDiv, {
-        type: "ticket_claimed",
-        payload: { submissionId: id, serviceOrder: submission.serviceOrder },
-      }, authReq.user!.id);
+      if (submission.requestType === "parts_nla") {
+        broadcastToNlaDivisionAgents(submission.applianceType, {
+          type: "ticket_claimed",
+          payload: { submissionId: id, serviceOrder: submission.serviceOrder },
+        }, authReq.user!.id);
+      } else {
+        broadcastToDivisionAgents(submission.applianceType, {
+          type: "ticket_claimed",
+          payload: { submissionId: id, serviceOrder: submission.serviceOrder },
+        }, authReq.user!.id);
+      }
 
       const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();
       const isTwoStage = ["american home shield", "ahs", "first american"].some(w => warrantyCompany.includes(w));
@@ -1330,17 +1358,29 @@ export async function registerRoutes(
       }
 
       if (action === "reject") {
-        const rejectBroadcastDiv = submission.requestType === "parts_nla" ? "nla" : submission.applianceType;
-        broadcastToDivisionAgents(rejectBroadcastDiv, {
-          type: "ticket_queued",
-          payload: {
-            submissionId: id,
-            serviceOrder: submission.serviceOrder,
-            applianceType: submission.applianceType,
-            applianceLabel: getDivisionLabel(submission.applianceType),
-            warrantyLabel: getWarrantyLabel(submission.warrantyType),
-          },
-        });
+        if (submission.requestType === "parts_nla") {
+          broadcastToNlaDivisionAgents(submission.applianceType, {
+            type: "ticket_queued",
+            payload: {
+              submissionId: id,
+              serviceOrder: submission.serviceOrder,
+              applianceType: submission.applianceType,
+              applianceLabel: getDivisionLabel(submission.applianceType),
+              warrantyLabel: getWarrantyLabel(submission.warrantyType),
+            },
+          });
+        } else {
+          broadcastToDivisionAgents(submission.applianceType, {
+            type: "ticket_queued",
+            payload: {
+              submissionId: id,
+              serviceOrder: submission.serviceOrder,
+              applianceType: submission.applianceType,
+              applianceLabel: getDivisionLabel(submission.applianceType),
+              warrantyLabel: getWarrantyLabel(submission.warrantyType),
+            },
+          });
+        }
       }
 
       await broadcastVrsAvailability();
@@ -1359,6 +1399,7 @@ export async function registerRoutes(
   const nlaProcessActionSchema = z.object({
     action: z.enum([
       "nla_replacement_submitted",
+      "nla_replacement_tech_initiates",
       "nla_part_found_vrs_ordered",
       "nla_part_found_tech_orders",
       "nla_escalate_to_pcard",
@@ -1400,6 +1441,14 @@ export async function registerRoutes(
       }
 
       const { action, agentNotes, technicianMessage, nlaFoundPartNumber, nlaResolution, rejectionReasons, invalidReason, invalidInstructions } = parsed.data;
+
+      if (!technicianMessage || !technicianMessage.trim()) {
+        if (action === "nla_pcard_confirm" && submission.technicianMessage) {
+        } else {
+          return res.status(400).json({ error: "Instructions for technician are required for all NLA resolutions" });
+        }
+      }
+
       const currentUser = await storage.getUser(authReq.user!.id);
 
       const updateData: Record<string, unknown> = {
@@ -1422,6 +1471,18 @@ export async function registerRoutes(
         smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
         if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
         smsType = "nla_replacement_submitted";
+
+      } else if (action === "nla_replacement_tech_initiates") {
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = "replacement_tech_initiates";
+        updateData.technicianMessage = technicianMessage || null;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.`;
+        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        smsType = "nla_replacement_tech_initiates";
 
       } else if (action === "nla_part_found_vrs_ordered") {
         if (!currentUser?.canOrderParts) {
@@ -1472,7 +1533,7 @@ export async function registerRoutes(
 
         shouldSendSms = false;
 
-        broadcastToDivisionAgents("nla", {
+        broadcastToNlaDivisionAgents(submission.applianceType, {
           type: "nla_escalated",
           payload: {
             submissionId: submission.id,
@@ -1528,7 +1589,7 @@ export async function registerRoutes(
         if (technicianMessage) smsMessage += `\n\nAgent notes: ${technicianMessage}`;
         smsType = "nla_rejected";
 
-        broadcastToDivisionAgents("nla", {
+        broadcastToNlaDivisionAgents(submission.applianceType, {
           type: "ticket_released",
           payload: { submissionId: submission.id },
         });
@@ -1603,9 +1664,9 @@ export async function registerRoutes(
         let nlaPendingCount = 0;
         let nlaCompletedToday = 0;
         if (divisions.includes("nla")) {
-          nlaQueueCount = await storage.getNlaQueuedCount();
+          nlaQueueCount = await storage.getNlaQueuedCount(divisions);
           nlaPendingCount = await storage.getNlaPendingCount(authReq.user!.id);
-          nlaCompletedToday = await storage.getNlaCompletedTodayCount(authReq.user!.id);
+          nlaCompletedToday = await storage.getNlaCompletedTodayCount(authReq.user!.id, divisions);
         }
 
         return res.status(200).json({ queueCount, pendingCount, completedToday, nlaQueueCount, nlaPendingCount, nlaCompletedToday });
@@ -1825,17 +1886,29 @@ export async function registerRoutes(
         updatedAt: new Date(),
       } as any);
 
-      const reassignBroadcastDiv = updated.requestType === "parts_nla" ? "nla" : updated.applianceType;
-      broadcastToDivisionAgents(reassignBroadcastDiv, {
-        type: "ticket_queued",
-        payload: {
-          submissionId: updated.id,
-          serviceOrder: updated.serviceOrder,
-          applianceType: updated.applianceType,
-          applianceLabel: getDivisionLabel(updated.applianceType),
-          warrantyLabel: getWarrantyLabel(updated.warrantyType),
-        },
-      });
+      if (updated.requestType === "parts_nla") {
+        broadcastToNlaDivisionAgents(updated.applianceType, {
+          type: "ticket_queued",
+          payload: {
+            submissionId: updated.id,
+            serviceOrder: updated.serviceOrder,
+            applianceType: updated.applianceType,
+            applianceLabel: getDivisionLabel(updated.applianceType),
+            warrantyLabel: getWarrantyLabel(updated.warrantyType),
+          },
+        });
+      } else {
+        broadcastToDivisionAgents(updated.applianceType, {
+          type: "ticket_queued",
+          payload: {
+            submissionId: updated.id,
+            serviceOrder: updated.serviceOrder,
+            applianceType: updated.applianceType,
+            applianceLabel: getDivisionLabel(updated.applianceType),
+            warrantyLabel: getWarrantyLabel(updated.warrantyType),
+          },
+        });
+      }
 
       return res.status(200).json({ submission: updated });
     } catch (error) {
@@ -2576,6 +2649,7 @@ export async function registerRoutes(
         if (!r) return "";
         const map: Record<string, string> = {
           replacement_submitted: "Replacement Submitted",
+          replacement_tech_initiates: "Replacement Approved (Tech Initiates)",
           part_found_vrs_ordered: "Part Ordered by VRS",
           part_found_tech_orders: "Tech Orders Part",
         };

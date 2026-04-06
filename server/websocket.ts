@@ -202,6 +202,29 @@ export function broadcastToDivisionAgents(division: string, event: WSEvent, excl
   }
 }
 
+export function broadcastToNlaDivisionAgents(applianceType: string, event: WSEvent, excludeUserId?: number) {
+  for (const [userId, sessions] of clients) {
+    if (excludeUserId && userId === excludeUserId) continue;
+    const primary = sessions[0];
+    if (!primary || primary.role !== "vrs_agent") continue;
+    if (primary.agentStatus !== "online") continue;
+
+    const hasNla = primary.divisions.includes("nla");
+    if (!hasNla) continue;
+
+    const allApplianceDivisions = Object.keys(DIVISION_LABELS).filter(k => k !== "nla");
+    const agentApplianceDivisions = primary.divisions.filter((d: string) => d !== "nla" && d !== "generalist");
+    const isApplianceGeneralist = agentApplianceDivisions.length >= allApplianceDivisions.length ||
+      primary.divisions.includes("generalist");
+
+    if (isApplianceGeneralist || agentApplianceDivisions.includes(applianceType)) {
+      for (const c of sessions) {
+        sendToClient(c.ws, event);
+      }
+    }
+  }
+}
+
 export function broadcastToAdmins(event: WSEvent) {
   for (const [, sessions] of clients) {
     for (const c of sessions) {

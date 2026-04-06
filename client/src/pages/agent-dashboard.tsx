@@ -420,7 +420,7 @@ export default function AgentDashboard() {
       params.set("completedToday", "true");
       params.set("requestType", "parts_nla");
     }
-    if (!isNlaView && divisionFilter) {
+    if (divisionFilter) {
       params.set("applianceType", divisionFilter);
     }
     if (!isNlaView && requestTypeFilter) {
@@ -905,8 +905,7 @@ export default function AgentDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {!activeView.startsWith("nla_") && (
-              <>
+            <>
                 <Separator className="my-2" />
 
                 <SidebarGroup>
@@ -973,8 +972,7 @@ export default function AgentDashboard() {
                     </SidebarMenu>
                   </SidebarGroupContent>
                 </SidebarGroup>
-              </>
-            )}
+            </>
 
             {(agentDivisions.includes("nla") || isAdminViewing) && (
               <>
@@ -985,7 +983,7 @@ export default function AgentDashboard() {
                     <SidebarMenu>
                       <SidebarMenuItem>
                         <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_queue"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          onClick={() => { setActiveView("nla_queue"); setSelectedId(null); setRequestTypeFilter(null); }}
                           data-active={activeView === "nla_queue"}
                           data-testid="nav-nla-queue"
                         >
@@ -1000,7 +998,7 @@ export default function AgentDashboard() {
                       </SidebarMenuItem>
                       <SidebarMenuItem>
                         <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_mytickets"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          onClick={() => { setActiveView("nla_mytickets"); setSelectedId(null); setRequestTypeFilter(null); }}
                           data-active={activeView === "nla_mytickets"}
                           data-testid="nav-nla-mytickets"
                         >
@@ -1015,7 +1013,7 @@ export default function AgentDashboard() {
                       </SidebarMenuItem>
                       <SidebarMenuItem>
                         <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_completed"); setSelectedId(null); setDivisionFilter(null); setRequestTypeFilter(null); }}
+                          onClick={() => { setActiveView("nla_completed"); setSelectedId(null); setRequestTypeFilter(null); }}
                           data-active={activeView === "nla_completed"}
                           data-testid="nav-nla-completed"
                         >
@@ -1822,7 +1820,9 @@ export default function AgentDashboard() {
                                   <div>
                                     <span className="text-muted-foreground text-xs">Resolution:</span>
                                     <p className="font-medium">
-                                      {selectedSubmission.nlaResolution === "part_found_vrs_ordered" ? "Part Found — VRS Orders" :
+                                      {selectedSubmission.nlaResolution === "replacement_submitted" ? "Replacement Submitted (SPHW / MPA)" :
+                                       selectedSubmission.nlaResolution === "replacement_tech_initiates" ? "Replacement Approved — Tech Initiates" :
+                                       selectedSubmission.nlaResolution === "part_found_vrs_ordered" ? "Part Found — VRS Orders" :
                                        selectedSubmission.nlaResolution === "part_found_tech_orders" ? "Part Found — Tech Orders" :
                                        selectedSubmission.nlaResolution || "—"}
                                     </p>
@@ -1882,171 +1882,129 @@ export default function AgentDashboard() {
                             </>
                           ) : (
                             <>
-                              <div className="space-y-3">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part Not Found</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setNlaAction(nlaAction === "nla_replacement_submitted" ? null : "nla_replacement_submitted")}
-                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
-                                    nlaAction === "nla_replacement_submitted" ? "border-green-500 bg-green-50 dark:bg-green-950/30" : "border-border hover:border-green-300"
-                                  }`}
-                                  data-testid="nla-action-replacement"
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                  Resolution *
+                                </Label>
+                                <Select
+                                  value={nlaAction || ""}
+                                  onValueChange={(val) => setNlaAction(val || null)}
                                 >
-                                  {nlaAction === "nla_replacement_submitted" ? <CheckSquare className="w-5 h-5 text-green-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
-                                  <div>
-                                    <p className="text-sm font-medium">Replacement Submitted to Warranty</p>
-                                    <p className="text-xs text-muted-foreground">Part not available. Replacement sent to warranty. Tech closes call with NLA labor code.</p>
-                                  </div>
-                                </button>
+                                  <SelectTrigger data-testid="select-nla-resolution">
+                                    <SelectValue placeholder="Select NLA resolution..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="nla_replacement_submitted">
+                                      Approved Verified NLA VRS Replacement Submitted (SPHW / MPA)
+                                    </SelectItem>
+                                    <SelectItem value="nla_replacement_tech_initiates">
+                                      Approved Verified NLA VRS Replacement Approved (SHW / Cinch — Tech initiates in TechHub)
+                                    </SelectItem>
+                                    <SelectItem value="nla_part_found_vrs_ordered">
+                                      Approve Part Found Locally / Ordered (reschedule the call in TH)
+                                    </SelectItem>
+                                    <SelectItem value="nla_part_found_tech_orders">
+                                      Approve Part Found (Instruct Tech to order part # Provided)
+                                    </SelectItem>
+                                    <SelectItem value="nla_reject">
+                                      Rejected — More Information Needed
+                                    </SelectItem>
+                                    <SelectItem value="nla_invalid">
+                                      Invalid NLA Request
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </div>
 
-                              <div className="space-y-3">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Part Found</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setNlaAction(nlaAction === "nla_part_found_vrs_ordered" ? null : "nla_part_found_vrs_ordered")}
-                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
-                                    nlaAction === "nla_part_found_vrs_ordered" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border hover:border-blue-300"
-                                  }`}
-                                  data-testid="nla-action-vrs-orders"
-                                >
-                                  {nlaAction === "nla_part_found_vrs_ordered" ? <CheckSquare className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
-                                  <div>
-                                    <p className="text-sm font-medium">Part Ordered by VRS</p>
-                                    <p className="text-xs text-muted-foreground">VRS located and will order the part.</p>
-                                    {!user?.canOrderParts && nlaAction === "nla_part_found_vrs_ordered" && (
-                                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                                        <CreditCard className="w-3 h-3" /> Will escalate to P-card agent for ordering
-                                      </p>
-                                    )}
-                                  </div>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setNlaAction(nlaAction === "nla_part_found_tech_orders" ? null : "nla_part_found_tech_orders")}
-                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
-                                    nlaAction === "nla_part_found_tech_orders" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border hover:border-blue-300"
-                                  }`}
-                                  data-testid="nla-action-tech-orders"
-                                >
-                                  {nlaAction === "nla_part_found_tech_orders" ? <CheckSquare className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
-                                  <div>
-                                    <p className="text-sm font-medium">Tech to Order — Part # Provided</p>
-                                    <p className="text-xs text-muted-foreground">Part available in TechHub. Tech orders it.</p>
-                                  </div>
-                                </button>
-                                {nlaAction === "nla_part_found_tech_orders" && (
-                                  <div className="ml-8 space-y-1">
-                                    <Label className="text-xs">Part Number</Label>
-                                    <Input
-                                      placeholder="Enter part number..."
-                                      value={nlaFoundPartNumber}
-                                      onChange={(e) => setNlaFoundPartNumber(e.target.value.toUpperCase())}
-                                      className="font-mono"
-                                      data-testid="input-nla-part-number"
+                              {nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts && (
+                                <div className="p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+                                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                    <CreditCard className="w-3 h-3" /> Will escalate to P-card agent for ordering
+                                  </p>
+                                </div>
+                              )}
+
+                              {nlaAction === "nla_part_found_tech_orders" && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Part Number</Label>
+                                  <Input
+                                    placeholder="Enter part number..."
+                                    value={nlaFoundPartNumber}
+                                    onChange={(e) => setNlaFoundPartNumber(e.target.value.toUpperCase())}
+                                    className="font-mono"
+                                    data-testid="input-nla-part-number"
+                                  />
+                                </div>
+                              )}
+
+                              {nlaAction === "nla_reject" && (
+                                <div className="space-y-2 border rounded-lg p-3 bg-red-50/50 dark:bg-red-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground">Rejection Reasons</p>
+                                  {REJECTION_SUGGESTIONS.map((reason) => (
+                                    <button
+                                      key={reason}
+                                      type="button"
+                                      className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                      onClick={() => {
+                                        setSelectedRejectionReasons((prev) =>
+                                          prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                        );
+                                      }}
+                                    >
+                                      {selectedRejectionReasons.includes(reason) ? (
+                                        <CheckSquare className="w-4 h-4 text-red-600 shrink-0" />
+                                      ) : (
+                                        <Square className="w-4 h-4 text-muted-foreground shrink-0" />
+                                      )}
+                                      <span className="text-sm">{reason}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {nlaAction === "nla_invalid" && (
+                                <div className="space-y-2 border rounded-lg p-3 bg-gray-50/50 dark:bg-gray-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground">Invalid Reasons</p>
+                                  {INVALID_SUGGESTIONS.map((reason) => (
+                                    <button
+                                      key={reason}
+                                      type="button"
+                                      className="flex items-center gap-2 cursor-pointer w-full text-left"
+                                      onClick={() => {
+                                        setSelectedInvalidReasons((prev) =>
+                                          prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+                                        );
+                                      }}
+                                    >
+                                      {selectedInvalidReasons.includes(reason) ? (
+                                        <CheckSquare className="w-4 h-4 text-gray-600 shrink-0" />
+                                      ) : (
+                                        <Square className="w-4 h-4 text-muted-foreground shrink-0" />
+                                      )}
+                                      <span className="text-sm">{reason}</span>
+                                    </button>
+                                  ))}
+                                  <div className="pt-2">
+                                    <Label className="text-xs">Instructions for Technician</Label>
+                                    <Textarea
+                                      placeholder="Additional instructions..."
+                                      value={invalidMessage}
+                                      onChange={(e) => setInvalidMessage(e.target.value)}
+                                      className="resize-none mt-1"
+                                      rows={2}
+                                      data-testid="input-nla-invalid-instructions"
                                     />
                                   </div>
-                                )}
-                              </div>
-
-                              <div className="space-y-3">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reject / Close</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setNlaAction(nlaAction === "nla_reject" ? null : "nla_reject")}
-                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
-                                    nlaAction === "nla_reject" ? "border-red-500 bg-red-50 dark:bg-red-950/30" : "border-border hover:border-red-300"
-                                  }`}
-                                  data-testid="nla-action-reject"
-                                >
-                                  {nlaAction === "nla_reject" ? <CheckSquare className="w-5 h-5 text-red-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
-                                  <div>
-                                    <p className="text-sm font-medium">Reject — Need More Info</p>
-                                    <p className="text-xs text-muted-foreground">Request more information from technician.</p>
-                                  </div>
-                                </button>
-                                {nlaAction === "nla_reject" && (
-                                  <div className="ml-8 space-y-2 border rounded-lg p-3 bg-red-50/50 dark:bg-red-950/10">
-                                    <p className="text-xs font-medium text-muted-foreground">Rejection Reasons</p>
-                                    {REJECTION_SUGGESTIONS.map((reason) => (
-                                      <button
-                                        key={reason}
-                                        type="button"
-                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
-                                        onClick={() => {
-                                          setSelectedRejectionReasons((prev) =>
-                                            prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
-                                          );
-                                        }}
-                                      >
-                                        {selectedRejectionReasons.includes(reason) ? (
-                                          <CheckSquare className="w-4 h-4 text-red-600 shrink-0" />
-                                        ) : (
-                                          <Square className="w-4 h-4 text-muted-foreground shrink-0" />
-                                        )}
-                                        <span className="text-sm">{reason}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setNlaAction(nlaAction === "nla_invalid" ? null : "nla_invalid")}
-                                  className={`flex items-start gap-3 w-full text-left p-3 rounded-lg border-2 transition-all ${
-                                    nlaAction === "nla_invalid" ? "border-gray-500 bg-gray-50 dark:bg-gray-950/30" : "border-border hover:border-gray-300"
-                                  }`}
-                                  data-testid="nla-action-invalid"
-                                >
-                                  {nlaAction === "nla_invalid" ? <CheckSquare className="w-5 h-5 text-gray-600 mt-0.5 shrink-0" /> : <Square className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />}
-                                  <div>
-                                    <p className="text-sm font-medium">Invalid NLA Request</p>
-                                    <p className="text-xs text-muted-foreground">Request does not qualify as NLA.</p>
-                                  </div>
-                                </button>
-                                {nlaAction === "nla_invalid" && (
-                                  <div className="ml-8 space-y-2 border rounded-lg p-3 bg-gray-50/50 dark:bg-gray-950/10">
-                                    <p className="text-xs font-medium text-muted-foreground">Invalid Reasons</p>
-                                    {INVALID_SUGGESTIONS.map((reason) => (
-                                      <button
-                                        key={reason}
-                                        type="button"
-                                        className="flex items-center gap-2 cursor-pointer w-full text-left"
-                                        onClick={() => {
-                                          setSelectedInvalidReasons((prev) =>
-                                            prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
-                                          );
-                                        }}
-                                      >
-                                        {selectedInvalidReasons.includes(reason) ? (
-                                          <CheckSquare className="w-4 h-4 text-gray-600 shrink-0" />
-                                        ) : (
-                                          <Square className="w-4 h-4 text-muted-foreground shrink-0" />
-                                        )}
-                                        <span className="text-sm">{reason}</span>
-                                      </button>
-                                    ))}
-                                    <div className="pt-2">
-                                      <Label className="text-xs">Instructions for Technician</Label>
-                                      <Textarea
-                                        placeholder="Additional instructions..."
-                                        value={invalidMessage}
-                                        onChange={(e) => setInvalidMessage(e.target.value)}
-                                        className="resize-none mt-1"
-                                        rows={2}
-                                        data-testid="input-nla-invalid-instructions"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
+                                </div>
+                              )}
 
                               <div className="space-y-2">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                   <Send className="w-3 h-3" />
-                                  Instructions for Technician (optional)
+                                  Instructions for Technician *
                                 </Label>
                                 <Textarea
-                                  placeholder="Add instructions for the technician..."
+                                  placeholder="Provide clear instructions for the technician. Required for all NLA resolutions."
                                   value={technicianMessage}
                                   onChange={(e) => setTechnicianMessage(e.target.value)}
                                   className="resize-none"
@@ -2077,9 +2035,13 @@ export default function AgentDashboard() {
                                       toast({ title: "Error", description: "Select a resolution", variant: "destructive" });
                                       return;
                                     }
+                                    if (!technicianMessage.trim()) {
+                                      toast({ title: "Instructions Required", description: "Please provide instructions for the technician.", variant: "destructive" });
+                                      return;
+                                    }
                                     setNlaConfirmOpen(true);
                                   }}
-                                  disabled={!nlaAction || nlaProcessMutation.isPending}
+                                  disabled={!nlaAction || !technicianMessage.trim() || nlaProcessMutation.isPending}
                                   data-testid="button-nla-escalate"
                                 >
                                   <CreditCard className="w-4 h-4 mr-2" />
@@ -2092,6 +2054,10 @@ export default function AgentDashboard() {
                                   onClick={() => {
                                     if (!nlaAction) {
                                       toast({ title: "Error", description: "Select a resolution", variant: "destructive" });
+                                      return;
+                                    }
+                                    if (!technicianMessage.trim()) {
+                                      toast({ title: "Instructions Required", description: "Please provide instructions for the technician.", variant: "destructive" });
                                       return;
                                     }
                                     if (nlaAction === "nla_part_found_tech_orders" && !nlaFoundPartNumber.trim()) {
@@ -2108,7 +2074,7 @@ export default function AgentDashboard() {
                                     }
                                     setNlaConfirmOpen(true);
                                   }}
-                                  disabled={!nlaAction || nlaProcessMutation.isPending}
+                                  disabled={!nlaAction || !technicianMessage.trim() || nlaProcessMutation.isPending}
                                   data-testid="button-nla-process"
                                 >
                                   <Send className="w-4 h-4 mr-2" />
@@ -2991,6 +2957,8 @@ export default function AgentDashboard() {
                 <>You are escalating this ticket to a P-Card agent for ordering. Your research notes will be saved. The P-Card agent will review and complete the order.</>
               ) : nlaAction === "nla_replacement_submitted" ? (
                 <>The technician will be notified that a replacement has been submitted to the warranty company.</>
+              ) : nlaAction === "nla_replacement_tech_initiates" ? (
+                <>Resolution: Approved Verified NLA VRS Replacement Approved. The technician will be notified to initiate the replacement in TechHub.</>
               ) : nlaAction === "nla_part_found_vrs_ordered" ? (
                 <>The technician will be notified that VRS has ordered the part.</>
               ) : nlaAction === "nla_part_found_tech_orders" ? (
