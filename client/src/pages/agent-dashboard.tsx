@@ -155,11 +155,20 @@ export default function AgentDashboard() {
   const [, navigate] = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed" | "nla_queue" | "nla_mytickets" | "nla_completed">("queue");
+  const [queueMode, setQueueMode] = useState<"vrs" | "nla">("vrs");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
   const isMyTicketsView = activeView === "mytickets" || activeView === "nla_mytickets";
   const isQueueView = activeView === "queue" || activeView === "nla_queue";
   const isCompletedView = activeView === "completed" || activeView === "nla_completed";
+
+  useEffect(() => {
+    if (activeView.startsWith("nla_")) {
+      setQueueMode("nla");
+    } else {
+      setQueueMode("vrs");
+    }
+  }, [activeView]);
 
   useEffect(() => {
     if (isAdminViewing) return;
@@ -248,6 +257,7 @@ export default function AgentDashboard() {
   const agentDivisions = isAdminRole ? allDivisionKeys : (specsData?.divisions || []);
 
   const isGeneralist = isAdminRole || agentDivisions.length >= allDivisionKeys.length;
+  const hasNlaAccess = isAdminViewing || agentDivisions.includes("nla");
 
   const statusMutation = useMutation({
     mutationFn: async (status: "online" | "offline") => {
@@ -852,51 +862,119 @@ export default function AgentDashboard() {
           </SidebarHeader>
 
           <SidebarContent>
+            {hasNlaAccess && (
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <div className="flex rounded-lg border bg-muted/50 p-1 mx-2" data-testid="toggle-queue-mode">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQueueMode("vrs");
+                        setActiveView("queue");
+                        setSelectedId(null);
+                        setDivisionFilter(null);
+                        setRequestTypeFilter(null);
+                      }}
+                      className={`flex-1 text-xs font-medium py-1.5 px-2 rounded-md transition-all ${
+                        queueMode === "vrs"
+                          ? "bg-background shadow-sm text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="toggle-vrs-mode"
+                    >
+                      VRS Authorization
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQueueMode("nla");
+                        setActiveView("nla_queue");
+                        setSelectedId(null);
+                        setDivisionFilter(null);
+                        setRequestTypeFilter(null);
+                      }}
+                      className={`flex-1 text-xs font-medium py-1.5 px-2 rounded-md transition-all ${
+                        queueMode === "nla"
+                          ? "bg-amber-100 dark:bg-amber-900/40 shadow-sm text-amber-900 dark:text-amber-200"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid="toggle-nla-mode"
+                    >
+                      NLA Parts
+                    </button>
+                  </div>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
+
+            <Separator className="my-2" />
+
             <SidebarGroup>
-              <SidebarGroupLabel>Tickets</SidebarGroupLabel>
+              <SidebarGroupLabel>{queueMode === "nla" ? "NLA Tickets" : "Tickets"}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("queue"); setSelectedId(null); }}
-                      data-active={activeView === "queue"}
+                      onClick={() => { setActiveView(queueMode === "nla" ? "nla_queue" : "queue"); setSelectedId(null); }}
+                      data-active={activeView === (queueMode === "nla" ? "nla_queue" : "queue")}
                       data-testid="nav-queue"
                     >
-                      <ClipboardList className="w-4 h-4" />
+                      {queueMode === "nla" ? <Package className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
                       <span>Queue</span>
-                      {statsData && activeView !== "queue" && (
-                        <Badge variant="secondary" className="ml-auto text-xs" data-testid="badge-queue-count">
-                          {statsData.queueCount}
-                        </Badge>
+                      {queueMode === "nla" ? (
+                        statsData?.nlaQueueCount != null && statsData.nlaQueueCount > 0 && activeView !== "nla_queue" && (
+                          <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                            {statsData.nlaQueueCount}
+                          </Badge>
+                        )
+                      ) : (
+                        statsData && activeView !== "queue" && (
+                          <Badge variant="secondary" className="ml-auto text-xs" data-testid="badge-queue-count">
+                            {statsData.queueCount}
+                          </Badge>
+                        )
                       )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("mytickets"); setSelectedId(null); }}
-                      data-active={activeView === "mytickets"}
+                      onClick={() => { setActiveView(queueMode === "nla" ? "nla_mytickets" : "mytickets"); setSelectedId(null); }}
+                      data-active={activeView === (queueMode === "nla" ? "nla_mytickets" : "mytickets")}
                       data-testid="nav-mytickets"
                     >
-                      <ClipboardCheck className="w-4 h-4" />
+                      {queueMode === "nla" ? <Package className="w-4 h-4" /> : <ClipboardCheck className="w-4 h-4" />}
                       <span>My Tickets</span>
-                      {statsData && (statsData.pendingCount ?? 0) > 0 && activeView !== "mytickets" && (
-                        <Badge variant="secondary" className="ml-auto text-xs" data-testid="badge-pending-count">
-                          {statsData.pendingCount}
-                        </Badge>
+                      {queueMode === "nla" ? (
+                        statsData?.nlaPendingCount != null && statsData.nlaPendingCount > 0 && activeView !== "nla_mytickets" && (
+                          <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                            {statsData.nlaPendingCount}
+                          </Badge>
+                        )
+                      ) : (
+                        statsData && (statsData.pendingCount ?? 0) > 0 && activeView !== "mytickets" && (
+                          <Badge variant="secondary" className="ml-auto text-xs" data-testid="badge-pending-count">
+                            {statsData.pendingCount}
+                          </Badge>
+                        )
                       )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      onClick={() => { setActiveView("completed"); setSelectedId(null); }}
-                      data-active={activeView === "completed"}
+                      onClick={() => { setActiveView(queueMode === "nla" ? "nla_completed" : "completed"); setSelectedId(null); }}
+                      data-active={activeView === (queueMode === "nla" ? "nla_completed" : "completed")}
                       data-testid="nav-completed"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Completed Today</span>
-                      {statsData && (
+                      {queueMode === "vrs" && statsData && (
                         <Badge variant="outline" className="ml-auto text-xs" data-testid="badge-completed-count">
                           {statsData.completedToday}
+                        </Badge>
+                      )}
+                      {queueMode === "nla" && statsData?.nlaCompletedToday != null && statsData.nlaCompletedToday > 0 && (
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          {statsData.nlaCompletedToday}
                         </Badge>
                       )}
                     </SidebarMenuButton>
@@ -905,126 +983,73 @@ export default function AgentDashboard() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <>
-                <Separator className="my-2" />
+            <Separator className="my-2" />
 
-                <SidebarGroup>
-                  <SidebarGroupLabel>Division Filters</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          onClick={() => setDivisionFilter(null)}
-                          data-active={divisionFilter === null}
-                          data-testid="filter-all"
-                        >
-                          <Filter className="w-4 h-4" />
-                          <span>All Divisions</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      {Object.entries(DIVISION_LABELS)
-                        .filter(([key]) => key !== "nla" && (isGeneralist || agentDivisions.includes(key)))
-                        .map(([key, label]) => (
-                        <SidebarMenuItem key={key}>
-                          <SidebarMenuButton
-                            onClick={() => setDivisionFilter(key)}
-                            data-active={divisionFilter === key}
-                            data-testid={`filter-${key}`}
-                          >
-                            <Wrench className="w-4 h-4" />
-                            <span>{label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Division Filters</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => setDivisionFilter(null)}
+                      data-active={divisionFilter === null}
+                      data-testid="filter-all"
+                    >
+                      <Filter className="w-4 h-4" />
+                      <span>All Divisions</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  {Object.entries(DIVISION_LABELS)
+                    .filter(([key]) => key !== "nla" && (isGeneralist || agentDivisions.includes(key)))
+                    .map(([key, label]) => (
+                    <SidebarMenuItem key={key}>
+                      <SidebarMenuButton
+                        onClick={() => setDivisionFilter(key)}
+                        data-active={divisionFilter === key}
+                        data-testid={`filter-${key}`}
+                      >
+                        <Wrench className="w-4 h-4" />
+                        <span>{label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-                <SidebarGroup>
-                  <SidebarGroupLabel>Request Type</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
+            {queueMode === "vrs" && (
+              <SidebarGroup>
+                <SidebarGroupLabel>Request Type</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        onClick={() => setRequestTypeFilter(null)}
+                        data-active={requestTypeFilter === null}
+                        data-testid="filter-request-all"
+                      >
+                        <Filter className="w-4 h-4" />
+                        <span>All Types</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {[
+                      { value: "authorization", label: "Authorization" },
+                      { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
+                    ].map((rt) => (
+                      <SidebarMenuItem key={rt.value}>
                         <SidebarMenuButton
-                          onClick={() => setRequestTypeFilter(null)}
-                          data-active={requestTypeFilter === null}
-                          data-testid="filter-request-all"
+                          onClick={() => setRequestTypeFilter(rt.value)}
+                          data-active={requestTypeFilter === rt.value}
+                          data-testid={`filter-request-${rt.value}`}
                         >
-                          <Filter className="w-4 h-4" />
-                          <span>All Types</span>
+                          <ClipboardList className="w-4 h-4" />
+                          <span>{rt.label}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
-                      {[
-                        { value: "authorization", label: "Authorization" },
-                        { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
-                      ].map((rt) => (
-                        <SidebarMenuItem key={rt.value}>
-                          <SidebarMenuButton
-                            onClick={() => setRequestTypeFilter(rt.value)}
-                            data-active={requestTypeFilter === rt.value}
-                            data-testid={`filter-request-${rt.value}`}
-                          >
-                            <ClipboardList className="w-4 h-4" />
-                            <span>{rt.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-            </>
-
-            {(agentDivisions.includes("nla") || isAdminViewing) && (
-              <>
-                <Separator className="my-2" />
-                <SidebarGroup>
-                  <SidebarGroupLabel>NLA Parts</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_queue"); setSelectedId(null); setRequestTypeFilter(null); }}
-                          data-active={activeView === "nla_queue"}
-                          data-testid="nav-nla-queue"
-                        >
-                          <Package className="w-4 h-4" />
-                          <span>NLA Queue</span>
-                          {statsData?.nlaQueueCount != null && statsData.nlaQueueCount > 0 && activeView !== "nla_queue" && (
-                            <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                              {statsData.nlaQueueCount}
-                            </Badge>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_mytickets"); setSelectedId(null); setRequestTypeFilter(null); }}
-                          data-active={activeView === "nla_mytickets"}
-                          data-testid="nav-nla-mytickets"
-                        >
-                          <Package className="w-4 h-4" />
-                          <span>My NLA Tickets</span>
-                          {statsData?.nlaPendingCount != null && statsData.nlaPendingCount > 0 && activeView !== "nla_mytickets" && (
-                            <Badge variant="secondary" className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                              {statsData.nlaPendingCount}
-                            </Badge>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          onClick={() => { setActiveView("nla_completed"); setSelectedId(null); setRequestTypeFilter(null); }}
-                          data-active={activeView === "nla_completed"}
-                          data-testid="nav-nla-completed"
-                        >
-                          <Package className="w-4 h-4" />
-                          <span>NLA Completed Today</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              </>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
             )}
 
           </SidebarContent>
