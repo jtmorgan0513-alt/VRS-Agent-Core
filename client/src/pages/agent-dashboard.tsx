@@ -89,6 +89,7 @@ import {
   Sun,
   Package,
   CreditCard,
+  ChevronDown,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/components/theme-provider";
@@ -181,6 +182,8 @@ export default function AgentDashboard() {
 
   const [divisionFilter, setDivisionFilter] = useState<string | null>(null);
   const [requestTypeFilter, setRequestTypeFilter] = useState<string | null>(null);
+  const [divisionFiltersOpen, setDivisionFiltersOpen] = useState(true);
+  const [requestTypeOpen, setRequestTypeOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showOriginalDesc, setShowOriginalDesc] = useState(false);
 
@@ -986,69 +989,89 @@ export default function AgentDashboard() {
             <Separator className="my-2" />
 
             <SidebarGroup>
-              <SidebarGroupLabel>Division Filters</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => setDivisionFilter(null)}
-                      data-active={divisionFilter === null}
-                      data-testid="filter-all"
-                    >
-                      <Filter className="w-4 h-4" />
-                      <span>All Divisions</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  {Object.entries(DIVISION_LABELS)
-                    .filter(([key]) => key !== "nla" && (isGeneralist || agentDivisions.includes(key)))
-                    .map(([key, label]) => (
-                    <SidebarMenuItem key={key}>
-                      <SidebarMenuButton
-                        onClick={() => setDivisionFilter(key)}
-                        data-active={divisionFilter === key}
-                        data-testid={`filter-${key}`}
-                      >
-                        <Wrench className="w-4 h-4" />
-                        <span>{label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            {queueMode === "vrs" && (
-              <SidebarGroup>
-                <SidebarGroupLabel>Request Type</SidebarGroupLabel>
+              <button
+                type="button"
+                onClick={() => setDivisionFiltersOpen(!divisionFiltersOpen)}
+                className="flex w-full items-center justify-between px-2 py-1 text-xs font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
+                data-testid="toggle-division-filters"
+              >
+                <span>Division Filters</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${divisionFiltersOpen ? "" : "-rotate-90"}`} />
+              </button>
+              {divisionFiltersOpen && (
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
                       <SidebarMenuButton
-                        onClick={() => setRequestTypeFilter(null)}
-                        data-active={requestTypeFilter === null}
-                        data-testid="filter-request-all"
+                        onClick={() => setDivisionFilter(null)}
+                        data-active={divisionFilter === null}
+                        data-testid="filter-all"
                       >
                         <Filter className="w-4 h-4" />
-                        <span>All Types</span>
+                        <span>All Divisions</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                    {[
-                      { value: "authorization", label: "Authorization" },
-                      { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
-                    ].map((rt) => (
-                      <SidebarMenuItem key={rt.value}>
+                    {Object.entries(DIVISION_LABELS)
+                      .filter(([key]) => key !== "nla" && (isGeneralist || agentDivisions.includes(key)))
+                      .map(([key, label]) => (
+                      <SidebarMenuItem key={key}>
                         <SidebarMenuButton
-                          onClick={() => setRequestTypeFilter(rt.value)}
-                          data-active={requestTypeFilter === rt.value}
-                          data-testid={`filter-request-${rt.value}`}
+                          onClick={() => setDivisionFilter(key)}
+                          data-active={divisionFilter === key}
+                          data-testid={`filter-${key}`}
                         >
-                          <ClipboardList className="w-4 h-4" />
-                          <span>{rt.label}</span>
+                          <Wrench className="w-4 h-4" />
+                          <span>{label}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
                   </SidebarMenu>
                 </SidebarGroupContent>
+              )}
+            </SidebarGroup>
+
+            {queueMode === "vrs" && (
+              <SidebarGroup>
+                <button
+                  type="button"
+                  onClick={() => setRequestTypeOpen(!requestTypeOpen)}
+                  className="flex w-full items-center justify-between px-2 py-1 text-xs font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
+                  data-testid="toggle-request-type"
+                >
+                  <span>Request Type</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${requestTypeOpen ? "" : "-rotate-90"}`} />
+                </button>
+                {requestTypeOpen && (
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          onClick={() => setRequestTypeFilter(null)}
+                          data-active={requestTypeFilter === null}
+                          data-testid="filter-request-all"
+                        >
+                          <Filter className="w-4 h-4" />
+                          <span>All Types</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {[
+                        { value: "authorization", label: "Authorization" },
+                        { value: "infestation_non_accessible", label: "Infestation / Non-Accessible" },
+                      ].map((rt) => (
+                        <SidebarMenuItem key={rt.value}>
+                          <SidebarMenuButton
+                            onClick={() => setRequestTypeFilter(rt.value)}
+                            data-active={requestTypeFilter === rt.value}
+                            data-testid={`filter-request-${rt.value}`}
+                          >
+                            <ClipboardList className="w-4 h-4" />
+                            <span>{rt.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                )}
               </SidebarGroup>
             )}
 
