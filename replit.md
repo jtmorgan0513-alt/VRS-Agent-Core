@@ -35,6 +35,7 @@ Key architectural patterns include:
 - "nla" is a standalone agent specialization/division, independent of appliance type divisions.
 - NLA tickets (`requestType === "parts_nla"`) route to agents with the "nla" specialization via WebSocket `broadcastToNlaDivisionAgents(applianceType, event)`.
 - Agent dashboard has dedicated NLA sub-tabs (NLA Queue, NLA My Tickets, NLA Completed) in the sidebar, using amber-colored badges and `Package` icon.
+- **Send to NLA**: Any agent can send a claimed VRS ticket to the NLA queue via `POST /api/submissions/:id/send-to-nla` with optional `division` and `notes` params. The agent selects the target NLA division from a dropdown (pre-set to the ticket's current appliance type). The ticket's `requestType` changes to `parts_nla`, it's unassigned and queued, and broadcast to NLA division agents. Agent-to-agent reassignment remains admin-only.
 - NLA tickets are excluded from standard queue/pending/completed counts; separate `getNlaQueuedCount`, `getNlaPendingCount`, `getNlaCompletedTodayCount` storage methods provide NLA-specific counts.
 - `getNlaQueuedCount(divisions?)` and `getNlaCompletedTodayCount(agentId?, divisions?)` accept optional appliance-type divisions array for division-based filtering.
 - **NLA Division Filtering:** NLA agents only see NLA tickets matching their appliance type specializations. Generalists (agents with all appliance divisions) see all NLA tickets. Division filters in sidebar are visible for NLA views. Claim guard checks agent's appliance divisions against ticket's applianceType.

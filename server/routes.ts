@@ -1918,6 +1918,81 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // SEND TO NLA QUEUE — Agent sends a VRS ticket to the NLA queue
+  // ========================================================================
+
+  app.post("/api/submissions/:id/send-to-nla", authenticateToken, requireRole("vrs_agent", "admin", "super_admin"), async (req, res) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid submission ID" });
+      }
+
+      const VALID_DIVISIONS = ["refrigeration", "laundry", "cooking", "dishwasher", "microwave", "hvac", "all_other"];
+
+      const bodySchema = z.object({
+        notes: z.string().optional(),
+        division: z.string().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0].message });
+      }
+
+      if (parsed.data.division && !VALID_DIVISIONS.includes(parsed.data.division)) {
+        return res.status(400).json({ error: "Invalid division" });
+      }
+
+      const submission = await storage.getSubmission(id);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.requestType === "parts_nla") {
+        return res.status(400).json({ error: "Ticket is already in the NLA queue" });
+      }
+
+      if (submission.ticketStatus !== "pending") {
+        return res.status(400).json({ error: "Can only send claimed (pending) tickets to NLA" });
+      }
+
+      const isAdmin = authReq.user.role === "admin" || authReq.user.role === "super_admin";
+      if (!isAdmin && submission.assignedTo !== authReq.user.id) {
+        return res.status(403).json({ error: "You can only send your own claimed tickets to NLA" });
+      }
+
+      const targetDivision = parsed.data.division || submission.applianceType;
+
+      const updated = await storage.updateSubmission(id, {
+        requestType: "parts_nla",
+        applianceType: targetDivision,
+        ticketStatus: "queued",
+        assignedTo: null,
+        reassignmentNotes: parsed.data.notes || `Sent to NLA queue by ${authReq.user.name}`,
+        statusChangedAt: new Date(),
+        updatedAt: new Date(),
+      } as any);
+
+      broadcastToNlaDivisionAgents(updated.applianceType, {
+        type: "ticket_queued",
+        payload: {
+          submissionId: updated.id,
+          serviceOrder: updated.serviceOrder,
+          applianceType: updated.applianceType,
+          applianceLabel: getDivisionLabel(updated.applianceType),
+          warrantyLabel: getWarrantyLabel(updated.warrantyType),
+        },
+      });
+
+      return res.status(200).json({ submission: updated });
+    } catch (error) {
+      console.error("Send to NLA error:", error);
+      return res.status(500).json({ error: "Failed to send ticket to NLA queue" });
+    }
+  });
+
+  // ========================================================================
   // DIVISION CORRECTION ROUTE — Agent corrects ticket's appliance type
   // ========================================================================
 

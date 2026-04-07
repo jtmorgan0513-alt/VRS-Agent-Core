@@ -655,6 +655,32 @@ export default function AgentDashboard() {
     },
   });
 
+  const [sendToNlaOpen, setSendToNlaOpen] = useState(false);
+  const [sendToNlaNotes, setSendToNlaNotes] = useState("");
+  const [sendToNlaDivision, setSendToNlaDivision] = useState<string>("");
+
+  const sendToNlaMutation = useMutation({
+    mutationFn: async ({ submissionId, notes, division }: { submissionId: number; notes?: string; division?: string }) => {
+      const res = await apiRequest("POST", `/api/submissions/${submissionId}/send-to-nla`, { notes, division });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Sent to NLA Queue",
+        description: "Ticket has been moved to the NLA parts queue.",
+      });
+      setSelectedId(null);
+      setSendToNlaNotes("");
+      setSendToNlaDivision("");
+      setSendToNlaOpen(false);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const reassignMutation = useMutation({
     mutationFn: async ({ submissionId, agentId, notes }: { submissionId: number; agentId?: number; notes?: string }) => {
       const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/reassign`, { agentId, notes });
@@ -1386,6 +1412,20 @@ export default function AgentDashboard() {
                           >
                             <PanelRightOpen className="w-4 h-4 mr-1" />
                             Service History
+                          </Button>
+                        )}
+                        {isMyTicketsView && selectedSubmission?.requestType !== "parts_nla" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSendToNlaDivision(selectedSubmission?.applianceType || "");
+                              setSendToNlaOpen(true);
+                            }}
+                            data-testid="button-send-to-nla"
+                          >
+                            <Package className="w-4 h-4 mr-1" />
+                            Send to NLA
                           </Button>
                         )}
                         {isMyTicketsView && (user?.role === "admin" || user?.role === "super_admin") && (
@@ -3189,6 +3229,61 @@ export default function AgentDashboard() {
                   ? (reassignTarget === "queue" ? "Reassign to Queue" : reassignTarget ? "Reassign to Agent" : "Reassign")
                   : "Reassign to Queue"
               )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sendToNlaOpen} onOpenChange={(open) => { if (!open) { setSendToNlaOpen(false); setSendToNlaNotes(""); setSendToNlaDivision(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send to NLA Queue</DialogTitle>
+            <DialogDescription>
+              This will move the ticket to the NLA parts queue where an NLA-specialized agent can pick it up. The ticket will be unassigned from you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>NLA Division</Label>
+              <Select value={sendToNlaDivision} onValueChange={setSendToNlaDivision}>
+                <SelectTrigger data-testid="select-nla-division">
+                  <SelectValue placeholder="Select division..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(DIVISION_LABELS)
+                    .filter(([key]) => key !== "nla")
+                    .map(([key, label]) => (
+                    <SelectItem key={key} value={key} data-testid={`option-nla-div-${key}`}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Notes (optional)</Label>
+              <Textarea
+                placeholder="Reason for sending to NLA..."
+                value={sendToNlaNotes}
+                onChange={(e) => setSendToNlaNotes(e.target.value)}
+                className="resize-none"
+                rows={3}
+                data-testid="input-send-nla-notes"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setSendToNlaOpen(false); setSendToNlaNotes(""); setSendToNlaDivision(""); }} data-testid="button-cancel-send-nla">Cancel</Button>
+            <Button
+              onClick={() => {
+                if (selectedId && sendToNlaDivision) {
+                  sendToNlaMutation.mutate({ submissionId: selectedId, division: sendToNlaDivision, notes: sendToNlaNotes || undefined });
+                }
+              }}
+              disabled={sendToNlaMutation.isPending || !sendToNlaDivision}
+              data-testid="button-confirm-send-nla"
+            >
+              {sendToNlaMutation.isPending ? "Sending..." : "Send to NLA Queue"}
             </Button>
           </div>
         </DialogContent>
