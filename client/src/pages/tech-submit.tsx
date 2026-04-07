@@ -581,7 +581,7 @@ export default function TechSubmitPage() {
                       <FormItem>
                         <FormLabel>Phone Number *</FormLabel>
                         <FormControl>
-                          <Input placeholder="(555) 555-0147" {...field} data-testid="input-phone" />
+                          <Input placeholder="" {...field} data-testid="input-phone" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -608,7 +608,7 @@ export default function TechSubmitPage() {
                           <div className="space-y-1">
                             <p className="text-xs text-muted-foreground">District</p>
                             <Input
-                              placeholder="8175"
+                              placeholder=""
                               value={district}
                               inputMode="numeric"
                               maxLength={4}
@@ -628,7 +628,7 @@ export default function TechSubmitPage() {
                             <p className="text-xs text-muted-foreground">Service Order #</p>
                             <Input
                               ref={soNumberRef}
-                              placeholder="12345678"
+                              placeholder=""
                               value={soNumber}
                               inputMode="numeric"
                               maxLength={8}

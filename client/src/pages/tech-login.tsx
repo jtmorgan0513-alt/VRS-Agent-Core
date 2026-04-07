@@ -183,7 +183,7 @@ export default function TechLoginPage() {
                 <Input
                   id="ldap-id"
                   type="text"
-                  placeholder="e.g., jmorga1"
+                  placeholder=""
                   value={ldapId}
                   onChange={(e) => setLdapId(e.target.value)}
                   required

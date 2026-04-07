@@ -582,7 +582,7 @@ export default function AgentLoginPage() {
                 <Input
                   id="agent-ldap-id"
                   type="text"
-                  placeholder="e.g., MSARAF"
+                  placeholder=""
                   value={agentLdapId}
                   onChange={(e) => setAgentLdapId(e.target.value)}
                   required

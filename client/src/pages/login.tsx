@@ -324,7 +324,7 @@ export default function LoginPage() {
                   <Input
                     id="ldap-id"
                     type="text"
-                    placeholder="e.g., jmorga1"
+                    placeholder=""
                     value={ldapId}
                     onChange={(e) => setLdapId(e.target.value)}
                     required
@@ -352,7 +352,7 @@ export default function LoginPage() {
                   <Input
                     id="agent-ldap-id"
                     type="text"
-                    placeholder="e.g., MSARAF"
+                    placeholder=""
                     value={agentLdapId}
                     onChange={(e) => setAgentLdapId(e.target.value)}
                     required

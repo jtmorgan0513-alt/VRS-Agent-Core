@@ -405,7 +405,7 @@ export default function AdminLoginPage() {
                 <Input
                   id="admin-ldap-id"
                   type="text"
-                  placeholder="e.g., MSARAF"
+                  placeholder=""
                   value={adminLdapId}
                   onChange={(e) => setAdminLdapId(e.target.value)}
                   required
