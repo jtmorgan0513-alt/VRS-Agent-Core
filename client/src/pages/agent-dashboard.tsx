@@ -830,7 +830,7 @@ export default function AgentDashboard() {
 
   const isNonPartsRequest = (sub: SubmissionWithTech | null): boolean => {
     if (!sub) return false;
-    return sub.requestType !== "authorization";
+    return sub.requestType !== "authorization" && sub.requestType !== "parts_nla";
   };
 
   const getProviderAuthLabel = (sub: SubmissionWithTech | null): string => {
@@ -2047,6 +2047,27 @@ export default function AgentDashboard() {
                                 </Select>
                               </div>
 
+                              {nlaAction && ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders"].includes(nlaAction) && (
+                                <div className="space-y-2 border rounded-lg p-3 bg-green-50/50 dark:bg-green-950/10">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Authorization Code (RGC)</p>
+                                  {rgcMissing ? (
+                                    <p className="text-sm text-destructive" data-testid="text-nla-rgc-not-set">
+                                      No RGC code set for today. Contact an administrator.
+                                    </p>
+                                  ) : (
+                                    <div>
+                                      <Label className="text-xs text-muted-foreground">Today's RGC Code</Label>
+                                      <Input
+                                        value={todaysRgcCode || ""}
+                                        readOnly
+                                        className="font-mono bg-muted mt-1"
+                                        data-testid="input-nla-rgc-readonly"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               {nlaAction === "nla_part_found_vrs_ordered" && !user?.canOrderParts && (
                                 <div className="p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
                                   <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
@@ -2170,6 +2191,10 @@ export default function AgentDashboard() {
                                       toast({ title: "Instructions Required", description: "Please provide instructions for the technician.", variant: "destructive" });
                                       return;
                                     }
+                                    if (rgcMissing) {
+                                      toast({ title: "Error", description: "RGC code not set for today. Contact an administrator.", variant: "destructive" });
+                                      return;
+                                    }
                                     setNlaConfirmOpen(true);
                                   }}
                                   disabled={!nlaAction || !technicianMessage.trim() || nlaProcessMutation.isPending}
@@ -2189,6 +2214,10 @@ export default function AgentDashboard() {
                                     }
                                     if (!technicianMessage.trim()) {
                                       toast({ title: "Instructions Required", description: "Please provide instructions for the technician.", variant: "destructive" });
+                                      return;
+                                    }
+                                    if (["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders"].includes(nlaAction!) && rgcMissing) {
+                                      toast({ title: "Error", description: "RGC code not set for today. Contact an administrator.", variant: "destructive" });
                                       return;
                                     }
                                     if (nlaAction === "nla_part_found_tech_orders" && !nlaFoundPartNumber.trim()) {

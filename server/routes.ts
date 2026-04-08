@@ -1220,14 +1220,10 @@ export async function registerRoutes(
       }
 
       if (action === "approve") {
-        const isNonPartsRequest = submission.requestType !== "authorization";
+        const needsRgcCode = submission.requestType === "authorization" || submission.requestType === "parts_nla";
         let rgcCode: string | null = null;
 
-        if (!isNonPartsRequest) {
-          const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();
-          const needsRgcOnly = ["sears_protect", "sears protect", "sears pa", "sears_pa", "legacy sears", "legacy_sears_cinch", "legacy sears / cinch", "cinch"].some(w => warrantyCompany.includes(w)) || submission.warrantyType === "sears_protect";
-          const needsExternalAuth = ["american home shield", "ahs", "first american"].some(w => warrantyCompany.includes(w));
-
+        if (needsRgcCode) {
           const todayStr = new Date().toISOString().slice(0, 10);
           const todayRgcCode = await storage.getDailyRgcCode(todayStr);
           if (!todayRgcCode) {
@@ -1235,12 +1231,19 @@ export async function registerRoutes(
           }
           rgcCode = todayRgcCode.code;
 
-          if (needsExternalAuth) {
-            if (!authCode || !authCode.trim()) {
-              return res.status(400).json({ error: "External authorization code is required for this warranty provider" });
-            }
-          } else {
+          if (submission.requestType === "parts_nla") {
             authCode = rgcCode;
+          } else {
+            const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();
+            const needsExternalAuth = ["american home shield", "ahs", "first american"].some(w => warrantyCompany.includes(w));
+
+            if (needsExternalAuth) {
+              if (!authCode || !authCode.trim()) {
+                return res.status(400).json({ error: "External authorization code is required for this warranty provider" });
+              }
+            } else {
+              authCode = rgcCode;
+            }
           }
         }
 
@@ -1260,7 +1263,7 @@ export async function registerRoutes(
         updateData.technicianMessage = approvalNotes;
 
         if (submission.requestType === "parts_nla") {
-          smsMessage = buildNlaApprovalMessage(submission.serviceOrder, approvalNotes);
+          smsMessage = buildNlaApprovalMessage(submission.serviceOrder, rgcCode, approvalNotes);
         } else {
           const authDisplay = authCode || rgcCode || "";
           smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes);
@@ -1451,6 +1454,18 @@ export async function registerRoutes(
 
       const currentUser = await storage.getUser(authReq.user!.id);
 
+      const nlaApprovalActions = ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders", "nla_pcard_confirm", "nla_escalate_pcard"];
+      let rgcCode: string | null = null;
+
+      if (nlaApprovalActions.includes(action)) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayRgcCode = await storage.getDailyRgcCode(todayStr);
+        if (!todayRgcCode) {
+          return res.status(400).json({ error: "No RGC code has been set for today. Please contact an administrator." });
+        }
+        rgcCode = todayRgcCode.code;
+      }
+
       const updateData: Record<string, unknown> = {
         agentNotes: agentNotes || null,
         updatedAt: new Date(),
@@ -1467,8 +1482,9 @@ export async function registerRoutes(
         updateData.reviewedAt = new Date();
         updateData.nlaResolution = "replacement_submitted";
         updateData.technicianMessage = technicianMessage || null;
+        updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
         if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
         smsType = "nla_replacement_submitted";
 
@@ -1479,8 +1495,9 @@ export async function registerRoutes(
         updateData.reviewedAt = new Date();
         updateData.nlaResolution = "replacement_tech_initiates";
         updateData.technicianMessage = technicianMessage || null;
+        updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.`;
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.`;
         if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
         smsType = "nla_replacement_tech_initiates";
 
@@ -1494,8 +1511,9 @@ export async function registerRoutes(
         updateData.reviewedAt = new Date();
         updateData.nlaResolution = "part_found_vrs_ordered";
         updateData.technicianMessage = technicianMessage || null;
+        updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
         if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
         smsType = "nla_part_ordered_vrs";
 
@@ -1510,8 +1528,9 @@ export async function registerRoutes(
         updateData.nlaResolution = "part_found_tech_orders";
         updateData.nlaFoundPartNumber = nlaFoundPartNumber.trim().toUpperCase();
         updateData.technicianMessage = technicianMessage || null;
+        updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
         if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
         smsType = "nla_part_tech_orders";
 
@@ -1556,15 +1575,16 @@ export async function registerRoutes(
         updateData.reviewedBy = authReq.user!.id;
         updateData.reviewedAt = new Date();
         updateData.nlaResolution = resolution;
+        updateData.rgcCode = rgcCode;
         if (technicianMessage) updateData.technicianMessage = technicianMessage;
 
         if (resolution === "part_found_vrs_ordered") {
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
         } else if (resolution === "part_found_tech_orders") {
           const partNum = submission.nlaFoundPartNumber || nlaFoundPartNumber || "";
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nPart Number: ${partNum}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${partNum}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
         } else {
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nYour NLA parts request has been processed by the VRS team.`;
+          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nAuth Code: ${rgcCode}\nYour NLA parts request has been processed by the VRS team.`;
         }
         if (technicianMessage || submission.technicianMessage) {
           smsMessage += `\n\nInstructions: ${technicianMessage || submission.technicianMessage}`;
