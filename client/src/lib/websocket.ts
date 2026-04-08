@@ -104,30 +104,36 @@ export function onWsEvent(type: string, handler: WSEventHandler) {
 }
 
 let audioCtx: AudioContext | null = null;
-let notificationAudio: HTMLAudioElement | null = null;
 let audioUnlocked = false;
+
+function getAudioContext(): AudioContext {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return audioCtx;
+}
 
 let removeUnlockListeners: (() => void) | null = null;
 
 function unlockAudio() {
   if (audioUnlocked) return;
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
-    const silent = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-    silent.volume = 0;
-    silent.play().then(() => {
-      silent.pause();
+    const ctx = getAudioContext();
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => {
+        audioUnlocked = true;
+        if (removeUnlockListeners) {
+          removeUnlockListeners();
+          removeUnlockListeners = null;
+        }
+      }).catch(() => {});
+    } else {
       audioUnlocked = true;
       if (removeUnlockListeners) {
         removeUnlockListeners();
         removeUnlockListeners = null;
       }
-    }).catch(() => {});
+    }
   } catch {}
 }
 
@@ -182,162 +188,148 @@ export function getSelectedTone(): ToneId {
 
 export function setCachedVolume(vol: number) {
   cachedVolume = Math.max(0, Math.min(1, vol));
-  if (notificationAudio) {
-    notificationAudio.volume = cachedVolume;
-  }
 }
 
 export function setCachedTone(tone: ToneId) {
   cachedTone = tone;
-  notificationAudio = null;
 }
 
 if (!settingsLoaded) {
   loadNotificationSettings();
 }
 
-function generateWav(fillBuffer: (buffer: Float32Array, sampleRate: number) => void, duration: number): string {
-  const sampleRate = 8000;
-  const samples = Math.floor(sampleRate * duration);
-  const buffer = new Float32Array(samples);
-  fillBuffer(buffer, sampleRate);
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-  const blockAlign = numChannels * (bitsPerSample / 8);
-  const dataSize = samples * blockAlign;
-  const headerSize = 44;
-  const arr = new ArrayBuffer(headerSize + dataSize);
-  const view = new DataView(arr);
-  const writeStr = (offset: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitsPerSample, true);
-  writeStr(36, "data");
-  view.setUint32(40, dataSize, true);
-  for (let i = 0; i < samples; i++) {
-    const s = Math.max(-1, Math.min(1, buffer[i]));
-    view.setInt16(headerSize + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-  const blob = new Blob([arr], { type: "audio/wav" });
-  return URL.createObjectURL(blob);
-}
+type TonePlayer = (ctx: AudioContext, volume: number) => void;
 
-const toneGenerators: Record<ToneId, () => string> = {
-  chime: () => generateWav((buf, sr) => {
-    for (let i = 0; i < buf.length; i++) {
-      const t = i / sr;
-      const f1 = t < 0.1 ? 880 : 1100;
-      const env = Math.exp(-t * 5);
-      buf[i] = Math.sin(2 * Math.PI * f1 * t) * env * 0.5;
-      if (t >= 0.15) buf[i] += Math.sin(2 * Math.PI * 1320 * t) * Math.exp(-(t - 0.15) * 5) * 0.5;
-    }
-  }, 0.6),
+const tonePlayersMap: Record<ToneId, TonePlayer> = {
+  chime: (ctx, vol) => {
+    const now = ctx.currentTime;
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    g.gain.setValueAtTime(vol * 0.5, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
 
-  bell: () => generateWav((buf, sr) => {
-    for (let i = 0; i < buf.length; i++) {
-      const t = i / sr;
-      const env = Math.exp(-t * 3);
-      buf[i] = (Math.sin(2 * Math.PI * 523 * t) * 0.4
-        + Math.sin(2 * Math.PI * 659 * t) * 0.25
-        + Math.sin(2 * Math.PI * 784 * t) * 0.2
-        + Math.sin(2 * Math.PI * 1047 * t) * 0.15) * env;
-    }
-  }, 0.8),
+    const o1 = ctx.createOscillator();
+    o1.type = "sine";
+    o1.frequency.setValueAtTime(880, now);
+    o1.frequency.setValueAtTime(1100, now + 0.1);
+    o1.connect(g);
+    o1.start(now);
+    o1.stop(now + 0.6);
 
-  pulse: () => generateWav((buf, sr) => {
-    for (let i = 0; i < buf.length; i++) {
-      const t = i / sr;
-      const beat = Math.sin(2 * Math.PI * 4 * t);
-      const carrier = Math.sin(2 * Math.PI * 660 * t);
-      const env = Math.exp(-t * 4);
-      buf[i] = carrier * (0.3 + beat * 0.2) * env;
-    }
-  }, 0.7),
+    const g2 = ctx.createGain();
+    g2.connect(ctx.destination);
+    g2.gain.setValueAtTime(0.001, now);
+    g2.gain.setValueAtTime(vol * 0.4, now + 0.15);
+    g2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    const o2 = ctx.createOscillator();
+    o2.type = "sine";
+    o2.frequency.value = 1320;
+    o2.connect(g2);
+    o2.start(now + 0.15);
+    o2.stop(now + 0.6);
+  },
 
-  cascade: () => generateWav((buf, sr) => {
-    for (let i = 0; i < buf.length; i++) {
-      const t = i / sr;
-      const freq = 400 + t * 1200;
-      const env = t < 0.3 ? Math.sin(Math.PI * t / 0.3) : Math.exp(-(t - 0.3) * 5);
-      buf[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.5;
-    }
-  }, 0.6),
+  bell: (ctx, vol) => {
+    const now = ctx.currentTime;
+    const freqs = [523, 659, 784, 1047];
+    const amps = [0.4, 0.25, 0.2, 0.15];
+    freqs.forEach((freq, i) => {
+      const g = ctx.createGain();
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(vol * amps[i], now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = freq;
+      o.connect(g);
+      o.start(now);
+      o.stop(now + 0.8);
+    });
+  },
 
-  alert: () => generateWav((buf, sr) => {
-    for (let i = 0; i < buf.length; i++) {
-      const t = i / sr;
-      const noteIdx = Math.floor(t / 0.15);
-      const noteT = t - noteIdx * 0.15;
-      const freqs = [784, 988, 1175, 988];
-      const freq = freqs[noteIdx % freqs.length];
-      const env = Math.exp(-noteT * 10) * 0.5;
-      buf[i] = Math.sin(2 * Math.PI * freq * t) * env;
-    }
-  }, 0.6),
+  pulse: (ctx, vol) => {
+    const now = ctx.currentTime;
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    g.gain.setValueAtTime(vol * 0.4, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.value = 660;
+    o.connect(g);
+    o.start(now);
+    o.stop(now + 0.7);
+
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.type = "sine";
+    lfo.frequency.value = 4;
+    lfoGain.gain.value = vol * 0.2;
+    lfo.connect(lfoGain);
+    lfoGain.connect(g.gain);
+    lfo.start(now);
+    lfo.stop(now + 0.7);
+  },
+
+  cascade: (ctx, vol) => {
+    const now = ctx.currentTime;
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.001, now);
+    g.gain.linearRampToValueAtTime(vol * 0.5, now + 0.15);
+    g.gain.setValueAtTime(vol * 0.5, now + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(400, now);
+    o.frequency.linearRampToValueAtTime(1600, now + 0.6);
+    o.connect(g);
+    o.start(now);
+    o.stop(now + 0.6);
+  },
+
+  alert: (ctx, vol) => {
+    const now = ctx.currentTime;
+    const freqs = [784, 988, 1175, 988];
+    freqs.forEach((freq, i) => {
+      const start = now + i * 0.15;
+      const g = ctx.createGain();
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(vol * 0.5, start);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.14);
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = freq;
+      o.connect(g);
+      o.start(start);
+      o.stop(start + 0.15);
+    });
+  },
 };
 
-const toneCache: Partial<Record<ToneId, string>> = {};
-
-function getToneData(tone: ToneId): string {
-  if (!toneCache[tone]) {
-    toneCache[tone] = toneGenerators[tone]();
-  }
-  return toneCache[tone]!;
-}
-
-function playWithAudioElement() {
+function playToneWithWebAudio(tone: ToneId, volume: number) {
   try {
-    if (audioCtx && audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
-    const tone = getSelectedTone();
-    const data = getToneData(tone);
-    if (!notificationAudio || notificationAudio.src !== data) {
-      notificationAudio = new Audio(data);
-    }
-    notificationAudio.volume = cachedVolume;
-    notificationAudio.currentTime = 0;
-    const playPromise = notificationAudio.play();
-    if (playPromise) {
-      playPromise.catch((err) => {
-        console.warn("[notification] Audio playback blocked:", err.name);
-        if (err.name === "NotAllowedError") {
-          unlockAudio();
-        }
+    const ctx = getAudioContext();
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => {
+        tonePlayersMap[tone](ctx, volume);
+      }).catch((err) => {
+        console.warn("[notification] AudioContext resume failed:", err);
       });
+    } else {
+      tonePlayersMap[tone](ctx, volume);
     }
   } catch (e) {
-    console.warn("[notification] Audio error:", e);
+    console.warn("[notification] Web Audio error:", e);
   }
 }
 
 export function playNotificationDing() {
-  playWithAudioElement();
+  playToneWithWebAudio(cachedTone, cachedVolume);
 }
 
 export function playTonePreview(tone: ToneId) {
-  try {
-    if (audioCtx && audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
-    const data = getToneData(tone);
-    const audio = new Audio(data);
-    audio.volume = cachedVolume;
-    audio.play().catch((err) => {
-      console.warn("[notification] Preview playback blocked:", err.name);
-    });
-  } catch (e) {
-    console.warn("[notification] Preview error:", e);
-  }
+  playToneWithWebAudio(tone, cachedVolume);
 }
 
 export function requestNotificationPermission() {
