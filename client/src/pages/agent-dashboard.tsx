@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
-import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings } from "@/lib/websocket";
+import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings, getNotificationPermission } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
@@ -91,6 +91,8 @@ import {
   Package,
   CreditCard,
   ChevronDown,
+  BellRing,
+  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/components/theme-provider";
@@ -159,10 +161,13 @@ export default function AgentDashboard() {
   const [activeView, setActiveView] = useState<"queue" | "mytickets" | "completed" | "nla_queue" | "nla_mytickets" | "nla_completed">("queue");
   const [queueMode, setQueueMode] = useState<"vrs" | "nla">("vrs");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(() => getNotificationPermission());
+  const [notifBannerDismissed, setNotifBannerDismissed] = useState(false);
   const isAdminViewing = user?.role === "admin" || user?.role === "super_admin";
   const isMyTicketsView = activeView === "mytickets" || activeView === "nla_mytickets";
   const isQueueView = activeView === "queue" || activeView === "nla_queue";
   const isCompletedView = activeView === "completed" || activeView === "nla_completed";
+  const showNotifBanner = notifPermission !== "granted" && notifPermission !== "unsupported" && !notifBannerDismissed;
 
   useEffect(() => {
     if (activeView.startsWith("nla_")) {
@@ -1165,6 +1170,42 @@ export default function AgentDashboard() {
         </Sidebar>
 
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {showNotifBanner && (
+            <div
+              className="w-full px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-sm font-medium flex items-center justify-between gap-2"
+              data-testid="banner-enable-notifications"
+            >
+              <div className="flex items-center gap-2 flex-1 justify-center">
+                <BellRing className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  {notifPermission === "denied"
+                    ? "Notifications are blocked. Enable them in your browser settings to receive alerts when new tickets arrive."
+                    : "Enable browser notifications to get alerts when new tickets arrive, even when this tab is in the background."}
+                </span>
+                {notifPermission === "default" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="ml-2 flex-shrink-0"
+                    data-testid="button-enable-notifications"
+                    onClick={async () => {
+                      const result = await Notification.requestPermission();
+                      setNotifPermission(result);
+                    }}
+                  >
+                    Enable Notifications
+                  </Button>
+                )}
+              </div>
+              <button
+                onClick={() => setNotifBannerDismissed(true)}
+                className="text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100 flex-shrink-0"
+                data-testid="button-dismiss-notif-banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           {!isAdminViewing && agentStatus === "offline" && (
             <button
               onClick={() => statusMutation.mutate("online")}

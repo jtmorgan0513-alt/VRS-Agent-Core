@@ -346,20 +346,26 @@ export function requestNotificationPermission() {
   }
 }
 
+export function getNotificationPermission(): NotificationPermission | "unsupported" {
+  if (!("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
 export function showBrowserNotification(title: string, body?: string) {
-  if (document.visibilityState !== "visible" && "Notification" in window && Notification.permission === "granted") {
+  if ("Notification" in window && Notification.permission === "granted") {
     try {
+      const tag = `vrs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const n = new Notification(title, {
         body,
         icon: "/favicon.ico",
-        tag: "vrs-notification",
+        tag,
         requireInteraction: false,
       });
       n.onclick = () => {
         window.focus();
         n.close();
       };
-      setTimeout(() => n.close(), 10000);
+      setTimeout(() => n.close(), 15000);
     } catch {}
   }
 }
