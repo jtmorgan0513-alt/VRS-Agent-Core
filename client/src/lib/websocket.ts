@@ -105,6 +105,42 @@ export function onWsEvent(type: string, handler: WSEventHandler) {
 
 let audioCtx: AudioContext | null = null;
 let notificationAudio: HTMLAudioElement | null = null;
+let audioUnlocked = false;
+
+let removeUnlockListeners: (() => void) | null = null;
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+    const silent = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+    silent.volume = 0;
+    silent.play().then(() => {
+      silent.pause();
+      audioUnlocked = true;
+      if (removeUnlockListeners) {
+        removeUnlockListeners();
+        removeUnlockListeners = null;
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+if (typeof window !== "undefined") {
+  const events = ["click", "touchstart", "keydown"];
+  const handler = () => {
+    unlockAudio();
+  };
+  events.forEach(e => document.addEventListener(e, handler, true));
+  removeUnlockListeners = () => {
+    events.forEach(e => document.removeEventListener(e, handler, true));
+  };
+}
 
 export type ToneId = "chime" | "bell" | "pulse" | "cascade" | "alert";
 
@@ -260,6 +296,9 @@ function getToneData(tone: ToneId): string {
 
 function playWithAudioElement() {
   try {
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
     const tone = getSelectedTone();
     const data = getToneData(tone);
     if (!notificationAudio || notificationAudio.src !== data) {
@@ -267,8 +306,18 @@ function playWithAudioElement() {
     }
     notificationAudio.volume = cachedVolume;
     notificationAudio.currentTime = 0;
-    notificationAudio.play().catch(() => {});
-  } catch {}
+    const playPromise = notificationAudio.play();
+    if (playPromise) {
+      playPromise.catch((err) => {
+        console.warn("[notification] Audio playback blocked:", err.name);
+        if (err.name === "NotAllowedError") {
+          unlockAudio();
+        }
+      });
+    }
+  } catch (e) {
+    console.warn("[notification] Audio error:", e);
+  }
 }
 
 export function playNotificationDing() {
@@ -277,11 +326,18 @@ export function playNotificationDing() {
 
 export function playTonePreview(tone: ToneId) {
   try {
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
     const data = getToneData(tone);
     const audio = new Audio(data);
     audio.volume = cachedVolume;
-    audio.play().catch(() => {});
-  } catch {}
+    audio.play().catch((err) => {
+      console.warn("[notification] Preview playback blocked:", err.name);
+    });
+  } catch (e) {
+    console.warn("[notification] Preview error:", e);
+  }
 }
 
 export function requestNotificationPermission() {
