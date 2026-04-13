@@ -156,7 +156,7 @@ export default function TechSubmitPage() {
     setLocalPreviews?: React.Dispatch<React.SetStateAction<Record<string, string>>>,
   ) {
     if (!files || files.length === 0) return;
-    const validFiles = Array.from(files).filter((f) => f.size <= 20 * 1024 * 1024 && f.type.startsWith("image/"));
+    const validFiles = Array.from(files).filter((f) => f.size <= 20 * 1024 * 1024 && (f.type.startsWith("image/") || f.type === ""));
     if (validFiles.length === 0) {
       toast({ title: "Invalid Files", description: "Please select image files under 20MB each.", variant: "destructive" });
       if (inputRef.current) inputRef.current.value = "";
