@@ -19,6 +19,7 @@ import {
   Ban,
   ScrollText,
   Package,
+  FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
@@ -359,6 +360,18 @@ export default function SubmissionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {sub.agentNotes && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                VRS Notes
+              </p>
+              <p className="text-sm whitespace-pre-wrap" data-testid="text-vrs-notes">{sub.agentNotes}</p>
+            </CardContent>
+          </Card>
+        )}
 
         {(sub as any).partNumbers && (() => {
           try {
