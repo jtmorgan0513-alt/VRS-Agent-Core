@@ -1,6 +1,6 @@
 import bcryptjs from "bcryptjs";
 import { storage, db } from "./storage";
-import { technicians, users, submissions } from "@shared/schema";
+import { technicians, users, submissions, smsNotifications } from "@shared/schema";
 import { sql, isNull, isNotNull } from "drizzle-orm";
 
 const SEED_USERS = [
@@ -143,6 +143,7 @@ export async function seedDatabase() {
 
   await resetAllPasswords();
   await backfillClaimedAt();
+  await cleanupTestSubmissions();
 }
 
 const TEST_RAC_IDS = ["testagent1", "TESTADMIN", "testtech1", "tmorri1", "sysadmin"];
@@ -213,4 +214,44 @@ async function backfillClaimedAt() {
   });
 
   console.log(`[claimedAt-backfill] Backfilled ${backfilledCount} submissions with claimedAt = createdAt`);
+}
+
+async function cleanupTestSubmissions() {
+  const FLAG_RAC = "__test_submissions_cleanup_done__";
+  const flagUser = await storage.getUserByRacId(FLAG_RAC);
+  if (flagUser) {
+    console.log("[test-cleanup] Already completed (flag found), skipping");
+    return;
+  }
+
+  const testRacIds = ["testtech1", "tmorri1"];
+
+  const testSubs = await db.select({ id: submissions.id })
+    .from(submissions)
+    .where(sql`${submissions.racId} IN (${sql.join(testRacIds.map(r => sql`${r}`), sql`, `)})`);
+
+  const testSubIds = testSubs.map(s => s.id);
+
+  if (testSubIds.length > 0) {
+    await db.delete(smsNotifications)
+      .where(sql`${smsNotifications.submissionId} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
+
+    await db.delete(submissions)
+      .where(sql`${submissions.id} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  const deletedCount = testSubIds.length;
+
+  await db.insert(users).values({
+    email: null,
+    password: "flag",
+    name: "Test Submissions Cleanup Flag",
+    role: "technician",
+    phone: null,
+    racId: FLAG_RAC,
+    isActive: false,
+    isSystemAccount: true,
+  });
+
+  console.log(`[test-cleanup] Deleted ${deletedCount} test submissions (rac_id in: ${testRacIds.join(", ")})`);
 }
