@@ -77,6 +77,8 @@ export default function TechSubmitPage() {
   const soNumberRef = useRef<HTMLInputElement>(null);
   const [estimatePhotoUrls, setEstimatePhotoUrls] = useState<string[]>([]);
   const [issuePhotoUrls, setIssuePhotoUrls] = useState<string[]>([]);
+  const [estimatePhotoLocalPreviews, setEstimatePhotoLocalPreviews] = useState<Record<string, string>>({});
+  const [issuePhotoLocalPreviews, setIssuePhotoLocalPreviews] = useState<Record<string, string>>({});
   const [estimatePhotoUploading, setEstimatePhotoUploading] = useState(false);
   const [issuePhotoUploading, setIssuePhotoUploading] = useState(false);
   const [estimatePhotoUploadCount, setEstimatePhotoUploadCount] = useState({ done: 0, total: 0 });
@@ -95,41 +97,52 @@ export default function TechSubmitPage() {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [partNumbers, setPartNumbers] = useState<string[]>([""]);
 
-  async function uploadSinglePhoto(file: File): Promise<string | null> {
+  async function uploadSinglePhoto(file: File, retries = 2): Promise<string | null> {
     const token = getToken();
-    try {
-      const urlRes = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type,
-        }),
-      });
-      if (!urlRes.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlRes.json();
-
-      return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(objectPath);
-          } else {
-            resolve(null);
-          }
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const urlRes = await fetch("/api/uploads/request-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            name: file.name,
+            size: file.size,
+            contentType: file.type,
+          }),
         });
-        xhr.addEventListener("error", () => resolve(null));
-        xhr.open("PUT", uploadURL);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.send(file);
-      });
-    } catch {
-      return null;
+        if (!urlRes.ok) throw new Error("Failed to get upload URL");
+        const { uploadURL, objectPath } = await urlRes.json();
+
+        const result = await new Promise<string | null>((resolve) => {
+          const xhr = new XMLHttpRequest();
+          xhr.timeout = 120000;
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(objectPath);
+            } else {
+              resolve(null);
+            }
+          });
+          xhr.addEventListener("error", () => resolve(null));
+          xhr.addEventListener("timeout", () => resolve(null));
+          xhr.open("PUT", uploadURL);
+          xhr.setRequestHeader("Content-Type", file.type);
+          xhr.send(file);
+        });
+        if (result) return result;
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      } catch {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
     }
+    return null;
   }
 
   async function handlePhotosSelect(
@@ -140,6 +153,7 @@ export default function TechSubmitPage() {
     setCount: React.Dispatch<React.SetStateAction<{ done: number; total: number }>>,
     maxPhotos: number,
     inputRef: React.RefObject<HTMLInputElement | null>,
+    setLocalPreviews?: React.Dispatch<React.SetStateAction<Record<string, string>>>,
   ) {
     if (!files || files.length === 0) return;
     const validFiles = Array.from(files).filter((f) => f.size <= 20 * 1024 * 1024 && f.type.startsWith("image/"));
@@ -156,16 +170,26 @@ export default function TechSubmitPage() {
     setUploading(true);
     setCount({ done: 0, total: filesToUpload.length });
     const newUrls: string[] = [];
+    const newPreviews: Record<string, string> = {};
     for (let i = 0; i < filesToUpload.length; i++) {
+      const localBlob = URL.createObjectURL(filesToUpload[i]);
       const url = await uploadSinglePhoto(filesToUpload[i]);
-      if (url) newUrls.push(url);
+      if (url) {
+        newUrls.push(url);
+        newPreviews[url] = localBlob;
+      } else {
+        URL.revokeObjectURL(localBlob);
+      }
       setCount({ done: i + 1, total: filesToUpload.length });
     }
     setUrls((prev) => [...prev, ...newUrls]);
+    if (setLocalPreviews) {
+      setLocalPreviews((prev) => ({ ...prev, ...newPreviews }));
+    }
     setUploading(false);
     if (inputRef.current) inputRef.current.value = "";
     if (newUrls.length < filesToUpload.length) {
-      toast({ title: "Some Photos Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload.`, variant: "destructive" });
+      toast({ title: "Upload Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload after retrying. Check your connection and try again.`, variant: "destructive" });
     }
   }
 
@@ -915,15 +939,21 @@ export default function TechSubmitPage() {
                   multiple
                   capture={undefined}
                   className="hidden"
-                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, setIssuePhotoUploadCount, 15, issuePhotoInputRef)}
+                  onChange={(e) => handlePhotosSelect(e.target.files, issuePhotoUrls, setIssuePhotoUrls, setIssuePhotoUploading, setIssuePhotoUploadCount, 15, issuePhotoInputRef, setIssuePhotoLocalPreviews)}
                   data-testid="input-issue-photo-file"
                 />
                 {issuePhotoUrls.length > 0 && (
                   <div className="grid grid-cols-3 gap-2" data-testid="issue-photo-previews">
                     {issuePhotoUrls.map((url, i) => (
                       <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
-                        <img src={url} alt={`Issue ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-issue-preview-${i}`} />
-                        <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setIssuePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-issue-${i}`}>
+                        <img
+                          src={issuePhotoLocalPreviews[url] || url}
+                          alt={`Issue ${i + 1}`}
+                          className="w-full h-full object-cover rounded-md"
+                          data-testid={`img-issue-preview-${i}`}
+                          onError={(e) => { const t = e.currentTarget; if (t.src !== url) { t.src = url; } else { t.style.display = "none"; t.parentElement!.classList.add("flex", "items-center", "justify-center"); const s = document.createElement("span"); s.className = "text-xs text-muted-foreground"; s.textContent = `Photo ${i + 1}`; t.parentElement!.appendChild(s); } }}
+                        />
+                        <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => { const blobUrl = issuePhotoLocalPreviews[url]; if (blobUrl) URL.revokeObjectURL(blobUrl); setIssuePhotoLocalPreviews((prev) => { const n = {...prev}; delete n[url]; return n; }); setIssuePhotoUrls((prev) => prev.filter((_, idx) => idx !== i)); }} data-testid={`button-remove-issue-${i}`}>
                           <X className="w-3 h-3" />
                         </Button>
                       </div>
@@ -973,15 +1003,21 @@ export default function TechSubmitPage() {
                     multiple
                     capture={undefined}
                     className="hidden"
-                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, setEstimatePhotoUploadCount, 5, estimatePhotoInputRef)}
+                    onChange={(e) => handlePhotosSelect(e.target.files, estimatePhotoUrls, setEstimatePhotoUrls, setEstimatePhotoUploading, setEstimatePhotoUploadCount, 5, estimatePhotoInputRef, setEstimatePhotoLocalPreviews)}
                     data-testid="input-estimate-photo-file"
                   />
                   {estimatePhotoUrls.length > 0 && (
                     <div className="grid grid-cols-3 gap-2" data-testid="estimate-photo-previews">
                       {estimatePhotoUrls.map((url, i) => (
                         <div key={i} className="relative aspect-square bg-muted rounded-md overflow-visible">
-                          <img src={url} alt={`Estimate ${i + 1}`} className="w-full h-full object-cover rounded-md" data-testid={`img-estimate-preview-${i}`} />
-                          <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i))} data-testid={`button-remove-estimate-${i}`}>
+                          <img
+                            src={estimatePhotoLocalPreviews[url] || url}
+                            alt={`Estimate ${i + 1}`}
+                            className="w-full h-full object-cover rounded-md"
+                            data-testid={`img-estimate-preview-${i}`}
+                            onError={(e) => { const t = e.currentTarget; if (t.src !== url) { t.src = url; } else { t.style.display = "none"; t.parentElement!.classList.add("flex", "items-center", "justify-center"); const s = document.createElement("span"); s.className = "text-xs text-muted-foreground"; s.textContent = `Estimate ${i + 1}`; t.parentElement!.appendChild(s); } }}
+                          />
+                          <Button type="button" size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => { const blobUrl = estimatePhotoLocalPreviews[url]; if (blobUrl) URL.revokeObjectURL(blobUrl); setEstimatePhotoLocalPreviews((prev) => { const n = {...prev}; delete n[url]; return n; }); setEstimatePhotoUrls((prev) => prev.filter((_, idx) => idx !== i)); }} data-testid={`button-remove-estimate-${i}`}>
                             <X className="w-3 h-3" />
                           </Button>
                         </div>
