@@ -337,6 +337,12 @@ export default function SubmissionDetailPage() {
             <DetailRow label="Service Order" value={`#${sub.serviceOrder}`} testId="text-detail-so" />
             <DetailRow label="Appliance" value={sub.applianceType.charAt(0).toUpperCase() + sub.applianceType.slice(1)} testId="text-detail-appliance" />
             <DetailRow label="Request Type" value={sub.requestType === "authorization" ? "Authorization" : sub.requestType === "parts_nla" ? "Parts — No Longer Available (NLA)" : "Infestation / Non-Accessible"} testId="text-detail-request-type" />
+            {sub.warrantyType && (
+              <DetailRow label="Warranty" value={sub.warrantyType === "sears_protect" ? "Sears Protect" : sub.warrantyType === "home_warranty" ? "Sears Home Warranty" : sub.warrantyType.charAt(0).toUpperCase() + sub.warrantyType.slice(1)} testId="text-detail-warranty" />
+            )}
+            {sub.estimateAmount != null && (
+              <DetailRow label="Estimate" value={`$${Number(sub.estimateAmount).toFixed(2)}`} testId="text-detail-estimate" />
+            )}
             <DetailRow label="Status" value={
               <StatusBadge
                 status={status}
@@ -360,6 +366,15 @@ export default function SubmissionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {sub.issueDescription && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Issue Description</p>
+              <p className="text-sm whitespace-pre-wrap" data-testid="text-detail-description">{sub.issueDescription}</p>
+            </CardContent>
+          </Card>
+        )}
 
         {sub.agentNotes && (
           <Card>
