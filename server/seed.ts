@@ -216,42 +216,43 @@ async function backfillClaimedAt() {
   console.log(`[claimedAt-backfill] Backfilled ${backfilledCount} submissions with claimedAt = createdAt`);
 }
 
-async function cleanupTestSubmissions() {
-  const FLAG_RAC = "__test_submissions_cleanup_done__";
-  const flagUser = await storage.getUserByRacId(FLAG_RAC);
-  if (flagUser) {
-    console.log("[test-cleanup] Already completed (flag found), skipping");
-    return;
-  }
+const TEST_SUBMISSION_RAC_IDS = ["testtech1", "tmorri1"];
 
-  const testRacIds = ["testtech1", "tmorri1"];
-
+async function purgeTestSubmissions() {
   const testSubs = await db.select({ id: submissions.id })
     .from(submissions)
-    .where(sql`${submissions.racId} IN (${sql.join(testRacIds.map(r => sql`${r}`), sql`, `)})`);
+    .where(sql`${submissions.racId} IN (${sql.join(TEST_SUBMISSION_RAC_IDS.map(r => sql`${r}`), sql`, `)})`);
 
   const testSubIds = testSubs.map(s => s.id);
+  if (testSubIds.length === 0) return 0;
 
-  if (testSubIds.length > 0) {
-    await db.delete(smsNotifications)
-      .where(sql`${smsNotifications.submissionId} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
+  await db.delete(smsNotifications)
+    .where(sql`${smsNotifications.submissionId} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
 
-    await db.delete(submissions)
-      .where(sql`${submissions.id} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
+  await db.delete(submissions)
+    .where(sql`${submissions.id} IN (${sql.join(testSubIds.map(id => sql`${id}`), sql`, `)})`);
+
+  return testSubIds.length;
+}
+
+async function cleanupTestSubmissions() {
+  const deleted = await purgeTestSubmissions();
+  if (deleted > 0) {
+    console.log(`[test-cleanup] Startup: deleted ${deleted} test submissions`);
   }
+}
 
-  const deletedCount = testSubIds.length;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-  await db.insert(users).values({
-    email: null,
-    password: "flag",
-    name: "Test Submissions Cleanup Flag",
-    role: "technician",
-    phone: null,
-    racId: FLAG_RAC,
-    isActive: false,
-    isSystemAccount: true,
-  });
-
-  console.log(`[test-cleanup] Deleted ${deletedCount} test submissions (rac_id in: ${testRacIds.join(", ")})`);
+export function startTestSubmissionCleanupTimer() {
+  setInterval(async () => {
+    try {
+      const deleted = await purgeTestSubmissions();
+      if (deleted > 0) {
+        console.log(`[test-cleanup] Periodic: deleted ${deleted} test submissions`);
+      }
+    } catch (err) {
+      console.error("[test-cleanup] Periodic cleanup error:", err);
+    }
+  }, CLEANUP_INTERVAL_MS);
 }
