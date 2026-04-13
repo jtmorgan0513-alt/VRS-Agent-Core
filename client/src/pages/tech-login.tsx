@@ -141,7 +141,7 @@ export default function TechLoginPage() {
                 </div>
               )}
               <Button
-                className="w-full"
+                className="w-full h-11 text-base"
                 onClick={handleTechContinue}
                 data-testid="button-tech-continue"
               >
@@ -189,6 +189,7 @@ export default function TechLoginPage() {
                   required
                   autoCapitalize="none"
                   autoCorrect="off"
+                  className="h-11 text-base"
                   data-testid="input-ldap-id"
                 />
                 <p className="text-xs text-muted-foreground">Enter your LDAP ID to sign in. No password required.</p>
@@ -207,7 +208,7 @@ export default function TechLoginPage() {
                   <p className="text-xs text-muted-foreground">Not found as technician. If you're an admin, enter your password above.</p>
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={isLoading || !ldapId.trim() || (showPasswordField && !adminPassword)} data-testid="button-tech-login">
+              <Button type="submit" className="w-full h-11 text-base" disabled={isLoading || !ldapId.trim() || (showPasswordField && !adminPassword)} data-testid="button-tech-login">
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
