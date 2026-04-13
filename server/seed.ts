@@ -242,17 +242,3 @@ async function cleanupTestSubmissions() {
   }
 }
 
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-
-export function startTestSubmissionCleanupTimer() {
-  setInterval(async () => {
-    try {
-      const deleted = await purgeTestSubmissions();
-      if (deleted > 0) {
-        console.log(`[test-cleanup] Periodic: deleted ${deleted} test submissions`);
-      }
-    } catch (err) {
-      console.error("[test-cleanup] Periodic cleanup error:", err);
-    }
-  }, CLEANUP_INTERVAL_MS);
-}
