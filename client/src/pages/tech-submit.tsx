@@ -97,6 +97,24 @@ export default function TechSubmitPage() {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [partNumbers, setPartNumbers] = useState<string[]>([""]);
 
+  function reportUploadError(details: Record<string, unknown>) {
+    try {
+      const token = getToken();
+      fetch("/api/uploads/report-error", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          ...details,
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    } catch {}
+  }
+
   async function uploadSinglePhoto(file: File, retries = 2): Promise<string | null> {
     const token = getToken();
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -113,7 +131,10 @@ export default function TechSubmitPage() {
             contentType: file.type,
           }),
         });
-        if (!urlRes.ok) throw new Error("Failed to get upload URL");
+        if (!urlRes.ok) {
+          reportUploadError({ stage: "request-url", fileName: file.name, fileSize: file.size, fileType: file.type, errorMessage: "HTTP " + urlRes.status, attempt });
+          throw new Error("Failed to get upload URL");
+        }
         const { uploadURL, objectPath } = await urlRes.json();
 
         const result = await new Promise<string | null>((resolve) => {
@@ -123,11 +144,18 @@ export default function TechSubmitPage() {
             if (xhr.status >= 200 && xhr.status < 300) {
               resolve(objectPath);
             } else {
+              reportUploadError({ stage: "xhr-upload", fileName: file.name, fileSize: file.size, fileType: file.type, xhrStatus: xhr.status, attempt });
               resolve(null);
             }
           });
-          xhr.addEventListener("error", () => resolve(null));
-          xhr.addEventListener("timeout", () => resolve(null));
+          xhr.addEventListener("error", () => {
+            reportUploadError({ stage: "xhr-error", fileName: file.name, fileSize: file.size, fileType: file.type, errorMessage: "network error", attempt });
+            resolve(null);
+          });
+          xhr.addEventListener("timeout", () => {
+            reportUploadError({ stage: "xhr-timeout", fileName: file.name, fileSize: file.size, fileType: file.type, errorMessage: "timeout after 120s", attempt });
+            resolve(null);
+          });
           xhr.open("PUT", uploadURL);
           xhr.setRequestHeader("Content-Type", file.type);
           xhr.send(file);
@@ -136,7 +164,8 @@ export default function TechSubmitPage() {
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         }
-      } catch {
+      } catch (error) {
+        reportUploadError({ stage: "unknown", fileName: file.name, fileSize: file.size, fileType: file.type, errorMessage: String(error), attempt });
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         }
@@ -158,6 +187,8 @@ export default function TechSubmitPage() {
     if (!files || files.length === 0) return;
     const validFiles = Array.from(files).filter((f) => f.size <= 20 * 1024 * 1024 && (f.type.startsWith("image/") || f.type === ""));
     if (validFiles.length === 0) {
+      const fileDetails = Array.from(files).map(f => ({ name: f.name, size: f.size, type: f.type }));
+      reportUploadError({ stage: "file-filter", errorMessage: "All files filtered out", files: fileDetails });
       toast({ title: "Invalid Files", description: "Please select image files under 20MB each.", variant: "destructive" });
       if (inputRef.current) inputRef.current.value = "";
       return;

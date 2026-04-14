@@ -29,6 +29,13 @@ export function registerObjectStorageRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/uploads/report-error", authenticateToken, async (req, res) => {
+    try {
+      console.error("[UPLOAD-DIAGNOSTIC]", JSON.stringify(req.body));
+    } catch {}
+    res.json({ ok: true });
+  });
+
   app.get("/objects/{*objectPath}", async (req, res) => {
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
