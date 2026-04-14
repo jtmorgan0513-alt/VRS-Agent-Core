@@ -189,8 +189,13 @@ export function broadcastToDivisionAgents(division: string, event: WSEvent, excl
   for (const [userId, sessions] of clients) {
     if (excludeUserId && userId === excludeUserId) continue;
     const primary = sessions[0];
-    if (!primary || primary.role !== "vrs_agent") continue;
-    if (primary.agentStatus !== "online") continue;
+    if (!primary) continue;
+
+    const isAgent = primary.role === "vrs_agent";
+    const isAdmin = primary.role === "admin" || primary.role === "super_admin";
+    if (!isAgent && !isAdmin) continue;
+
+    if (isAgent && primary.agentStatus !== "online" && primary.agentStatus !== "working") continue;
 
     const isGeneralist = primary.divisions.includes("generalist") ||
       primary.divisions.length >= Object.keys(DIVISION_LABELS).length;
@@ -206,8 +211,13 @@ export function broadcastToNlaDivisionAgents(applianceType: string, event: WSEve
   for (const [userId, sessions] of clients) {
     if (excludeUserId && userId === excludeUserId) continue;
     const primary = sessions[0];
-    if (!primary || primary.role !== "vrs_agent") continue;
-    if (primary.agentStatus !== "online") continue;
+    if (!primary) continue;
+
+    const isAgent = primary.role === "vrs_agent";
+    const isAdmin = primary.role === "admin" || primary.role === "super_admin";
+    if (!isAgent && !isAdmin) continue;
+
+    if (isAgent && primary.agentStatus !== "online" && primary.agentStatus !== "working") continue;
 
     const hasNla = primary.divisions.includes("nla");
     if (!hasNla) continue;
