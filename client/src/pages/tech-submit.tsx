@@ -43,8 +43,8 @@ const APPLIANCE_TYPES = [
 
 const WARRANTY_PROVIDERS = [
   { value: "sears_protect", label: "Sears Protect / Sears PA / Sears Home Warranty (Cinch)", available: true },
-  { value: "american_home_shield", label: "American Home Shield", available: false },
-  { value: "first_american", label: "First American", available: false },
+  { value: "american_home_shield", label: "American Home Shield", available: true },
+  { value: "first_american", label: "First American", available: true },
 ];
 
 const submissionFormSchema = z.object({
@@ -54,7 +54,7 @@ const submissionFormSchema = z.object({
     required_error: "Select an appliance type",
   }),
   requestType: z.enum(["authorization", "infestation_non_accessible", "parts_nla"]),
-  warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
+  warrantyType: z.enum(["sears_protect", "american_home_shield", "first_american"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
   partNumbers: z.array(z.string()).optional(),
@@ -485,7 +485,7 @@ export default function TechSubmitPage() {
       applianceType: undefined,
       requestType: "authorization",
       warrantyType: "sears_protect",
-      warrantyProvider: "",
+      warrantyProvider: "Sears Protect / Sears PA / Sears Home Warranty (Cinch)",
       issueDescription: "",
     },
   });
@@ -729,7 +729,7 @@ export default function TechSubmitPage() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <label className="text-sm font-medium">Warranty Provider *</label>
-                      <HelpTooltip content="Select Sears Protect. B2B providers coming soon." />
+                      <HelpTooltip content="Select the warranty provider for this service order." />
                     </div>
                     <div className="mt-2 space-y-2">
                       {WARRANTY_PROVIDERS.map((provider) => (
@@ -740,13 +740,14 @@ export default function TechSubmitPage() {
                               ? "cursor-pointer hover-elevate"
                               : "opacity-60 cursor-not-allowed"
                           } ${
-                            form.watch("warrantyType") === "sears_protect" && provider.value === "sears_protect"
+                            form.watch("warrantyType") === provider.value
                               ? "border-primary bg-primary/5"
                               : ""
                           }`}
                           onClick={() => {
                             if (provider.available) {
-                              form.setValue("warrantyType", "sears_protect");
+                              form.setValue("warrantyType", provider.value as any);
+                              form.setValue("warrantyProvider", provider.label);
                             }
                           }}
                           data-testid={`provider-${provider.value}`}

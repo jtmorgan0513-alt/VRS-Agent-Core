@@ -88,9 +88,9 @@ const faqItems: HelpItem[] = [
       "Verify that the phone number you entered on the submission form is correct and that your device has cellular reception. You can also check the submission detail page within the app — the authorization code and any status updates are displayed there. If you still have not received a notification, contact your supervisor for assistance.",
   },
   {
-    title: "What does the warranty provider \"Coming Soon\" mean?",
+    title: "Which warranty providers are supported?",
     content:
-      "Currently, VRS Submit supports Sears Protect (Cinch) warranty submissions. Other warranty providers such as American Home Shield and Allstate are planned for future release. When those integrations are available, you will be able to select them during the submission process.",
+      "VRS Submit currently supports Sears Protect (Cinch), American Home Shield (AHS), and First American warranty submissions. Select the correct warranty provider during the submission process. Additional providers may be added in the future.",
   },
   {
     title: "What are the photo and video requirements?",
