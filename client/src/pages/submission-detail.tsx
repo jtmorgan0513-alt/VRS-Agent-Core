@@ -388,6 +388,30 @@ export default function SubmissionDetailPage() {
                 </Card>
               );
             }
+            if (parts && typeof parts === "object" && !Array.isArray(parts)) {
+              const nlaParts = Array.isArray(parts.nla) ? parts.nla : [];
+              const availParts = Array.isArray(parts.available) ? parts.available : [];
+              if (nlaParts.length > 0 || availParts.length > 0) {
+                return (
+                  <Card>
+                    <CardContent className="p-4 space-y-3">
+                      {nlaParts.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">NLA Part Number(s)</p>
+                          <p className="text-sm font-mono" data-testid="text-nla-parts">{nlaParts.join(", ")}</p>
+                        </div>
+                      )}
+                      {availParts.length > 0 && (
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Other Required Parts (Available)</p>
+                          <p className="text-sm font-mono" data-testid="text-available-parts">{availParts.join(", ")}</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              }
+            }
           } catch {}
           return null;
         })()}

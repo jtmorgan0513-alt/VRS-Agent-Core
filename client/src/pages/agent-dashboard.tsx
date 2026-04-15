@@ -1597,6 +1597,26 @@ export default function AgentDashboard() {
                                   </div>
                                 );
                               }
+                              if (parts && typeof parts === "object" && !Array.isArray(parts)) {
+                                const nlaParts = Array.isArray(parts.nla) ? parts.nla : [];
+                                const availParts = Array.isArray(parts.available) ? parts.available : [];
+                                return (
+                                  <>
+                                    {nlaParts.length > 0 && (
+                                      <div className="mb-3">
+                                        <p className="text-xs text-muted-foreground mb-1">NLA Part Number(s)</p>
+                                        <p className="text-sm font-mono" data-testid="text-detail-nla-parts">{nlaParts.join(", ")}</p>
+                                      </div>
+                                    )}
+                                    {availParts.length > 0 && (
+                                      <div className="mb-3">
+                                        <p className="text-xs text-muted-foreground mb-1">Other Required Parts (Available)</p>
+                                        <p className="text-sm font-mono" data-testid="text-detail-available-parts">{availParts.join(", ")}</p>
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              }
                             } catch {}
                             return null;
                           })()}

@@ -507,8 +507,26 @@ export async function registerRoutes(
         }
         try {
           const parts = JSON.parse(parsed.data.partNumbers);
-          if (!Array.isArray(parts) || parts.length === 0 || parts.length > 10 || !parts.every((p: any) => typeof p === "string" && p.trim().length > 0)) {
-            return res.status(400).json({ error: "Please provide 1-10 valid part numbers" });
+          if (Array.isArray(parts)) {
+            if (parts.length === 0 || parts.length > 10 || !parts.every((p: any) => typeof p === "string" && p.trim().length > 0)) {
+              return res.status(400).json({ error: "Please provide 1-10 valid part numbers" });
+            }
+          } else if (parts && typeof parts === "object" && (parts.nla || parts.available)) {
+            const nlaParts = Array.isArray(parts.nla) ? parts.nla : [];
+            const availParts = Array.isArray(parts.available) ? parts.available : [];
+            const totalParts = nlaParts.length + availParts.length;
+            if (totalParts === 0) {
+              return res.status(400).json({ error: "At least one part number is required" });
+            }
+            if (totalParts > 20) {
+              return res.status(400).json({ error: "Maximum 20 total part numbers allowed" });
+            }
+            const allValid = [...nlaParts, ...availParts].every((p: any) => typeof p === "string" && p.trim().length > 0);
+            if (!allValid) {
+              return res.status(400).json({ error: "All part numbers must be non-empty strings" });
+            }
+          } else {
+            return res.status(400).json({ error: "Invalid part numbers format" });
           }
         } catch {
           return res.status(400).json({ error: "Invalid part numbers format" });
@@ -2777,8 +2795,19 @@ export async function registerRoutes(
         let partNumbers = "";
         if ((s as any).partNumbers) {
           try {
-            const arr = typeof (s as any).partNumbers === "string" ? JSON.parse((s as any).partNumbers) : (s as any).partNumbers;
-            partNumbers = Array.isArray(arr) ? arr.join(", ") : String(arr);
+            const parsed = typeof (s as any).partNumbers === "string" ? JSON.parse((s as any).partNumbers) : (s as any).partNumbers;
+            if (Array.isArray(parsed)) {
+              partNumbers = parsed.join(", ");
+            } else if (parsed && typeof parsed === "object" && (parsed.nla || parsed.available)) {
+              const nlaParts = Array.isArray(parsed.nla) ? parsed.nla : [];
+              const availParts = Array.isArray(parsed.available) ? parsed.available : [];
+              const segments: string[] = [];
+              if (nlaParts.length > 0) segments.push("NLA: " + nlaParts.join(", "));
+              if (availParts.length > 0) segments.push("Available: " + availParts.join(", "));
+              partNumbers = segments.join(" | ");
+            } else {
+              partNumbers = String(parsed);
+            }
           } catch { partNumbers = String((s as any).partNumbers); }
         }
         nlaSheet.addRow([

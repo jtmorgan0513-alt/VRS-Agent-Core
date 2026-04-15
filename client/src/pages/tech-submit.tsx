@@ -96,6 +96,7 @@ export default function TechSubmitPage() {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [partNumbers, setPartNumbers] = useState<string[]>([""]);
+  const [availableParts, setAvailableParts] = useState<string[]>([]);
 
   function reportUploadError(details: Record<string, unknown>) {
     try {
@@ -521,9 +522,10 @@ export default function TechSubmitPage() {
 
   function onSubmit(data: SubmissionFormData) {
     if (data.requestType === "parts_nla") {
-      const filteredParts = partNumbers.filter(p => p.trim() !== "");
-      if (filteredParts.length === 0) {
-        toast({ title: "Part Numbers Required", description: "At least one part number is required for NLA submissions.", variant: "destructive" });
+      const nlaParts = partNumbers.filter(p => p.trim() !== "");
+      const otherParts = availableParts.filter(p => p.trim() !== "");
+      if (nlaParts.length === 0 && otherParts.length === 0) {
+        toast({ title: "Part Numbers Required", description: "At least one NLA or available part number is required.", variant: "destructive" });
         return;
       }
     }
@@ -541,10 +543,11 @@ export default function TechSubmitPage() {
     if (estimatePhotoUrls.length > 0) photosObj.estimate = estimatePhotoUrls;
     if (issuePhotoUrls.length > 0) photosObj.issue = issuePhotoUrls;
     if (Object.keys(photosObj).length > 0) payload.photos = JSON.stringify(photosObj);
-    if (data.requestType === "parts_nla" && partNumbers.length > 0) {
-      const filteredParts = partNumbers.filter(p => p.trim() !== "");
-      if (filteredParts.length > 0) {
-        payload.partNumbers = JSON.stringify(filteredParts);
+    if (data.requestType === "parts_nla") {
+      const nlaParts = partNumbers.filter(p => p.trim() !== "");
+      const otherParts = availableParts.filter(p => p.trim() !== "");
+      if (nlaParts.length > 0 || otherParts.length > 0) {
+        payload.partNumbers = JSON.stringify({ nla: nlaParts, available: otherParts });
       }
     }
     mutation.mutate(payload as any);
@@ -775,7 +778,7 @@ export default function TechSubmitPage() {
                   name="issueDescription"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{watchedRequestType === "parts_nla" ? `Issue Description: Why is the part${partNumbers.filter(p => p.trim()).length > 1 ? "s" : ""} needed? *` : "Issue Description *"}</FormLabel>
+                      <FormLabel>{watchedRequestType === "parts_nla" ? "Issue Description: Why are the parts needed? *" : "Issue Description *"}</FormLabel>
                       <FormControl>
                         <Textarea
                           placeholder={watchedRequestType === "parts_nla" ? "Explain why the part is needed and what failed on the unit..." : watchedRequestType === "authorization" ? "Describe the issue and required repair. For non-repairable units, explain why the unit cannot be repaired." : "Describe the issue..."}
@@ -882,62 +885,122 @@ export default function TechSubmitPage() {
             </Card>
 
             {watchedRequestType === "parts_nla" && (
-              <Card>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Part Number(s) <span className="text-destructive">*</span>
-                    </p>
-                    <HelpTooltip content="Enter each unavailable part number from TechHub. Add additional parts using the + button." />
-                  </div>
-                  <div className="space-y-2">
-                    {partNumbers.map((pn, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <Input
-                          placeholder="Enter part number (e.g., WPW10321304)"
-                          value={pn}
-                          onChange={(e) => {
-                            const updated = [...partNumbers];
-                            updated[idx] = e.target.value.toUpperCase();
-                            setPartNumbers(updated);
-                          }}
-                          data-testid={`input-part-number-${idx}`}
-                        />
-                        {partNumbers.length > 1 && (
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                            onClick={() => setPartNumbers(partNumbers.filter((_, i) => i !== idx))}
-                            data-testid={`button-remove-part-${idx}`}
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    {partNumbers.length < 10 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPartNumbers([...partNumbers, ""])}
-                        data-testid="button-add-part-number"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Add Another Part
-                      </Button>
+              <>
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        NLA Part Number(s) <span className="text-destructive">*</span>
+                      </p>
+                      <HelpTooltip content="Enter part numbers that are No Longer Available in TechHub. These are the parts VRS will research." />
+                    </div>
+                    <p className="text-sm text-muted-foreground">Parts showing unavailable / discontinued in TechHub</p>
+                    <div className="space-y-2">
+                      {partNumbers.map((pn, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Input
+                            placeholder="Enter NLA part number (e.g., WPW10321304)"
+                            value={pn}
+                            onChange={(e) => {
+                              const updated = [...partNumbers];
+                              updated[idx] = e.target.value.toUpperCase();
+                              setPartNumbers(updated);
+                            }}
+                            data-testid={`input-part-number-${idx}`}
+                          />
+                          {partNumbers.length > 1 && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                              onClick={() => setPartNumbers(partNumbers.filter((_, i) => i !== idx))}
+                              data-testid={`button-remove-part-${idx}`}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      {partNumbers.length < 10 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPartNumbers([...partNumbers, ""])}
+                          data-testid="button-add-part-number"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1.5" />
+                          Add NLA Part
+                        </Button>
+                      )}
+                      <p className="text-xs text-muted-foreground ml-auto">{partNumbers.filter(p => p.trim() !== "").length}/10 parts</p>
+                    </div>
+                    {partNumbers.every(p => p.trim() === "") && availableParts.every(p => p.trim() === "") && (
+                      <p className="text-sm text-destructive" data-testid="text-part-number-error">At least one part number is required</p>
                     )}
-                    <p className="text-xs text-muted-foreground ml-auto">{partNumbers.filter(p => p.trim() !== "").length}/10 parts</p>
-                  </div>
-                  {partNumbers.every(p => p.trim() === "") && (
-                    <p className="text-sm text-destructive" data-testid="text-part-number-error">At least one part number is required</p>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Other Required Parts (Available)
+                      </p>
+                      <HelpTooltip content="Enter part numbers that ARE available in TechHub but are also needed for this repair. These parts stay on the order if the NLA part is not found." />
+                    </div>
+                    <p className="text-sm text-muted-foreground">Parts showing available in TechHub that must remain on the order</p>
+                    {availableParts.length > 0 && (
+                      <div className="space-y-2">
+                        {availableParts.map((pn, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Input
+                              placeholder="Enter available part number"
+                              value={pn}
+                              onChange={(e) => {
+                                const updated = [...availableParts];
+                                updated[idx] = e.target.value.toUpperCase();
+                                setAvailableParts(updated);
+                              }}
+                              data-testid={`input-available-part-${idx}`}
+                            />
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                              onClick={() => setAvailableParts(availableParts.filter((_, i) => i !== idx))}
+                              data-testid={`button-remove-available-part-${idx}`}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      {availableParts.length < 10 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAvailableParts([...availableParts, ""])}
+                          data-testid="button-add-available-part"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1.5" />
+                          Add Available Part
+                        </Button>
+                      )}
+                      {availableParts.length > 0 && (
+                        <p className="text-xs text-muted-foreground ml-auto">{availableParts.filter(p => p.trim() !== "").length}/10 parts</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
             )}
 
             <Card>
@@ -1230,7 +1293,7 @@ export default function TechSubmitPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || estimatePhotoUrls.length === 0 || (watchedRequestType === "parts_nla" && partNumbers.every(p => p.trim() === ""))}
+              disabled={mutation.isPending || estimatePhotoUploading || issuePhotoUploading || isUploading || isConverting || audioUploading || issuePhotoUrls.length === 0 || estimatePhotoUrls.length === 0 || (watchedRequestType === "parts_nla" && partNumbers.every(p => p.trim() === "") && availableParts.every(p => p.trim() === ""))}
               data-testid="button-submit-form"
             >
               <Send className="w-4 h-4 mr-2" />
