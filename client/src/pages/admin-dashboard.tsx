@@ -5,7 +5,7 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
-import { useWebSocket, loadNotificationSettings } from "@/lib/websocket";
+import { useWebSocket, loadNotificationSettings, playNotificationDing, showBrowserNotification } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import type { User, TechnicianUserView } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
@@ -1663,7 +1663,37 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
     });
-    return () => unsub();
+
+    const unsub2 = subscribe("new_ticket", (payload: any) => {
+      playNotificationDing();
+      const title = `New ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`;
+      const desc = `SO #${payload.serviceOrder}`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics"] });
+    });
+
+    const unsub3 = subscribe("ticket_queued", (payload: any) => {
+      playNotificationDing();
+      const title = `Ticket returned to queue`;
+      const desc = `${payload.applianceLabel} - ${payload.warrantyLabel} (SO #${payload.serviceOrder})`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics"] });
+    });
+
+    const unsub4 = subscribe("pending_tickets", (payload: any) => {
+      const title = `Queued ${payload.applianceLabel} ticket, ${payload.warrantyLabel}`;
+      const desc = `SO #${payload.serviceOrder} waiting in queue`;
+      toast({ title, description: desc, duration: 8000 });
+      showBrowserNotification(title, desc);
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/analytics"] });
+    });
+
+    return () => { unsub(); unsub2(); unsub3(); unsub4(); };
   }, [subscribe]);
 
   const [userTab, setUserTab] = useState<"staff" | "technicians">("staff");
