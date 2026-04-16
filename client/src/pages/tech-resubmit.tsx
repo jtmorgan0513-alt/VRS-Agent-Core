@@ -49,7 +49,7 @@ const resubmitFormSchema = z.object({
     required_error: "Select an appliance type",
   }),
   requestType: z.enum(["authorization", "infestation_non_accessible", "parts_nla"]),
-  warrantyType: z.enum(["sears_protect"]).default("sears_protect"),
+  warrantyType: z.enum(["sears_protect", "american_home_shield", "first_american"]).default("sears_protect"),
   warrantyProvider: z.string().optional(),
   issueDescription: z.string().min(10, "Please provide at least 10 characters").max(2000, "Description must be 2000 characters or less"),
   appealNotes: z.string().max(2000, "Appeal notes must be 2000 characters or less").optional(),

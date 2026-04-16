@@ -9,6 +9,7 @@
 - HEIC photo upload fix deployed for iPhone users
 
 ## Recent Changes
+- **Fixed resubmit form silent failure for AHS / First American tickets** (2026-04-16) — `tech-resubmit.tsx` Zod schema only allowed `sears_protect`, so clicking "Resubmit to VRS" on an AHS rejected ticket silently failed validation (warrantyType field not rendered → no FormMessage shown). Expanded enum to match `tech-submit.tsx`.
 - iPhone photo upload HEIC MIME type fix (accept empty `f.type`)
 - Upload diagnostics endpoint added (`POST /api/uploads/report-error`)
 - WebSocket notifications fixed for agents in "working" status
