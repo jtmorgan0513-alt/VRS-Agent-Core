@@ -1,0 +1,32 @@
+# Changelog
+
+All notable changes to the VRS Digital Authorization Platform will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-04-16
+
+### Added
+- **Core Platform**: Full-stack authorization request management (Express + React + PostgreSQL)
+- **Technician PWA**: Mobile-first submission form with photo/video/voice note uploads, AI description enhancement, submission history, and detail view
+- **Agent Dashboard**: Real-time ticket queue with claim-to-process workflow, division-based routing, SHSAI integration panel, and notification sounds (5 tones)
+- **Admin Dashboard**: User management, analytics, agent status monitoring, ticket overview with audit trail, CSV/XLSX export, technician sync from Snowflake
+- **NLA Workflow**: Dedicated Parts No Longer Available queue with 8 resolution actions, P-card escalation system, and NLA-specific analytics
+- **Two-Stage Review**: AHS and First American warranties support internal approval + external auth code entry
+- **Warranty Providers**: Sears Protect, American Home Shield, and First American all enabled for technician submissions
+- **Split NLA Parts Entry**: Separate sections for NLA parts (unavailable) and other required parts (available) on the submission form
+- **Real-Time Notifications**: WebSocket-based sound dings, toasts, and browser notifications for new tickets, claimed tickets, and queue changes — for agents, admins, and super_admins
+- **Upload Diagnostics**: Client-side upload error reporting endpoint (`POST /api/uploads/report-error`) logs failure details server-side with `[UPLOAD-DIAGNOSTIC]` prefix
+- **iPhone HEIC Fix**: Photo upload file filter accepts empty MIME types (common on iOS HEIC photos)
+- **Resubmission System**: Technicians can resubmit rejected tickets; auto-assigns to original reviewer if online
+- **Division Correction**: Agents can correct appliance type mid-review with intelligent ownership handling
+- **RGC Code System**: Daily rotating codes required before agents can process tickets
+- **Notification Sound System**: 5 tone options (Chime, Bell, Pulse, Cascade, Alert) with per-user volume control
+- **Dark Mode**: App-wide dark mode toggle persisted to localStorage with OS preference fallback
+- **Onboarding**: First-login wizard, What's New modal, contextual help tooltips, searchable Help Center
+- **SMS Notifications**: Twilio-based notifications to technicians on ticket status changes
+- **Technician Feedback**: In-app feedback submission with admin management (status tracking, notes)
+- **Test Cleanup**: Automatic purge of test submissions (testtech1/tmorri1) on every server restart
+- **Mobile Touch Targets**: 44px minimum touch targets on technician login page
