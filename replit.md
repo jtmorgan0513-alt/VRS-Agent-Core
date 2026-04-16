@@ -61,6 +61,13 @@ Key architectural patterns include:
 - Shared `NotificationSettings` dialog component (`client/src/components/notification-settings.tsx`) with gear icon, accessible from both admin and agent sidebar footers above Help Center.
 - All users load their settings on dashboard init via `loadNotificationSettings()` in `client/src/lib/websocket.ts` (sends Bearer token).
 
+## Memory System Boundaries
+- **`memory/`** — Replit Agent's memory (this agent). Do NOT read or write from Claude AI.
+- **`.claude/memory/`** — Claude AI's memory (VS Code SSH). Do NOT read or write from Replit Agent.
+- **`CHANGELOG.md`** — Shared between both agents. Both update the `[Unreleased]` section.
+- **`CLAUDE.md`** — Instructions file for Claude AI. Replit Agent should not modify unless the user asks.
+- **`replit.md`** — Instructions file for Replit Agent (this file).
+
 ## External Dependencies
 - **Twilio:** Used for sending SMS notifications to technicians.
 - **Snowflake:** Integrates for synchronizing technician data into the platform's database. Also provides ProcID (CMB_THD_PTY_ID) and Client Name lookup per service order via `fetchProcIdForServiceOrder` in `server/services/snowflake.ts`, stored as `procId` and `clientNm` on the submissions table.
