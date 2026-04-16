@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Schema safety rules header in `shared/schema.ts` (never rename/retype/remove columns)
+- `strict: true` and `verbose: true` in `drizzle.config.ts` for destructive change prompts
+- Self-delete prevention on `DELETE /api/admin/users/:id`
+- Super admin deletion prevention on `DELETE /api/admin/users/:id`
+- System account guard in `storage.deleteUser()` (throws instead of silently proceeding)
+- Cascade deletion logging in `storage.deleteUser()` — warns with count of affected submissions
+- Production guard on `cleanupTestSubmissions()` — skipped when `NODE_ENV=production`
+- Schema & Data Safety sections in `CLAUDE.md` and `replit.md`
+
 ## [0.1.0] - 2026-04-16
 
 ### Added

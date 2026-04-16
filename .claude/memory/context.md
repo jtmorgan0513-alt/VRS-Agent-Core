@@ -17,6 +17,14 @@
 - NLA parts entry split into NLA parts and Available parts sections
 - All display code handles both old array and new `{"nla":[], "available":[]}` format
 
+## Safety Guardrails
+- `drizzle.config.ts`: `strict: true` + `verbose: true` — `db:push` prompts on destructive changes
+- `shared/schema.ts`: Header with 7 safety rules — never rename/retype/remove columns
+- `server/seed.ts`: `cleanupTestSubmissions()` skipped in production; one-time migrations are flag-gated
+- `server/storage.ts`: `deleteUser()` refuses system accounts, logs cascading submission deletes
+- `server/routes.ts`: DELETE user blocks self-delete + super_admin deletion
+- All PKs are `serial` — never change to varchar/UUID
+
 ## Active Issues
 - Monitor Scott Sancinito (`ssancin`, user 167) upload attempts post-HEIC fix
 - Vite HMR WebSocket connection fails in Replit dev environment (cosmetic only)

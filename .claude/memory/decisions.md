@@ -33,3 +33,10 @@ Use this format for new entries:
 **Context**: Admins had no online/offline toggle, so their `agentStatus` defaulted to "offline" and they were excluded from all WebSocket broadcasts.
 **Decision**: Broadcast functions check role separately — admins/super_admins skip status check entirely and always receive notifications when connected via WebSocket.
 **Consequences**: Admins cannot opt out of notifications while on the dashboard. Acceptable since they are supervisory.
+
+### ADR-004: Schema and Data Safety Guardrails
+**Date**: 2026-04-16
+**Status**: Active
+**Context**: Two AI agents (Replit Agent + Claude AI) both modify code. Schema changes via Drizzle `db:push` can silently drop columns/data. Seed.ts runs on every restart with potentially destructive operations.
+**Decision**: Multi-layer protection: (1) `drizzle.config.ts` uses `strict: true` + `verbose: true` to force confirmation on destructive changes. (2) `shared/schema.ts` has a safety header with explicit rules. (3) `cleanupTestSubmissions()` gated behind `NODE_ENV !== "production"`. (4) `deleteUser()` in storage refuses system accounts and logs cascading deletes. (5) Delete user API blocks self-delete and super_admin deletion.
+**Consequences**: Schema changes require explicit confirmation. Test cleanup won't run in production. Accidental user deletion is harder. Both AI agents have documented rules in their respective instruction files.

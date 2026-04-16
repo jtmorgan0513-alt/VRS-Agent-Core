@@ -2415,6 +2415,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid user ID" });
       }
 
+      if (id === authReq.user!.id) {
+        return res.status(403).json({ error: "Cannot delete your own account" });
+      }
+
       const user = await storage.getUser(id);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -2422,6 +2426,10 @@ export async function registerRoutes(
 
       if (user.isSystemAccount) {
         return res.status(403).json({ error: "System accounts cannot be deleted" });
+      }
+
+      if (user.role === "super_admin") {
+        return res.status(403).json({ error: "Super admin accounts cannot be deleted" });
       }
 
       if (authReq.user?.role === "admin" && user.role !== "vrs_agent" && user.role !== "technician") {

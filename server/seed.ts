@@ -236,6 +236,10 @@ async function purgeTestSubmissions() {
 }
 
 async function cleanupTestSubmissions() {
+  if (process.env.NODE_ENV === "production") {
+    console.log("[test-cleanup] Skipped in production environment");
+    return;
+  }
   const deleted = await purgeTestSubmissions();
   if (deleted > 0) {
     console.log(`[test-cleanup] Startup: deleted ${deleted} test submissions`);

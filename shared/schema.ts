@@ -1,3 +1,18 @@
+// ============================================================================
+// ⚠️  SCHEMA SAFETY RULES — READ BEFORE EDITING
+// ============================================================================
+// 1. NEVER change a column's type (e.g., serial → varchar, text → integer).
+//    This generates destructive ALTER TABLE statements that DROP and recreate columns.
+// 2. NEVER rename a column. Drizzle treats renames as DROP + ADD, losing all data.
+// 3. NEVER remove a column without explicit approval. Add columns freely; removing
+//    requires verifying no code references the column and data is expendable.
+// 4. NEVER change primary key types. All tables use `serial("id").primaryKey()`.
+// 5. Adding new columns with defaults or nullable is always safe.
+// 6. Adding new tables is always safe.
+// 7. Run `npm run db:push` to sync. It will prompt for confirmation on destructive
+//    changes because strict mode is enabled in drizzle.config.ts.
+// ============================================================================
+
 import { sql } from "drizzle-orm";
 import { pgTable, serial, text, varchar, integer, timestamp, date, unique, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

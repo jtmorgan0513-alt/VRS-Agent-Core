@@ -187,6 +187,25 @@ npm run start            # Serves on PORT (default 5000)
 - `GET/PATCH /api/feedback` — Admin feedback management
 - `POST /api/shsai/query` / `POST /api/shsai/followup` — SHSAI AI queries
 
+## ⚠️ Schema & Data Safety Rules
+
+**Before editing `shared/schema.ts`:**
+1. NEVER change a column's type (serial → varchar, text → integer). This is destructive.
+2. NEVER rename a column. Drizzle treats renames as DROP + ADD — all data in that column is lost.
+3. NEVER remove a column without explicit approval. Adding columns is always safe.
+4. NEVER change primary key types. All tables use `serial("id").primaryKey()`.
+5. `drizzle.config.ts` has `strict: true` + `verbose: true` — `db:push` will prompt before destructive changes.
+
+**Before editing `server/seed.ts`:**
+- One-time migrations use flag rows (fake users with special racId). Don't remove these checks.
+- `cleanupTestSubmissions()` only runs in development (NODE_ENV !== "production").
+- `resetAllPasswords()` is flag-gated. It only runs once, ever.
+
+**Deletion guardrails:**
+- `deleteUser()` in storage refuses to delete system accounts and logs cascading submission deletes.
+- DELETE `/api/admin/users/:id` blocks: self-delete, system accounts, super_admins.
+- DELETE `/api/submissions/:id` is admin-only.
+
 ## Key Patterns
 
 - **RBAC**: `authenticateToken` + `requireRole("vrs_agent", "admin")` middleware chain
@@ -197,7 +216,7 @@ npm run start            # Serves on PORT (default 5000)
 - **RGC codes**: Daily rotating codes agents must enter before processing certain ticket actions
 - **WebSocket broadcasts**: Division-based routing; admins always receive; agents need online/working status
 - **NLA parts storage**: JSON `{"nla": [...], "available": [...]}` — backward compatible with old array format
-- **Test cleanup**: `server/seed.ts` purges testtech1/tmorri1 submissions on every restart
+- **Test cleanup**: `server/seed.ts` purges testtech1/tmorri1 submissions in development only
 - **Service order format**: `DDDD-SSSSSSSS` (district-serviceorder, hyphenated)
 
 ## Test Credentials

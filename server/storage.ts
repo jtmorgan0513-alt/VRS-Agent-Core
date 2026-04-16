@@ -215,6 +215,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: number): Promise<boolean> {
+    const user = await this.getUser(id);
+    if (!user) return false;
+    if (user.isSystemAccount) {
+      throw new Error("Cannot delete system accounts");
+    }
+
+    const techSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.technicianId, id));
+    if (techSubmissions.length > 0) {
+      console.warn(`[deleteUser] WARNING: Cascading delete of ${techSubmissions.length} submissions for user ${id} (${user.racId})`);
+      const subIds = techSubmissions.map(s => s.id);
+      await db.delete(smsNotifications).where(inArray(smsNotifications.submissionId, subIds));
+      await db.delete(submissions).where(inArray(submissions.id, subIds));
+    }
+
     await db.delete(vrsAgentSpecializations).where(eq(vrsAgentSpecializations.userId, id));
     await db.update(dailyRgcCodes).set({ createdBy: null } as any).where(eq(dailyRgcCodes.createdBy, id));
     await db.update(submissions).set({ assignedTo: null } as any).where(eq(submissions.assignedTo, id));
@@ -222,13 +236,8 @@ export class DatabaseStorage implements IStorage {
     await db.update(submissions).set({ stage2ReviewedBy: null } as any).where(eq(submissions.stage2ReviewedBy, id));
     await db.update(feedback).set({ resolvedBy: null } as any).where(eq(feedback.resolvedBy, id));
     await db.delete(feedback).where(eq(feedback.technicianId, id));
-    const techSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.technicianId, id));
-    if (techSubmissions.length > 0) {
-      const subIds = techSubmissions.map(s => s.id);
-      await db.delete(smsNotifications).where(inArray(smsNotifications.submissionId, subIds));
-      await db.delete(submissions).where(inArray(submissions.id, subIds));
-    }
     const result = await db.delete(users).where(eq(users.id, id)).returning();
+    console.log(`[deleteUser] Deleted user ${id} (${user.racId}, role=${user.role})`);
     return result.length > 0;
   }
 

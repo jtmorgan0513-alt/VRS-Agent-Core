@@ -61,6 +61,15 @@ Key architectural patterns include:
 - Shared `NotificationSettings` dialog component (`client/src/components/notification-settings.tsx`) with gear icon, accessible from both admin and agent sidebar footers above Help Center.
 - All users load their settings on dashboard init via `loadNotificationSettings()` in `client/src/lib/websocket.ts` (sends Bearer token).
 
+## Schema & Data Safety
+- `drizzle.config.ts` has `strict: true` and `verbose: true` — `db:push` will prompt for confirmation on any destructive changes.
+- `shared/schema.ts` has safety rules at the top: never change column types, never rename columns, never remove columns without approval.
+- `server/seed.ts` test cleanup (`cleanupTestSubmissions`) is skipped in production (NODE_ENV === "production").
+- `server/seed.ts` one-time migrations (resetAllPasswords, backfillClaimedAt) use flag rows — do not remove these checks.
+- `server/storage.ts` `deleteUser()` refuses system accounts and logs cascading submission deletes.
+- `DELETE /api/admin/users/:id` blocks: self-delete, system accounts, super_admin role.
+- All primary keys are `serial`. Never change to varchar/UUID.
+
 ## Memory System Boundaries
 - **`memory/`** — Replit Agent's memory (this agent). Do NOT read or write from Claude AI.
 - **`.claude/memory/`** — Claude AI's memory (VS Code SSH). Do NOT read or write from Replit Agent.
