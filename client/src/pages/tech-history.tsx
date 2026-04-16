@@ -33,35 +33,64 @@ export default function TechHistoryPage() {
             </CardContent>
           </Card>
         ) : (
-          submissions.map((sub) => (
-            <Link key={sub.id} href={`/tech/submissions/${sub.id}`}>
-              <Card className="hover-elevate cursor-pointer">
-                <CardContent className="p-3">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="text-sm font-medium" data-testid={`text-history-so-${sub.id}`}>
-                      SO #{sub.serviceOrder}
-                    </p>
-                    <StatusBadge status={sub.ticketStatus || sub.stage1Status} />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {sub.applianceType.replace("_", " ")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDateShort(sub.createdAt)}
-                    </p>
-                  </div>
-                  <div className="mt-0.5">
-                    <RequestTypeBadge requestType={sub.requestType} />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))
+          submissions.map((sub) => {
+            const status = sub.ticketStatus || sub.stage1Status;
+            const rejectionReason = getRejectionReason(sub);
+            return (
+              <Link key={sub.id} href={`/tech/submissions/${sub.id}`}>
+                <Card className="hover-elevate cursor-pointer">
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="text-sm font-medium" data-testid={`text-history-so-${sub.id}`}>
+                        SO #{sub.serviceOrder}
+                      </p>
+                      <StatusBadge status={status} />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {sub.applianceType.replace("_", " ")}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDateShort(sub.createdAt)}
+                      </p>
+                    </div>
+                    <div className="mt-0.5">
+                      <RequestTypeBadge requestType={sub.requestType} />
+                    </div>
+                    {(status === "rejected" || status === "rejected_closed") && rejectionReason && (
+                      <p
+                        className="text-xs text-destructive mt-1.5 line-clamp-2"
+                        data-testid={`text-history-reason-${sub.id}`}
+                      >
+                        <span className="font-medium">Reason:</span> {rejectionReason}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })
         )}
       </div>
     </div>
   );
+}
+
+function getRejectionReason(sub: Submission): string {
+  if (sub.rejectionReasons) {
+    try {
+      const parsed = typeof sub.rejectionReasons === "string"
+        ? JSON.parse(sub.rejectionReasons)
+        : sub.rejectionReasons;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const joined = parsed.filter((r: unknown) => typeof r === "string" && r.trim().length > 0).join(", ");
+        if (joined) return joined;
+      }
+    } catch {
+      // fall through to stage1RejectionReason
+    }
+  }
+  return sub.stage1RejectionReason || "";
 }
 
 function StatusBadge({ status }: { status: string }) {

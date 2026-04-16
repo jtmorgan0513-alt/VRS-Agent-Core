@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Resubmit form silently failed for AHS / First American tickets**: The Zod schema on `client/src/pages/tech-resubmit.tsx` only allowed `warrantyType: "sears_protect"`, so form validation silently rejected rejected AHS/FA tickets on submit (no visible error — the field isn't rendered). Technicians had to create a new ticket instead. Schema now matches `tech-submit.tsx` and accepts all three providers.
 
 ### Added
+- **Rejection reason shown in technician history list**: Previously techs had to tap through to each rejected ticket's detail page to see why it was rejected. The history list now shows a compact `Reason: …` line (2-line clamp, destructive color) under cards with `rejected` or `rejected_closed` status. Reads from `rejectionReasons` (JSON array) with safe fallback to `stage1RejectionReason`.
+
+### Added
 - Schema safety rules header in `shared/schema.ts` (never rename/retype/remove columns)
 - `strict: true` and `verbose: true` in `drizzle.config.ts` for destructive change prompts
 - Self-delete prevention on `DELETE /api/admin/users/:id`
