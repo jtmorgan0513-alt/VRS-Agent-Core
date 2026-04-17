@@ -97,6 +97,8 @@ import {
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/components/theme-provider";
 import PhotoLightbox from "@/components/photo-lightbox";
+import { SmsPreview } from "@/components/sms-preview";
+import { buildSmsPreview } from "@/lib/smsPreview";
 
 type SubmissionWithTech = Submission & {
   technicianName: string;
@@ -2173,10 +2175,13 @@ export default function AgentDashboard() {
                               <div className="space-y-2">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                   <Send className="w-3 h-3" />
-                                  Instructions for Technician *
+                                  Additional context for the technician *
                                 </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  Auth code, part number, and standard NLA instructions are included automatically. Add anything extra the tech needs (scheduling, customer notes, special handling). Required.
+                                </p>
                                 <Textarea
-                                  placeholder="Provide clear instructions for the technician. Required for all NLA resolutions."
+                                  placeholder="e.g., Customer is aware of the delay — schedule for Friday"
                                   value={technicianMessage}
                                   onChange={(e) => setTechnicianMessage(e.target.value)}
                                   className="resize-none"
@@ -2184,6 +2189,24 @@ export default function AgentDashboard() {
                                   data-testid="input-nla-tech-message"
                                 />
                               </div>
+                              {nlaAction && (
+                                <SmsPreview
+                                  testId="preview-nla"
+                                  text={buildSmsPreview({
+                                    serviceOrder: selectedSubmission.serviceOrder,
+                                    action: nlaAction as any,
+                                    message: technicianMessage,
+                                    rgcCode: todaysRgcCode,
+                                    partNumber: nlaFoundPartNumber,
+                                    rejectionReasons: selectedRejectionReasons
+                                      .map((r) => (r === "Other" ? otherRejectionText.trim() || "Other" : r))
+                                      .filter(Boolean),
+                                    invalidReasons: selectedInvalidReasons
+                                      .map((r) => (r === "Other" ? otherInvalidText.trim() || "Other" : r))
+                                      .filter(Boolean),
+                                  })}
+                                />
+                              )}
 
                               <div>
                                 <Label className="text-xs text-muted-foreground mb-1 block">Internal Agent Notes (not sent to technician)</Label>
@@ -2347,10 +2370,13 @@ export default function AgentDashboard() {
                               <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
                                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                   <Send className="w-3 h-3" />
-                                  Approval Notes to Technician (sent via SMS)
+                                  Additional message (optional)
                                 </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  The tech will already see the auth code and TechHub instructions. Add anything extra you want them to know — your text appears as an extra paragraph at the end of the SMS.
+                                </p>
                                 <Textarea
-                                  placeholder="Add notes for the technician regarding this approval (e.g., replacement instructions, special conditions)..."
+                                  placeholder="e.g., Submit close-out by EOD please"
                                   value={technicianMessage}
                                   onChange={(e) => setTechnicianMessage(e.target.value)}
                                   className="resize-none"
@@ -2358,6 +2384,16 @@ export default function AgentDashboard() {
                                   data-testid="input-approval-notes-stage2"
                                 />
                               </div>
+                              <SmsPreview
+                                testId="preview-approve-stage2"
+                                text={buildSmsPreview({
+                                  serviceOrder: selectedSubmission.serviceOrder,
+                                  action: "approve",
+                                  message: technicianMessage,
+                                  rgcCode: todaysRgcCode,
+                                  authCode: authCode,
+                                })}
+                              />
 
                               <div>
                                 <Label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1.5">
@@ -2572,10 +2608,13 @@ export default function AgentDashboard() {
                                   <div className="space-y-2 border rounded-lg p-4 bg-orange-50/50 dark:bg-orange-950/10">
                                     <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                       <Send className="w-3 h-3" />
-                                      Message to Technician (sent via SMS)
+                                      Additional context (optional)
                                     </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                      The tech will already see the rejection reason and a resubmit link. Use this only to add extra context (e.g. customer details, scheduling notes).
+                                    </p>
                                     <Textarea
-                                      placeholder="Add a custom message for the technician explaining what needs to be corrected..."
+                                      placeholder="e.g., Customer is aware — please retake the estimate photo before EOD"
                                       value={technicianMessage}
                                       onChange={(e) => setTechnicianMessage(e.target.value)}
                                       className="resize-none"
@@ -2583,6 +2622,26 @@ export default function AgentDashboard() {
                                       data-testid="input-technician-message"
                                     />
                                   </div>
+                                  <SmsPreview
+                                    testId="preview-reject"
+                                    text={buildSmsPreview({
+                                      serviceOrder: selectedSubmission.serviceOrder,
+                                      action: "reject",
+                                      message: technicianMessage,
+                                      rejectionReasons: selectedRejectionReasons
+                                        .map((r) => (r === "Other" ? otherRejectionText.trim() || "Other" : r))
+                                        .filter(Boolean),
+                                      rejectedMediaSummary: [
+                                        rejectedPhotos.length > 0 ? `${rejectedPhotos.length} photo(s) rejected` : null,
+                                        rejectedVideo.rejected
+                                          ? `Video rejected${rejectedVideo.reason ? `: ${rejectedVideo.reason === "Other" ? otherVideoRejectionText.trim() || "Other" : rejectedVideo.reason}` : ""}`
+                                          : null,
+                                        rejectedVoiceNote.rejected
+                                          ? `Voice note rejected${rejectedVoiceNote.reason ? `: ${rejectedVoiceNote.reason === "Other" ? otherVoiceRejectionText.trim() || "Other" : rejectedVoiceNote.reason}` : ""}`
+                                          : null,
+                                      ].filter(Boolean) as string[],
+                                    })}
+                                  />
                                 </div>
                               )}
 
@@ -2626,16 +2685,31 @@ export default function AgentDashboard() {
                                     </div>
                                   </div>
                                   <div className="space-y-2">
-                                    <Label className="text-xs text-muted-foreground">Message to Technician (optional)</Label>
+                                    <Label className="text-xs text-muted-foreground">Additional context (optional)</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                      The tech will already see the close reason and a note that no further VRS submissions are possible. Add anything extra they should tell the customer.
+                                    </p>
                                     <textarea
                                       className="w-full text-sm border rounded-md px-3 py-2 bg-background resize-none"
-                                      placeholder="e.g., Offer customer cash call estimate for repair..."
+                                      placeholder="e.g., Offer customer cash call estimate for repair"
                                       value={technicianMessage}
                                       onChange={(e) => setTechnicianMessage(e.target.value)}
                                       rows={3}
                                       data-testid="input-reject-close-message"
                                     />
                                   </div>
+                                  <SmsPreview
+                                    testId="preview-reject-close"
+                                    text={buildSmsPreview({
+                                      serviceOrder: selectedSubmission.serviceOrder,
+                                      action: "reject_and_close",
+                                      message: technicianMessage,
+                                      rejectCloseReason:
+                                        rejectCloseReason === "Other"
+                                          ? rejectCloseCustomReason.trim() || "Other"
+                                          : rejectCloseReason,
+                                    })}
+                                  />
                                 </div>
                               )}
 
@@ -2703,10 +2777,13 @@ export default function AgentDashboard() {
                                   <div className="space-y-2 border rounded-lg p-4 bg-orange-50/50 dark:bg-orange-950/10">
                                     <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                       <Send className="w-3 h-3" />
-                                      Message to Technician (sent via SMS)
+                                      Additional instructions (optional)
                                     </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                      The tech will already see the invalid reason and a note that VRS cannot process this. Add specific next steps (e.g. who to contact instead).
+                                    </p>
                                     <Textarea
-                                      placeholder="Add instructions for the technician explaining why this request cannot be processed..."
+                                      placeholder="e.g., Direct customer to call 1-800-... to renew their plan first"
                                       value={invalidMessage}
                                       onChange={(e) => setInvalidMessage(e.target.value)}
                                       className="resize-none"
@@ -2714,6 +2791,17 @@ export default function AgentDashboard() {
                                       data-testid="input-invalid-message"
                                     />
                                   </div>
+                                  <SmsPreview
+                                    testId="preview-invalid"
+                                    text={buildSmsPreview({
+                                      serviceOrder: selectedSubmission.serviceOrder,
+                                      action: "invalid",
+                                      invalidReasons: selectedInvalidReasons
+                                        .map((r) => (r === "Other" ? otherInvalidText.trim() || "Other" : r))
+                                        .filter(Boolean),
+                                      invalidInstructions: invalidMessage,
+                                    })}
+                                  />
                                 </div>
                               )}
 
@@ -2753,20 +2841,35 @@ export default function AgentDashboard() {
                               )}
 
                               {(selectedAction === "approve" || selectedAction === "approve_submission") && (
-                                <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
-                                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                    <Send className="w-3 h-3" />
-                                    Approval Notes to Technician (sent via SMS)
-                                  </Label>
-                                  <Textarea
-                                    placeholder="Add notes for the technician regarding this approval (e.g., replacement instructions, special conditions)..."
-                                    value={technicianMessage}
-                                    onChange={(e) => setTechnicianMessage(e.target.value)}
-                                    className="resize-none"
-                                    rows={3}
-                                    data-testid="input-approval-notes"
+                                <>
+                                  <div className="space-y-2 border rounded-lg p-4 bg-green-50/50 dark:bg-green-950/10">
+                                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                      <Send className="w-3 h-3" />
+                                      Additional message (optional)
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                      The tech will already see the approval{selectedAction === "approve" ? " and auth code" : ""}. Add anything extra you want them to know — your text appears as an extra paragraph at the end of the SMS.
+                                    </p>
+                                    <Textarea
+                                      placeholder="e.g., Looks great — auth code coming in ~10 min"
+                                      value={technicianMessage}
+                                      onChange={(e) => setTechnicianMessage(e.target.value)}
+                                      className="resize-none"
+                                      rows={3}
+                                      data-testid="input-approval-notes"
+                                    />
+                                  </div>
+                                  <SmsPreview
+                                    testId="preview-approve"
+                                    text={buildSmsPreview({
+                                      serviceOrder: selectedSubmission.serviceOrder,
+                                      action: selectedAction,
+                                      message: technicianMessage,
+                                      rgcCode: todaysRgcCode,
+                                      authCode: authCode,
+                                    })}
                                   />
-                                </div>
+                                </>
                               )}
 
                               {selectedAction === "approve_submission" && (

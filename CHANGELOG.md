@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Live SMS preview pane on every agent action form**: Agents now see a live, auto-updating preview of the exact SMS the technician will receive — across all 6 action forms (Stage 1 reject, reject & close, mark invalid, Stage 1 approve / approve_submission, Stage 2 auth-code approval, and all NLA actions). The preview renders below the message textarea with character + segment count, so agents can avoid duplicating boilerplate (e.g. "Order from TechHub") that the system auto-includes. New files: `client/src/lib/smsPreview.ts` (pure preview-string builders mirroring server templates) and `client/src/components/sms-preview.tsx` (styled preview box).
+- **Renamed "Message to Technician" → "Additional context (optional)"** with helper text on every action form, explaining what the tech will already see automatically vs. what the agent should add. Reduces redundant duplication of boilerplate. NLA forms keep the field as required and label it "Additional context for the technician *".
+
 ### Changed
 - **Standardized "Message to Technician" branding across SMS and in-app**: Previously the same `technicianMessage` field appeared to techs under four different labels — "Agent message:", "Agent notes:", "Instructions:", and "Agent Message:" — depending on which action path was used. All channels now use a consistent, branded prefix:
   - **`Feedback from VRS — Action required:`** when the tech needs to do something (Stage 1 reject + resubmit, NLA reject + resubmit, NLA part-found-tech-orders).

@@ -1,0 +1,139 @@
+export type SmsPreviewContext = {
+  serviceOrder: string;
+  action:
+    | "approve"
+    | "approve_submission"
+    | "reject"
+    | "reject_and_close"
+    | "invalid"
+    | "nla_replacement_submitted"
+    | "nla_replacement_tech_initiates"
+    | "nla_part_found_vrs_ordered"
+    | "nla_part_found_tech_orders"
+    | "nla_reject"
+    | "nla_invalid";
+  message?: string;
+  rejectionReasons?: string[];
+  rejectedMediaSummary?: string[];
+  rejectCloseReason?: string;
+  invalidReasons?: string[];
+  invalidInstructions?: string;
+  rgcCode?: string | null;
+  authCode?: string;
+  authCodeProvider?: string;
+  partNumber?: string;
+  isNlaApproval?: boolean;
+};
+
+const RESUBMIT_PLACEHOLDER = "(resubmit link will be included)";
+
+export function buildSmsPreview(ctx: SmsPreviewContext): string {
+  const so = ctx.serviceOrder || "______";
+  const msg = (ctx.message || "").trim();
+
+  switch (ctx.action) {
+    case "approve_submission": {
+      const base = `VRS Update for SO#${so}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+      return msg ? `${base}\n\n${msg}` : base;
+    }
+
+    case "approve": {
+      if (ctx.isNlaApproval) {
+        let m = `VRS Authorization for SO#${so}`;
+        if (ctx.rgcCode) {
+          m += `\nYour RGC/Auth Code: ${ctx.rgcCode}\nEnter this code in TechHub to complete the job.`;
+        }
+        m += `\n\nYour Parts NLA request has been received by the VRS Parts team. You will be contacted with further information regarding part sourcing and availability.`;
+        if (msg) m += `\n\n${msg}`;
+        return m;
+      }
+      let m: string;
+      if (ctx.rgcCode) {
+        m = `VRS Authorization for SO#${so}\nYour RGC/Auth Code: ${ctx.rgcCode}\nEnter this code in TechHub to complete the job.`;
+      } else {
+        m = `VRS Authorization Code: Your auth code for SO# ${so} is: ${ctx.authCode || "______"}. Please use this code to proceed with the repair.`;
+      }
+      if (msg) m += `\n\n${msg}`;
+      return m;
+    }
+
+    case "reject": {
+      const parts: string[] = [];
+      if (ctx.rejectionReasons && ctx.rejectionReasons.length > 0) {
+        parts.push(ctx.rejectionReasons.join(", "));
+      }
+      if (ctx.rejectedMediaSummary && ctx.rejectedMediaSummary.length > 0) {
+        parts.push(ctx.rejectedMediaSummary.join("; "));
+      }
+      const reason = parts.length > 0 ? parts.join(". ") : "More information needed";
+      const full = msg ? `${reason}\n\nFeedback from VRS — Action required: ${msg}` : reason;
+      return `VRS Update for SO#${so}\n\nStatus: MORE INFO NEEDED\nReason: ${full}\n\nTap to resubmit with your info saved:\n${RESUBMIT_PLACEHOLDER}`;
+    }
+
+    case "reject_and_close": {
+      const reason = ctx.rejectCloseReason || "Not covered under warranty";
+      const full = msg ? `${reason}\n\nFeedback from VRS: ${msg}` : reason;
+      return `VRS Update for SO#${so}\n\nStatus: REJECTED — NOT COVERED\nReason: ${full}\n\nThis repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.`;
+    }
+
+    case "invalid": {
+      const reason =
+        (ctx.invalidReasons && ctx.invalidReasons.length > 0
+          ? ctx.invalidReasons.join(", ")
+          : "") || "Request not applicable";
+      let m = `VRS Update for SO#${so}\n\nStatus: NOT APPLICABLE\nReason: ${reason}`;
+      const instructions = (ctx.invalidInstructions || msg || "").trim();
+      if (instructions) m += `\n\nInstructions: ${instructions}`;
+      m += `\n\nThis request cannot be processed through VRS. Please follow the instructions above.`;
+      return m;
+    }
+
+    case "nla_part_found_tech_orders": {
+      let m = `VRS NLA Update for SO#${so}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${ctx.rgcCode || "______"}\nPart Number: ${ctx.partNumber?.trim().toUpperCase() || "______"}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+      if (msg) m += `\n\nFeedback from VRS — Action required: ${msg}`;
+      return m;
+    }
+
+    case "nla_part_found_vrs_ordered": {
+      let m = `VRS NLA Update for SO#${so}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${ctx.rgcCode || "______"}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+      if (msg) m += `\n\nFeedback from VRS: ${msg}`;
+      return m;
+    }
+
+    case "nla_replacement_submitted":
+    case "nla_replacement_tech_initiates": {
+      let m = `VRS NLA Update for SO#${so}\n\nAuth Code: ${ctx.rgcCode || "______"}\nYour NLA parts request has been processed by the VRS team.`;
+      if (msg) m += `\n\nFeedback from VRS: ${msg}`;
+      return m;
+    }
+
+    case "nla_reject": {
+      const reason =
+        (ctx.rejectionReasons && ctx.rejectionReasons.length > 0
+          ? ctx.rejectionReasons.join(", ")
+          : "") || "More information needed";
+      let m = `VRS NLA Update for SO#${so}\n\nStatus: MORE INFO NEEDED\nReason: ${reason}\n\nTap to resubmit:\n${RESUBMIT_PLACEHOLDER}`;
+      if (msg) m += `\n\nFeedback from VRS — Action required: ${msg}`;
+      return m;
+    }
+
+    case "nla_invalid": {
+      const reason =
+        (ctx.invalidReasons && ctx.invalidReasons.length > 0
+          ? ctx.invalidReasons.join(", ")
+          : "") || "Request not applicable";
+      let m = `VRS NLA Update for SO#${so}\n\nStatus: NOT APPLICABLE\nReason: ${reason}`;
+      if (msg) m += `\n\nInstructions: ${msg}`;
+      return m;
+    }
+
+    default:
+      return "";
+  }
+}
+
+export function smsSegmentInfo(text: string): { chars: number; segments: number } {
+  const chars = text.length;
+  const segments = chars === 0 ? 0 : Math.ceil(chars / 160);
+  return { chars, segments };
+}
