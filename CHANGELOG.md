@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Standardized "Message to Technician" branding across SMS and in-app**: Previously the same `technicianMessage` field appeared to techs under four different labels — "Agent message:", "Agent notes:", "Instructions:", and "Agent Message:" — depending on which action path was used. All channels now use a consistent, branded prefix:
+  - **`Feedback from VRS — Action required:`** when the tech needs to do something (Stage 1 reject + resubmit, NLA reject + resubmit, NLA part-found-tech-orders).
+  - **`Feedback from VRS:`** for informational messages (Stage 1 approve, reject and close, NLA P-card confirm, NLA approval, auth code delivery).
+  - Updated in `server/sms.ts` (`buildNlaApprovalMessage`, `buildAuthCodeMessage`), six call sites in `server/routes.ts` (lines ~1233, 1328, 1347, 1555, 1611, 1630), and three rendered labels in `client/src/pages/submission-detail.tsx` (NLA tech-orders, rejected, rejected_closed). Two agent-side preview labels in `client/src/pages/agent-dashboard.tsx` (lines ~1993, 3170) were also unified to "Message to Technician:" for clarity to the agent.
+
 ### Fixed
 - **Resubmit form silently failed for AHS / First American tickets**: The Zod schema on `client/src/pages/tech-resubmit.tsx` only allowed `warrantyType: "sears_protect"`, so form validation silently rejected rejected AHS/FA tickets on submit (no visible error — the field isn't rendered). Technicians had to create a new ticket instead. Schema now matches `tech-submit.tsx` and accepts all three providers.
 

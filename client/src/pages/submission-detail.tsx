@@ -271,7 +271,7 @@ export default function SubmissionDetailPage() {
               )}
               {sub.technicianMessage && (
                 <div className="mt-3 pt-3 border-t">
-                  <p className="text-sm font-semibold mb-1">Instructions:</p>
+                  <p className="text-sm font-semibold mb-1">Feedback from VRS — Action required:</p>
                   <p className="text-sm" data-testid="text-nla-instructions">{sub.technicianMessage}</p>
                 </div>
               )}
@@ -290,7 +290,7 @@ export default function SubmissionDetailPage() {
               </p>
               {sub.technicianMessage && (
                 <div className="mt-2 pt-2 border-t">
-                  <p className="text-sm font-semibold text-destructive mb-1">Agent Message:</p>
+                  <p className="text-sm font-semibold text-destructive mb-1">Feedback from VRS — Action required:</p>
                   <p className="text-sm" data-testid="text-technician-message">{sub.technicianMessage}</p>
                 </div>
               )}
@@ -309,7 +309,7 @@ export default function SubmissionDetailPage() {
               </p>
               {sub.technicianMessage && (
                 <div className="mt-2 pt-2 border-t">
-                  <p className="text-sm font-semibold text-destructive mb-1">Agent Message:</p>
+                  <p className="text-sm font-semibold text-destructive mb-1">Feedback from VRS:</p>
                   <p className="text-sm">{sub.technicianMessage}</p>
                 </div>
               )}

@@ -1987,7 +1987,7 @@ export default function AgentDashboard() {
                                 </div>
                                 {selectedSubmission.technicianMessage && (
                                   <div>
-                                    <span className="text-muted-foreground text-xs">Instructions:</span>
+                                    <span className="text-muted-foreground text-xs">Message to Technician:</span>
                                     <p className="text-sm">{selectedSubmission.technicianMessage}</p>
                                   </div>
                                 )}
@@ -3164,7 +3164,7 @@ export default function AgentDashboard() {
           )}
           {technicianMessage && (
             <div className="px-6 pb-2">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Instructions:</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Message to Technician:</p>
               <p className="text-sm">{technicianMessage}</p>
             </div>
           )}

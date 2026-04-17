@@ -138,7 +138,7 @@ export function buildNlaApprovalMessage(serviceOrder: string, rgcCode?: string |
   }
   msg += `\n\nYour Parts NLA request has been received by the VRS Parts team. You will be contacted with further information regarding part sourcing and availability.`;
   if (agentMessage) {
-    msg += `\n\nAgent notes: ${agentMessage}`;
+    msg += `\n\nFeedback from VRS: ${agentMessage}`;
   }
   return msg;
 }
@@ -151,7 +151,7 @@ export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgc
     msg = `VRS Authorization Code: Your auth code for SO# ${serviceOrder} is: ${authCode}. Please use this code to proceed with the repair.`;
   }
   if (agentMessage) {
-    msg += `\n\nAgent notes: ${agentMessage}`;
+    msg += `\n\nFeedback from VRS: ${agentMessage}`;
   }
   return msg;
 }

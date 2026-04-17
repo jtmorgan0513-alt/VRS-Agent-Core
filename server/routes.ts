@@ -1227,7 +1227,7 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
 
         const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
-        smsMessage = technicianMessage ? `${baseMsg}\n\nAgent notes: ${technicianMessage}` : baseMsg;
+        smsMessage = technicianMessage ? `${baseMsg}\n\nFeedback from VRS: ${technicianMessage}` : baseMsg;
         smsType = "submission_approved";
 
         const updated = await storage.updateSubmission(id, updateData as any);
@@ -1322,7 +1322,7 @@ export async function registerRoutes(
           if (mediaIssues.length > 0) rejectionParts.push(mediaIssues.join("; "));
         }
         const reasonText = rejectionParts.length > 0 ? rejectionParts.join(". ") : "More information needed";
-        const fullMessage = technicianMessage ? `${reasonText}\n\nAgent message: ${technicianMessage}` : reasonText;
+        const fullMessage = technicianMessage ? `${reasonText}\n\nFeedback from VRS — Action required: ${technicianMessage}` : reasonText;
         smsMessage = buildStage1RejectedMessage(submission.serviceOrder, fullMessage, resubmitLink);
         smsType = "ticket_rejected";
 
@@ -1341,7 +1341,7 @@ export async function registerRoutes(
         const reasonText = rejectionReasons && rejectionReasons.length > 0
           ? rejectionReasons.join(", ")
           : "Not covered under warranty";
-        const fullMsg = technicianMessage ? `${reasonText}\n\nAgent message: ${technicianMessage}` : reasonText;
+        const fullMsg = technicianMessage ? `${reasonText}\n\nFeedback from VRS: ${technicianMessage}` : reasonText;
         smsMessage = buildRejectAndCloseMessage(submission.serviceOrder, fullMsg);
         smsType = "ticket_rejected_closed";
 
@@ -1549,7 +1549,7 @@ export async function registerRoutes(
         updateData.rgcCode = rgcCode;
 
         smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
-        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        if (technicianMessage) smsMessage += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
         smsType = "nla_part_tech_orders";
 
       } else if (action === "nla_escalate_to_pcard") {
@@ -1605,7 +1605,7 @@ export async function registerRoutes(
           smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nAuth Code: ${rgcCode}\nYour NLA parts request has been processed by the VRS team.`;
         }
         if (technicianMessage || submission.technicianMessage) {
-          smsMessage += `\n\nInstructions: ${technicianMessage || submission.technicianMessage}`;
+          smsMessage += `\n\nFeedback from VRS: ${technicianMessage || submission.technicianMessage}`;
         }
         smsType = "nla_pcard_confirmed";
 
@@ -1624,7 +1624,7 @@ export async function registerRoutes(
         const reasonText = rejectionReasons?.join(", ") || "More information needed";
 
         smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reasonText}\n\nTap to resubmit:\n${resubmitLink}`;
-        if (technicianMessage) smsMessage += `\n\nAgent notes: ${technicianMessage}`;
+        if (technicianMessage) smsMessage += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
         smsType = "nla_rejected";
 
         broadcastToNlaDivisionAgents(submission.applianceType, {
