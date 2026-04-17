@@ -1227,7 +1227,7 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
 
         const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
-        smsMessage = technicianMessage ? `${baseMsg}\n\nFeedback from VRS: ${technicianMessage}` : baseMsg;
+        smsMessage = technicianMessage ? `${baseMsg}\n\n${technicianMessage}` : baseMsg;
         smsType = "submission_approved";
 
         const updated = await storage.updateSubmission(id, updateData as any);

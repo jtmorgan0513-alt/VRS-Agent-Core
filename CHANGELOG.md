@@ -9,7 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - **Standardized "Message to Technician" branding across SMS and in-app**: Previously the same `technicianMessage` field appeared to techs under four different labels — "Agent message:", "Agent notes:", "Instructions:", and "Agent Message:" — depending on which action path was used. All channels now use a consistent, branded prefix:
   - **`Feedback from VRS — Action required:`** when the tech needs to do something (Stage 1 reject + resubmit, NLA reject + resubmit, NLA part-found-tech-orders).
-  - **`Feedback from VRS:`** for informational messages (Stage 1 approve, reject and close, NLA P-card confirm, NLA approval, auth code delivery).
+  - **`Feedback from VRS:`** for informational messages (reject and close, NLA P-card confirm).
+  - **No prefix** on approval paths (Stage 1 approve, final approve / auth code, NLA approval) — the agent's optional note is appended inline as an extra paragraph since "feedback" wording felt awkward on positive outcomes. If the agent leaves the note blank, the SMS is just the standard approval text with no extra section.
   - Updated in `server/sms.ts` (`buildNlaApprovalMessage`, `buildAuthCodeMessage`), six call sites in `server/routes.ts` (lines ~1233, 1328, 1347, 1555, 1611, 1630), and three rendered labels in `client/src/pages/submission-detail.tsx` (NLA tech-orders, rejected, rejected_closed). Two agent-side preview labels in `client/src/pages/agent-dashboard.tsx` (lines ~1993, 3170) were also unified to "Message to Technician:" for clarity to the agent.
 
 ### Fixed
