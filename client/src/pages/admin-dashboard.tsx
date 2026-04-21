@@ -823,7 +823,8 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
             {lightboxIndex + 1} / {lightboxPhotos.length}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </Dialog>
   );
