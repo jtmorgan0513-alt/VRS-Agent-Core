@@ -1226,7 +1226,7 @@ export async function registerRoutes(
         updateData.stage1ReviewedAt = new Date();
         updateData.technicianMessage = technicianMessage || null;
 
-        const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+        const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. You are cleared to leave the site and head to your next call.\n\nVRS is now working on obtaining your authorization code and will text it to you as soon as it is available.`;
         smsMessage = technicianMessage ? `${baseMsg}\n\n${technicianMessage}` : baseMsg;
         smsType = "submission_approved";
 
