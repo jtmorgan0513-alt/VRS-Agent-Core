@@ -446,7 +446,12 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent
+        className="max-w-3xl max-h-[85vh] flex flex-col"
+        onPointerDownOutside={(e) => { if (lightboxOpen) e.preventDefault(); }}
+        onInteractOutside={(e) => { if (lightboxOpen) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (lightboxOpen) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle data-testid="text-audit-title">
             {sub ? `Ticket Detail — SO# ${sub.serviceOrder}` : "Ticket Detail"}
