@@ -41,7 +41,7 @@ export function buildSmsPreview(ctx: SmsPreviewContext): string {
 
   switch (ctx.action) {
     case "approve_submission": {
-      const base = `VRS Update for SO#${so}: Your submission has been reviewed and APPROVED. VRS is now working on obtaining your authorization code. Please stand by.`;
+      const base = `VRS Update for SO#${so}: Your submission has been reviewed and APPROVED. You are cleared to leave the site and head to your next call.\n\nIMPORTANT: Reschedule this call for the same day so you can reopen it later and enter the authorization code to finalize the part order.\n\nVRS is now working on obtaining your authorization code and will text it to you as soon as it is available.`;
       return msg ? `${base}\n\n${msg}` : base;
     }
 
