@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -497,6 +497,7 @@ export default function TechSubmitPage() {
       return await res.json();
     },
     onSuccess: (data) => {
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       toast({ title: "Submission Created", description: `Service Order #${data.submission.serviceOrder} submitted successfully.` });
       setLocation(`/tech/submissions/${data.submission.id}`);
@@ -558,6 +559,126 @@ export default function TechSubmitPage() {
   const descriptionLength = watchedValues.issueDescription?.length || 0;
   const aiButtonDisabled = descriptionLength < 20 || aiEnhanceMutation.isPending;
 
+  const DRAFT_KEY = `vrs_tech_submit_draft_v1_${user?.id ?? "anon"}`;
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const draftHydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!user?.id || draftHydratedRef.current) return;
+    draftHydratedRef.current = true;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (draft.formValues) form.reset({ ...form.getValues(), ...draft.formValues });
+      if (Array.isArray(draft.estimatePhotoUrls)) setEstimatePhotoUrls(draft.estimatePhotoUrls);
+      if (Array.isArray(draft.issuePhotoUrls)) setIssuePhotoUrls(draft.issuePhotoUrls);
+      if (typeof draft.videoUrl === "string") setVideoUrl(draft.videoUrl);
+      if (typeof draft.voiceNoteUrl === "string") setVoiceNoteUrl(draft.voiceNoteUrl);
+      if (Array.isArray(draft.partNumbers) && draft.partNumbers.length) setPartNumbers(draft.partNumbers);
+      if (Array.isArray(draft.availableParts) && draft.availableParts.length) setAvailableParts(draft.availableParts);
+      if (typeof draft.aiUsed === "boolean") setAiUsed(draft.aiUsed);
+      if (typeof draft.originalBeforeAi === "string") setOriginalBeforeAi(draft.originalBeforeAi);
+      if (typeof draft.aiEdited === "boolean") setAiEdited(draft.aiEdited);
+      setDraftRestored(true);
+      setDraftSavedAt(draft.savedAt || null);
+      toast({
+        title: "Draft restored",
+        description: "We brought back your in-progress submission so you don't have to start over.",
+      });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !draftHydratedRef.current) return;
+    const handle = setTimeout(() => {
+      const formValues = form.getValues();
+      const hasContent = Boolean(
+        formValues.serviceOrder?.trim() ||
+        formValues.applianceType ||
+        (formValues.issueDescription && formValues.issueDescription.trim().length > 0) ||
+        estimatePhotoUrls.length ||
+        issuePhotoUrls.length ||
+        videoUrl ||
+        voiceNoteUrl ||
+        partNumbers.some(p => p.trim()) ||
+        availableParts.some(p => p.trim())
+      );
+      if (!hasContent) {
+        try { localStorage.removeItem(DRAFT_KEY); } catch {}
+        return;
+      }
+      const draft = {
+        formValues,
+        estimatePhotoUrls,
+        issuePhotoUrls,
+        videoUrl,
+        voiceNoteUrl,
+        partNumbers,
+        availableParts,
+        aiUsed,
+        originalBeforeAi,
+        aiEdited,
+        savedAt: new Date().toISOString(),
+      };
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        setDraftSavedAt(draft.savedAt);
+      } catch {}
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [
+    user?.id,
+    watchedValues,
+    estimatePhotoUrls,
+    issuePhotoUrls,
+    videoUrl,
+    voiceNoteUrl,
+    partNumbers,
+    availableParts,
+    aiUsed,
+    originalBeforeAi,
+    aiEdited,
+    DRAFT_KEY,
+  ]);
+
+  function discardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    form.reset({
+      serviceOrder: "",
+      phone: user?.phone || "",
+      applianceType: undefined as any,
+      requestType: "authorization",
+      warrantyType: "sears_protect",
+      warrantyProvider: "Sears Protect / Sears PA / Sears Home Warranty (Cinch)",
+      issueDescription: "",
+    });
+    setEstimatePhotoUrls([]);
+    setIssuePhotoUrls([]);
+    setEstimatePhotoLocalPreviews({});
+    setIssuePhotoLocalPreviews({});
+    setVideoUrl(null);
+    setVoiceNoteUrl(null);
+    setPartNumbers([""]);
+    setAvailableParts([]);
+    setAiUsed(false);
+    setAiEdited(false);
+    setAiPreview(null);
+    setOriginalBeforeAi(null);
+    setDraftRestored(false);
+    setDraftSavedAt(null);
+    toast({ title: "Draft discarded", description: "Starting fresh." });
+  }
+
+  function formatDraftSavedAt(iso: string | null): string {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
   return (
     <div className="min-h-screen pb-20">
       <div className="bg-primary text-primary-foreground p-4">
@@ -568,6 +689,36 @@ export default function TechSubmitPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4">
+        {draftRestored && (
+          <div
+            className="mb-4 rounded-md border border-primary/30 bg-primary/5 p-3 flex items-start justify-between gap-3"
+            data-testid="banner-draft-restored"
+          >
+            <div className="text-sm">
+              <div className="font-medium" data-testid="text-draft-restored-title">Draft restored</div>
+              <div className="text-muted-foreground" data-testid="text-draft-restored-detail">
+                Picked up where you left off{draftSavedAt ? ` (saved ${formatDraftSavedAt(draftSavedAt)})` : ""}.
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={discardDraft}
+              data-testid="button-discard-draft"
+            >
+              Start fresh
+            </Button>
+          </div>
+        )}
+        {!draftRestored && draftSavedAt && (
+          <div
+            className="mb-3 text-xs text-muted-foreground"
+            data-testid="text-draft-autosaved"
+          >
+            Draft auto-saved {formatDraftSavedAt(draftSavedAt)}
+          </div>
+        )}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
             <FormField
