@@ -782,6 +782,7 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
       {lightboxOpen && createPortal(
         <div
           className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center"
+          style={{ pointerEvents: "auto" }}
           onClick={() => setLightboxOpen(false)}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
