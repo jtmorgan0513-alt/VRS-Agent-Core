@@ -2685,6 +2685,39 @@ export async function registerRoutes(
   app.get("/api/admin/export-xlsx", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const ExcelJS = (await import("exceljs")).default;
+      const FINAL_STATUSES = new Set(["completed", "approved", "rejected", "rejected_closed", "invalid"]);
+      const formatDuration = (startVal: Date | string | null | undefined, endVal: Date | string | null | undefined): string => {
+        if (!startVal) return "";
+        const start = new Date(startVal as any);
+        const end = endVal ? new Date(endVal as any) : new Date();
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return "";
+        const diffMs = end.getTime() - start.getTime();
+        if (diffMs < 0) return "";
+        const totalMinutes = Math.floor(diffMs / 60000);
+        if (totalMinutes < 1) return "< 1m";
+        const days = Math.floor(totalMinutes / 1440);
+        const hours = Math.floor((totalMinutes % 1440) / 60);
+        const minutes = totalMinutes % 60;
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+      };
+      const computeTimings = (s: any) => {
+        const queueWait = s.claimedAt
+          ? formatDuration(s.createdAt, s.claimedAt)
+          : s.ticketStatus === "queued"
+            ? formatDuration(s.createdAt, null)
+            : formatDuration(s.createdAt, s.statusChangedAt);
+        const handleTime = s.claimedAt
+          ? (s.ticketStatus === "pending"
+              ? formatDuration(s.claimedAt, null)
+              : formatDuration(s.claimedAt, s.statusChangedAt))
+          : "";
+        const totalTime = FINAL_STATUSES.has(s.ticketStatus)
+          ? formatDuration(s.createdAt, s.statusChangedAt)
+          : formatDuration(s.createdAt, null);
+        return { queueWait, handleTime, totalTime };
+      };
       const range = (req.query.range as string) || "all";
       const customStart = req.query.startDate as string | undefined;
       const customEnd = req.query.endDate as string | undefined;
@@ -2731,7 +2764,8 @@ export async function registerRoutes(
         "Issue Description", "Estimate Amount",
         "Ticket Status", "Reviewed By", "Reviewed At", "Rejection Reasons",
         "Auth Code", "RGC Code", "Assigned To", "Claimed At",
-        "Created At", "Updated At"
+        "Created At", "Updated At",
+        "Queue Wait", "Handle Time", "Total Time"
       ];
 
       const authSheet = workbook.addWorksheet("Authorization Tickets");
@@ -2749,6 +2783,7 @@ export async function registerRoutes(
         if (s.rejectionReasons) {
           try { rejReasons = JSON.parse(s.rejectionReasons).join("; "); } catch { rejReasons = s.rejectionReasons; }
         }
+        const t = computeTimings(s);
         authSheet.addRow([
           s.id, s.serviceOrder, s.technicianLdapId || s.racId, techName, s.phone,
           s.districtCode, s.applianceType, s.requestType, s.warrantyType, s.warrantyProvider,
@@ -2758,6 +2793,7 @@ export async function registerRoutes(
           s.claimedAt ? new Date(s.claimedAt).toISOString() : "",
           s.createdAt ? new Date(s.createdAt).toISOString() : "",
           s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
+          t.queueWait, t.handleTime, t.totalTime,
         ]);
       }
 
@@ -2783,7 +2819,8 @@ export async function registerRoutes(
         "Issue Description",
         "Ticket Status", "NLA Resolution", "Found Part Number",
         "Reviewed By", "Reviewed At", "Rejection Reasons",
-        "Assigned To", "Claimed At", "Created At", "Updated At"
+        "Assigned To", "Claimed At", "Created At", "Updated At",
+        "Queue Wait", "Handle Time", "Total Time"
       ];
 
       const nlaSheet = workbook.addWorksheet("NLA Parts Tickets");
@@ -2818,6 +2855,7 @@ export async function registerRoutes(
             }
           } catch { partNumbers = String((s as any).partNumbers); }
         }
+        const t = computeTimings(s);
         nlaSheet.addRow([
           s.id, s.serviceOrder, s.technicianLdapId || s.racId, techName, s.phone,
           s.districtCode, s.applianceType, partNumbers,
@@ -2828,6 +2866,7 @@ export async function registerRoutes(
           s.claimedAt ? new Date(s.claimedAt).toISOString() : "",
           s.createdAt ? new Date(s.createdAt).toISOString() : "",
           s.updatedAt ? new Date(s.updatedAt).toISOString() : "",
+          t.queueWait, t.handleTime, t.totalTime,
         ]);
       }
 
