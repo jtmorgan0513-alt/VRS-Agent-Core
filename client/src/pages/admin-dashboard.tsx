@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth, getToken } from "@/lib/auth";
@@ -773,10 +774,12 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
         )}
       </DialogContent>
 
-      {lightboxOpen && (
+      {lightboxOpen && createPortal(
         <div
-          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+          className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center"
           onClick={() => setLightboxOpen(false)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           data-testid="admin-lightbox-overlay"
         >
           <button
