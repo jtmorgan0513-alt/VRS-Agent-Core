@@ -53,7 +53,10 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogPortal,
+  DialogOverlay,
 } from "@/components/ui/dialog";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -779,59 +782,59 @@ function TicketDetailDialog({ ticketId, open, onClose }: { ticketId: number | nu
         )}
       </DialogContent>
 
-      {lightboxOpen && createPortal(
-        <div
-          className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center"
-          style={{ pointerEvents: "auto" }}
-          onClick={() => setLightboxOpen(false)}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          data-testid="admin-lightbox-overlay"
-        >
-          <button
-            className="absolute top-4 right-4 text-white/80 hover:text-white z-10"
-            onClick={() => setLightboxOpen(false)}
-            data-testid="admin-lightbox-close"
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogPortal>
+          <DialogOverlay className="z-[200] bg-black/90" />
+          <DialogPrimitive.Content
+            className="fixed inset-0 z-[200] flex items-center justify-center focus:outline-none"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            aria-describedby={undefined}
           >
-            <X className="w-8 h-8" />
-          </button>
-          {lightboxPhotos.length > 1 && (
-            <>
-              <button
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex((prev) => (prev - 1 + lightboxPhotos.length) % lightboxPhotos.length);
-                }}
-                data-testid="admin-lightbox-prev"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-              <button
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex((prev) => (prev + 1) % lightboxPhotos.length);
-                }}
-                data-testid="admin-lightbox-next"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            </>
-          )}
-          <img
-            src={lightboxPhotos[lightboxIndex]}
-            alt={`Photo ${lightboxIndex + 1}`}
-            className="max-w-[90vw] max-h-[90vh] object-contain"
-            onClick={(e) => e.stopPropagation()}
-            data-testid="admin-lightbox-image"
-          />
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
-            {lightboxIndex + 1} / {lightboxPhotos.length}
-          </div>
-        </div>,
-        document.body
-      )}
+            <DialogPrimitive.Title className="sr-only">Photo viewer</DialogPrimitive.Title>
+            <button
+              type="button"
+              className="absolute top-4 right-4 text-white/80 hover:text-white z-10"
+              onClick={() => setLightboxOpen(false)}
+              data-testid="admin-lightbox-close"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            {lightboxPhotos.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
+                  onClick={() =>
+                    setLightboxIndex((prev) => (prev - 1 + lightboxPhotos.length) % lightboxPhotos.length)
+                  }
+                  data-testid="admin-lightbox-prev"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white z-10 bg-black/40 rounded-full p-2"
+                  onClick={() =>
+                    setLightboxIndex((prev) => (prev + 1) % lightboxPhotos.length)
+                  }
+                  data-testid="admin-lightbox-next"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+            <img
+              src={lightboxPhotos[lightboxIndex]}
+              alt={`Photo ${lightboxIndex + 1}`}
+              className="max-w-[90vw] max-h-[90vh] object-contain pointer-events-none"
+              data-testid="admin-lightbox-image"
+            />
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm pointer-events-none">
+              {lightboxIndex + 1} / {lightboxPhotos.length}
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPortal>
+      </Dialog>
     </Dialog>
   );
 }
