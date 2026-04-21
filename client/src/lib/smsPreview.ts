@@ -23,7 +23,15 @@ export type SmsPreviewContext = {
   authCodeProvider?: string;
   partNumber?: string;
   isNlaApproval?: boolean;
+  warrantyType?: string;
 };
+
+function shouldSuppressCashCall(warrantyType?: string, reasonText?: string): boolean {
+  const wt = (warrantyType || "").toLowerCase();
+  if (wt === "american_home_shield" || wt === "first_american") return true;
+  if (reasonText && /infestation/i.test(reasonText)) return true;
+  return false;
+}
 
 const RESUBMIT_PLACEHOLDER = "(resubmit link will be included)";
 
@@ -73,7 +81,11 @@ export function buildSmsPreview(ctx: SmsPreviewContext): string {
     case "reject_and_close": {
       const reason = ctx.rejectCloseReason || "Not covered under warranty";
       const full = msg ? `${reason}\n\nFeedback from VRS: ${msg}` : reason;
-      return `VRS Update for SO#${so}\n\nStatus: REJECTED — NOT COVERED\nReason: ${full}\n\nThis repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.`;
+      const suppress = shouldSuppressCashCall(ctx.warrantyType, `${reason} ${msg}`);
+      const closing = suppress
+        ? "This repair is not covered under warranty. No further VRS submissions can be made for this service order."
+        : "This repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.";
+      return `VRS Update for SO#${so}\n\nStatus: REJECTED — NOT COVERED\nReason: ${full}\n\n${closing}`;
     }
 
     case "invalid": {

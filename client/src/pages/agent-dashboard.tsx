@@ -2704,6 +2704,7 @@ export default function AgentDashboard() {
                                       serviceOrder: selectedSubmission.serviceOrder,
                                       action: "reject_and_close",
                                       message: technicianMessage,
+                                      warrantyType: selectedSubmission.warrantyType,
                                       rejectCloseReason:
                                         rejectCloseReason === "Other"
                                           ? rejectCloseCustomReason.trim() || "Other"

@@ -127,8 +127,15 @@ export function buildStage1InvalidMessage(serviceOrder: string, invalidReason: s
   return msg;
 }
 
-export function buildRejectAndCloseMessage(serviceOrder: string, reason: string): string {
-  return `VRS Update for SO#${serviceOrder}\n\nStatus: REJECTED — NOT COVERED\nReason: ${reason}\n\nThis repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.`;
+export function buildRejectAndCloseMessage(serviceOrder: string, reason: string, warrantyType?: string): string {
+  const wt = (warrantyType || "").toLowerCase();
+  const isExternalWarranty = wt === "american_home_shield" || wt === "first_american";
+  const isInfestation = /infestation/i.test(reason);
+  const suppressCashCall = isExternalWarranty || isInfestation;
+  const closing = suppressCashCall
+    ? "This repair is not covered under warranty. No further VRS submissions can be made for this service order."
+    : "This repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.";
+  return `VRS Update for SO#${serviceOrder}\n\nStatus: REJECTED — NOT COVERED\nReason: ${reason}\n\n${closing}`;
 }
 
 export function buildNlaApprovalMessage(serviceOrder: string, rgcCode?: string | null, agentMessage?: string): string {

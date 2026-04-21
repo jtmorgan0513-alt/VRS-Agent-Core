@@ -1342,7 +1342,7 @@ export async function registerRoutes(
           ? rejectionReasons.join(", ")
           : "Not covered under warranty";
         const fullMsg = technicianMessage ? `${reasonText}\n\nFeedback from VRS: ${technicianMessage}` : reasonText;
-        smsMessage = buildRejectAndCloseMessage(submission.serviceOrder, fullMsg);
+        smsMessage = buildRejectAndCloseMessage(submission.serviceOrder, fullMsg, submission.warrantyType);
         smsType = "ticket_rejected_closed";
 
       } else {
