@@ -652,7 +652,7 @@ export async function registerRoutes(
           },
         });
 
-        const resubmitClaimMsg = `VRS Update for SO#${submission.serviceOrder}: Your resubmission has been received and has been assigned to the same VRS agent for review. Please stand by — you will receive a follow-up text with the result shortly.`;
+        const resubmitClaimMsg = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your resubmitted ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
         const resubmitSmsPhone = submission.phoneOverride || submission.phone;
         sendSms(submission.id, resubmitSmsPhone, "ticket_claimed", resubmitClaimMsg).catch(err => {
           console.error("Failed to send resubmission claim SMS:", err);
@@ -1135,9 +1135,9 @@ export async function registerRoutes(
 
       let claimSmsMessage: string;
       if (isTwoStage) {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.\n\nPlease stand by — you will receive a follow-up text with the result shortly.`;
+        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.`;
       } else {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: Your submission has been received and a VRS agent is now reviewing it. Please stand by — you will receive a follow-up text with the result shortly.`;
+        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
       }
 
       const claimSmsPhone = submission.phoneOverride || submission.phone;
