@@ -882,9 +882,12 @@ export default function TechSubmitPage() {
                 {watchedRequestType !== "parts_nla" && (
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <label className="text-sm font-medium">Warranty Provider *</label>
-                      <HelpTooltip content="Select the warranty provider for this service order." />
+                      <label className="text-sm font-medium">Warranty Provider</label>
+                      <HelpTooltip content="The warranty provider is auto-detected from the service order's customer record. Your selection here is used only as a fallback when auto-detection cannot identify the provider." />
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
+                      Auto-detected from the service order. Your selection below is only used if detection fails.
+                    </p>
                     <div className="mt-2 space-y-2">
                       {WARRANTY_PROVIDERS.map((provider) => (
                         <div

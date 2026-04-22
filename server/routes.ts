@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User, Technician } from "@shared/schema";
+import { deriveWarrantyFromProcId } from "@shared/warranty";
 import * as fs from "fs";
 import * as path from "path";
 import { createWriteStream, createReadStream } from "fs";
@@ -600,6 +601,13 @@ export async function registerRoutes(
 
       const procIdResult = await fetchProcIdForServiceOrder(parsed.data.serviceOrder);
 
+      const derivedWarranty = deriveWarrantyFromProcId(procIdResult.procId, procIdResult.clientNm);
+      const finalWarrantyType = derivedWarranty ? derivedWarranty.warrantyType : parsed.data.warrantyType;
+      const finalWarrantyProvider = derivedWarranty ? derivedWarranty.warrantyProvider : (parsed.data.warrantyProvider || null);
+      if (derivedWarranty && derivedWarranty.warrantyType !== parsed.data.warrantyType) {
+        console.log(`[warranty-derive] SO ${parsed.data.serviceOrder}: tech selected ${parsed.data.warrantyType}, derived ${derivedWarranty.warrantyType} from ${derivedWarranty.source} (procId=${procIdResult.procId}, clientNm=${procIdResult.clientNm})`);
+      }
+
       const submission = await storage.createSubmission({
         technicianId: user.id,
         racId: user.racId || "",
@@ -610,8 +618,8 @@ export async function registerRoutes(
         districtCode: parsed.data.serviceOrder.split("-")[0],
         applianceType: parsed.data.applianceType,
         requestType: parsed.data.requestType,
-        warrantyType: parsed.data.warrantyType,
-        warrantyProvider: parsed.data.warrantyProvider || null,
+        warrantyType: finalWarrantyType,
+        warrantyProvider: finalWarrantyProvider,
         issueDescription: parsed.data.issueDescription,
         originalDescription: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? parsed.data.originalDescription : null,
         aiEnhanced: (parsed.data.aiEnhanced && parsed.data.originalDescription) ? true : false,
