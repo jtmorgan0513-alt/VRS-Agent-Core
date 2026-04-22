@@ -56,7 +56,11 @@ export function buildSmsPreview(ctx: SmsPreviewContext): string {
         return m;
       }
       let m: string;
-      if (ctx.rgcCode) {
+      const hasAuth = !!(ctx.authCode && ctx.authCode.trim());
+      const hasRgc = !!(ctx.rgcCode && ctx.rgcCode.trim());
+      if (hasAuth && hasRgc) {
+        m = `VRS Authorization for SO#${so}\nAuthorization Code: ${ctx.authCode}\nRGC Code: ${ctx.rgcCode}\nEnter both codes in TechHub to complete the job.`;
+      } else if (hasRgc) {
         m = `VRS Authorization for SO#${so}\nYour RGC/Auth Code: ${ctx.rgcCode}\nEnter this code in TechHub to complete the job.`;
       } else {
         m = `VRS Authorization Code: Your auth code for SO# ${so} is: ${ctx.authCode || "______"}. Please use this code to proceed with the repair.`;

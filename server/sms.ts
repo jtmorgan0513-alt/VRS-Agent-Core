@@ -152,7 +152,11 @@ export function buildNlaApprovalMessage(serviceOrder: string, rgcCode?: string |
 
 export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null, agentMessage?: string): string {
   let msg: string;
-  if (rgcCode) {
+  const hasAuth = !!(authCode && authCode.trim());
+  const hasRgc = !!(rgcCode && rgcCode.trim());
+  if (hasAuth && hasRgc) {
+    msg = `VRS Authorization for SO#${serviceOrder}\nAuthorization Code: ${authCode}\nRGC Code: ${rgcCode}\nEnter both codes in TechHub to complete the job.`;
+  } else if (hasRgc) {
     msg = `VRS Authorization for SO#${serviceOrder}\nYour RGC/Auth Code: ${rgcCode}\nEnter this code in TechHub to complete the job.`;
   } else {
     msg = `VRS Authorization Code: Your auth code for SO# ${serviceOrder} is: ${authCode}. Please use this code to proceed with the repair.`;
