@@ -84,6 +84,8 @@ export default function SubmissionDetailPage() {
   const sub = data.submission;
   const status = sub.ticketStatus || sub.stage1Status;
   const hasAuthCode = !!sub.authCode;
+  const hasRgcCode = !!(sub as any).rgcCode;
+  const hasBothCodes = hasAuthCode && hasRgcCode;
 
   function getHeaderConfig() {
     if (status === "invalid" || sub.stage1Status === "invalid") {
@@ -118,7 +120,7 @@ export default function SubmissionDetailPage() {
         subtitle: `Service Order #${sub.serviceOrder}`,
       };
     }
-    if ((status === "completed" || sub.stage1Status === "approved") && hasAuthCode) {
+    if ((status === "completed" || sub.stage1Status === "approved") && (hasAuthCode || hasRgcCode)) {
       return {
         bgClass: "bg-green-700 text-white",
         icon: <CheckCircle className="w-10 h-10 mx-auto mb-2" />,
@@ -156,6 +158,14 @@ export default function SubmissionDetailPage() {
     if (sub.authCode) {
       navigator.clipboard.writeText(sub.authCode);
       toast({ title: "Copied", description: "Authorization code copied to clipboard." });
+    }
+  }
+
+  function copyRgcCode() {
+    const rgc = (sub as any).rgcCode;
+    if (rgc) {
+      navigator.clipboard.writeText(rgc);
+      toast({ title: "Copied", description: "RGC code copied to clipboard." });
     }
   }
 
@@ -216,19 +226,44 @@ export default function SubmissionDetailPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 -mt-4 space-y-4">
-        {hasAuthCode && (
+        {(hasAuthCode || hasRgcCode) && (
           <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Authorization Code</p>
-              <div className="bg-primary text-primary-foreground rounded-md py-4 px-6 mb-3">
-                <p className="text-2xl font-mono font-bold tracking-wider" data-testid="text-auth-code">
-                  {sub.authCode}
+            <CardContent className="p-4 text-center space-y-4">
+              {hasBothCodes && (
+                <p className="text-xs text-muted-foreground" data-testid="text-both-codes-hint">
+                  Enter <span className="font-semibold">both codes</span> in TechHub to complete authorization.
                 </p>
-              </div>
-              <Button onClick={copyAuthCode} className="w-full" data-testid="button-copy-code">
-                <Copy className="w-4 h-4 mr-2" />
-                Copy Code to Clipboard
-              </Button>
+              )}
+              {hasAuthCode && (
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
+                    {hasBothCodes ? "AHS Authorization Code" : "Authorization Code"}
+                  </p>
+                  <div className="bg-primary text-primary-foreground rounded-md py-4 px-6 mb-3">
+                    <p className="text-2xl font-mono font-bold tracking-wider" data-testid="text-auth-code">
+                      {sub.authCode}
+                    </p>
+                  </div>
+                  <Button onClick={copyAuthCode} className="w-full" data-testid="button-copy-code">
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy {hasBothCodes ? "AHS Code" : "Code to Clipboard"}
+                  </Button>
+                </div>
+              )}
+              {hasRgcCode && (
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">RGC Code</p>
+                  <div className="bg-primary text-primary-foreground rounded-md py-4 px-6 mb-3">
+                    <p className="text-2xl font-mono font-bold tracking-wider" data-testid="text-rgc-code">
+                      {(sub as any).rgcCode}
+                    </p>
+                  </div>
+                  <Button onClick={copyRgcCode} className="w-full" data-testid="button-copy-rgc-code">
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy {hasBothCodes ? "RGC Code" : "Code to Clipboard"}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
