@@ -1435,6 +1435,7 @@ export async function registerRoutes(
       "nla_pcard_confirm",
       "nla_reject",
       "nla_invalid",
+      "nla_rfr_eligible",
     ]),
     agentNotes: z.string().optional(),
     technicianMessage: z.string().optional(),
@@ -1480,7 +1481,7 @@ export async function registerRoutes(
 
       const currentUser = await storage.getUser(authReq.user!.id);
 
-      const nlaApprovalActions = ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders", "nla_pcard_confirm", "nla_escalate_pcard"];
+      const nlaApprovalActions = ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders", "nla_pcard_confirm", "nla_escalate_pcard", "nla_rfr_eligible"];
       let rgcCode: string | null = null;
 
       if (nlaApprovalActions.includes(action)) {
@@ -1559,6 +1560,19 @@ export async function registerRoutes(
         smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
         if (technicianMessage) smsMessage += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
         smsType = "nla_part_tech_orders";
+
+      } else if (action === "nla_rfr_eligible") {
+        updateData.ticketStatus = "completed";
+        updateData.statusChangedAt = new Date();
+        updateData.reviewedBy = authReq.user!.id;
+        updateData.reviewedAt = new Date();
+        updateData.nlaResolution = "rfr_eligible";
+        updateData.technicianMessage = technicianMessage || null;
+        updateData.rgcCode = rgcCode;
+
+        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: RFR ELIGIBLE\nAuth Code: ${rgcCode}\n\nThis part is RFR eligible. Remove the failed part and return it for repair, then reschedule the call in TechHub.`;
+        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        smsType = "nla_rfr_eligible";
 
       } else if (action === "nla_escalate_to_pcard") {
         if (currentUser?.canOrderParts) {

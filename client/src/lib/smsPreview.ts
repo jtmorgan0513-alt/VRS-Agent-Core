@@ -11,7 +11,8 @@ export type SmsPreviewContext = {
     | "nla_part_found_vrs_ordered"
     | "nla_part_found_tech_orders"
     | "nla_reject"
-    | "nla_invalid";
+    | "nla_invalid"
+    | "nla_rfr_eligible";
   message?: string;
   rejectionReasons?: string[];
   rejectedMediaSummary?: string[];
@@ -120,6 +121,12 @@ export function buildSmsPreview(ctx: SmsPreviewContext): string {
     case "nla_replacement_tech_initiates": {
       let m = `VRS NLA Update for SO#${so}\n\nAuth Code: ${ctx.rgcCode || "______"}\nYour NLA parts request has been processed by the VRS team.`;
       if (msg) m += `\n\nFeedback from VRS: ${msg}`;
+      return m;
+    }
+
+    case "nla_rfr_eligible": {
+      let m = `VRS NLA Update for SO#${so}\n\nStatus: RFR ELIGIBLE\nAuth Code: ${ctx.rgcCode || "______"}\n\nThis part is RFR eligible. Remove the failed part and return it for repair, then reschedule the call in TechHub.`;
+      if (msg) m += `\n\nInstructions: ${msg}`;
       return m;
     }
 

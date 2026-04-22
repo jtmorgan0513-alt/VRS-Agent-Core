@@ -2048,16 +2048,16 @@ export default function AgentDashboard() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="nla_replacement_submitted">
-                                      Approved Verified NLA VRS Replacement Submitted (SPHW / MPA)
+                                      Verified NLA VRS Replacement Submitted (SPHW / MPA)
                                     </SelectItem>
                                     <SelectItem value="nla_replacement_tech_initiates">
-                                      Approved Verified NLA VRS Replacement Approved (SHW / Cinch — Tech initiates in TechHub)
+                                      Verified NLA VRS Replacement Approved (SHW / Cinch — Tech initiates in TechHub)
                                     </SelectItem>
                                     <SelectItem value="nla_part_found_vrs_ordered">
-                                      Approve Part Found Locally / Ordered (reschedule the call in TH)
+                                      Part Found — VRS Ordered Part (reschedule the call in TH)
                                     </SelectItem>
                                     <SelectItem value="nla_part_found_tech_orders">
-                                      Approve Part Found (Instruct Tech to order part # Provided)
+                                      Part Found (Instruct Tech to order part # Provided)
                                     </SelectItem>
                                     <SelectItem value="nla_reject">
                                       Rejected — More Information Needed
@@ -2065,11 +2065,14 @@ export default function AgentDashboard() {
                                     <SelectItem value="nla_invalid">
                                       Invalid NLA Request
                                     </SelectItem>
+                                    <SelectItem value="nla_rfr_eligible">
+                                      Parts is RFR eligible — Tech to remove and return for repair
+                                    </SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
 
-                              {nlaAction && ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders"].includes(nlaAction) && (
+                              {nlaAction && ["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders", "nla_rfr_eligible"].includes(nlaAction) && (
                                 <div className="space-y-2 border rounded-lg p-3 bg-green-50/50 dark:bg-green-950/10">
                                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Authorization Code (RGC)</p>
                                   {rgcMissing ? (
@@ -2259,7 +2262,7 @@ export default function AgentDashboard() {
                                       toast({ title: "Instructions Required", description: "Please provide instructions for the technician.", variant: "destructive" });
                                       return;
                                     }
-                                    if (["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders"].includes(nlaAction!) && rgcMissing) {
+                                    if (["nla_replacement_submitted", "nla_replacement_tech_initiates", "nla_part_found_vrs_ordered", "nla_part_found_tech_orders", "nla_rfr_eligible"].includes(nlaAction!) && rgcMissing) {
                                       toast({ title: "Error", description: "RGC code not set for today. Contact an administrator.", variant: "destructive" });
                                       return;
                                     }
@@ -3243,11 +3246,13 @@ export default function AgentDashboard() {
               ) : nlaAction === "nla_replacement_submitted" ? (
                 <>The technician will be notified that a replacement has been submitted to the warranty company.</>
               ) : nlaAction === "nla_replacement_tech_initiates" ? (
-                <>Resolution: Approved Verified NLA VRS Replacement Approved. The technician will be notified to initiate the replacement in TechHub.</>
+                <>Resolution: Verified NLA VRS Replacement Approved. The technician will be notified to initiate the replacement in TechHub.</>
               ) : nlaAction === "nla_part_found_vrs_ordered" ? (
                 <>The technician will be notified that VRS has ordered the part.</>
               ) : nlaAction === "nla_part_found_tech_orders" ? (
                 <>The technician will be notified to order part <strong className="font-mono">{nlaFoundPartNumber}</strong> from TechHub.</>
+              ) : nlaAction === "nla_rfr_eligible" ? (
+                <>The technician will be notified that the part is RFR eligible — to remove the failed part, return it for repair, and reschedule the call in TechHub.</>
               ) : nlaAction === "nla_reject" ? (
                 <>The technician will be notified that more information is needed.</>
               ) : nlaAction === "nla_invalid" ? (
