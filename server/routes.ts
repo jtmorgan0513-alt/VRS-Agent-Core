@@ -2944,6 +2944,26 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/tech/lookup-warranty", authenticateToken, async (req, res) => {
+    try {
+      const so = String(req.query.serviceOrder || "").trim();
+      if (!/^\d{4}-\d{8}$/.test(so)) {
+        return res.status(400).json({ error: "Invalid service order format" });
+      }
+      const result = await fetchProcIdForServiceOrder(so);
+      const derived = deriveWarrantyFromProcId(result.procId, result.clientNm);
+      res.json({
+        serviceOrder: so,
+        procId: result.procId,
+        clientNm: result.clientNm,
+        derived,
+      });
+    } catch (err) {
+      console.error("lookup-warranty error:", err);
+      res.status(500).json({ error: "Lookup failed" });
+    }
+  });
+
   app.post("/api/admin/backfill-proc-ids", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
       const allSubs = await storage.getAllSubmissions();

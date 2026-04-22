@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth, getToken } from "@/lib/auth";
@@ -491,6 +491,31 @@ export default function TechSubmitPage() {
     },
   });
 
+  const watchedServiceOrder = form.watch("serviceOrder");
+  const isValidSo = /^\d{4}-\d{8}$/.test(watchedServiceOrder || "");
+  const warrantyLookup = useQuery<{
+    serviceOrder: string;
+    procId: string;
+    clientNm: string;
+    derived: { warrantyType: "sears_protect" | "american_home_shield" | "first_american"; warrantyProvider: string; source: "client_nm" | "proc_id" } | null;
+  }>({
+    queryKey: ["/api/tech/lookup-warranty", watchedServiceOrder],
+    enabled: isValidSo,
+    staleTime: 5 * 60 * 1000,
+  });
+  const derivedWarranty = warrantyLookup.data?.derived || null;
+
+  useEffect(() => {
+    if (derivedWarranty) {
+      if (form.getValues("warrantyType") !== derivedWarranty.warrantyType) {
+        form.setValue("warrantyType", derivedWarranty.warrantyType, { shouldDirty: false });
+      }
+      if (form.getValues("warrantyProvider") !== derivedWarranty.warrantyProvider) {
+        form.setValue("warrantyProvider", derivedWarranty.warrantyProvider, { shouldDirty: false });
+      }
+    }
+  }, [derivedWarranty?.warrantyType, derivedWarranty?.warrantyProvider]);
+
   const mutation = useMutation({
     mutationFn: async (data: SubmissionFormData & { originalDescription?: string; aiEnhanced?: boolean }) => {
       const res = await apiRequest("POST", "/api/submissions", data);
@@ -883,41 +908,72 @@ export default function TechSubmitPage() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <label className="text-sm font-medium">Warranty Provider</label>
-                      <HelpTooltip content="The warranty provider is auto-detected from the service order's customer record. Your selection here is used only as a fallback when auto-detection cannot identify the provider." />
+                      <HelpTooltip content="The warranty provider is auto-detected from the service order's customer record. When auto-detected, the selection is locked. If detection cannot identify the provider, you can select it manually." />
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
-                      Auto-detected from the service order. Your selection below is only used if detection fails.
-                    </p>
+                    {derivedWarranty ? (
+                      <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1" data-testid="text-warranty-locked-note">
+                        <Lock className="w-3 h-3" />
+                        Auto-detected from service order — locked.
+                      </p>
+                    ) : warrantyLookup.isFetching ? (
+                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-lookup-loading">
+                        Looking up warranty provider from service order…
+                      </p>
+                    ) : isValidSo ? (
+                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
+                        Could not auto-detect — please select the warranty provider.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
+                        Will be auto-detected from the service order once entered.
+                      </p>
+                    )}
                     <div className="mt-2 space-y-2">
-                      {WARRANTY_PROVIDERS.map((provider) => (
-                        <div
-                          key={provider.value}
-                          className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
-                            provider.available
-                              ? "cursor-pointer hover-elevate"
-                              : "opacity-60 cursor-not-allowed"
-                          } ${
-                            form.watch("warrantyType") === provider.value
-                              ? "border-primary bg-primary/5"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            if (provider.available) {
-                              form.setValue("warrantyType", provider.value as any);
-                              form.setValue("warrantyProvider", provider.label);
-                            }
-                          }}
-                          data-testid={`provider-${provider.value}`}
-                        >
-                          <span className="text-sm">{provider.label}</span>
-                          {!provider.available && (
-                            <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
-                              <Lock className="w-3 h-3 mr-1" />
-                              Coming Soon
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
+                      {WARRANTY_PROVIDERS.map((provider) => {
+                        const isSelected = form.watch("warrantyType") === provider.value;
+                        const isLocked = !!derivedWarranty;
+                        const isClickable = provider.available && !isLocked;
+                        return (
+                          <div
+                            key={provider.value}
+                            className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
+                              isClickable
+                                ? "cursor-pointer hover-elevate"
+                                : "cursor-not-allowed"
+                            } ${
+                              isLocked && !isSelected ? "opacity-50" : ""
+                            } ${
+                              !provider.available ? "opacity-60" : ""
+                            } ${
+                              isSelected ? "border-primary bg-primary/5" : ""
+                            }`}
+                            onClick={() => {
+                              if (isClickable) {
+                                form.setValue("warrantyType", provider.value as any);
+                                form.setValue("warrantyProvider", provider.label);
+                              }
+                            }}
+                            data-testid={`provider-${provider.value}`}
+                            aria-disabled={!isClickable}
+                          >
+                            <span className="text-sm">{provider.label}</span>
+                            <div className="flex items-center gap-1">
+                              {isLocked && isSelected && (
+                                <Badge variant="secondary" className="text-xs" data-testid={`badge-locked-${provider.value}`}>
+                                  <Lock className="w-3 h-3 mr-1" />
+                                  Auto-detected
+                                </Badge>
+                              )}
+                              {!provider.available && (
+                                <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
+                                  <Lock className="w-3 h-3 mr-1" />
+                                  Coming Soon
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
