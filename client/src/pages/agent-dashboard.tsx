@@ -2670,6 +2670,7 @@ export default function AgentDashboard() {
                                         <option value="Coverage expired or not active">Coverage expired or not active</option>
                                         <option value="Product not listed on warranty contract">Product not listed on warranty contract</option>
                                         <option value="Recall or manufacturer defect — contact manufacturer">Recall or manufacturer defect — contact manufacturer</option>
+                                        <option value="Infestation">Infestation</option>
                                         <option value="Other">Other</option>
                                       </select>
                                       {rejectCloseReason === "Other" && (

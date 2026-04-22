@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Submission } from "@shared/schema";
+import { shouldSuppressCashCall } from "@/lib/smsPreview";
 
 export default function SubmissionDetailPage() {
   const [, params] = useRoute("/tech/submissions/:id");
@@ -200,7 +201,9 @@ export default function SubmissionDetailPage() {
             )}
             {status === "rejected_closed" && (
               <p className="text-sm opacity-80 mt-1">
-                This repair has been determined to not be covered under warranty. You may offer the customer a cash call estimate.
+                {shouldSuppressCashCall(sub.warrantyType, sub.rejectionReasons || sub.stage1RejectionReason || "")
+                  ? "This repair has been determined to not be covered under warranty. No further VRS submissions can be made for this service order."
+                  : "This repair has been determined to not be covered under warranty. You may offer the customer a cash call estimate."}
               </p>
             )}
             {status === "invalid" && (

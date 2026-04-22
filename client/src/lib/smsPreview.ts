@@ -26,7 +26,7 @@ export type SmsPreviewContext = {
   warrantyType?: string;
 };
 
-function shouldSuppressCashCall(warrantyType?: string, reasonText?: string): boolean {
+export function shouldSuppressCashCall(warrantyType?: string, reasonText?: string): boolean {
   const wt = (warrantyType || "").toLowerCase();
   if (wt === "american_home_shield" || wt === "first_american") return true;
   if (reasonText && /infestation/i.test(reasonText)) return true;

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { shouldSuppressCashCall } from "@/lib/smsPreview";
 import { useAuth, getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
@@ -339,7 +340,9 @@ export default function TechResubmitPage() {
                 <div>
                   <p className="text-sm font-semibold text-destructive" data-testid="text-rejected-closed">Service order permanently closed</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    This repair has been determined to not be covered under warranty. No further submissions can be made for this service order. You may offer the customer a cash call estimate for the repair.
+                    {shouldSuppressCashCall(originalSub.warrantyType, originalSub.rejectionReasons || originalSub.stage1RejectionReason || "")
+                      ? "This repair has been determined to not be covered under warranty. No further submissions can be made for this service order."
+                      : "This repair has been determined to not be covered under warranty. No further submissions can be made for this service order. You may offer the customer a cash call estimate for the repair."}
                   </p>
                 </div>
               </div>
