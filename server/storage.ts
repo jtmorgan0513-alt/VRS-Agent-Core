@@ -24,6 +24,9 @@ import {
   feedback,
   InsertFeedback,
   Feedback,
+  submissionNotes,
+  InsertSubmissionNote,
+  SubmissionNote,
   TechnicianUserView,
   systemSettings,
   SystemSetting,
@@ -131,6 +134,9 @@ export interface IStorage {
   getFeedbackList(): Promise<(Feedback & { resolvedByName: string | null })[]>;
   getFeedback(id: number): Promise<Feedback | undefined>;
   updateFeedback(id: number, data: Partial<InsertFeedback>): Promise<Feedback | undefined>;
+
+  createSubmissionNote(data: InsertSubmissionNote): Promise<SubmissionNote>;
+  getSubmissionNotes(submissionId: number): Promise<(SubmissionNote & { authorName: string })[]>;
 
   getAnalytics(): Promise<{
     submissionsToday: number;
@@ -1001,6 +1007,31 @@ export class DatabaseStorage implements IStorage {
       .where(eq(feedback.id, id))
       .returning();
     return result[0];
+  }
+
+  async createSubmissionNote(data: InsertSubmissionNote): Promise<SubmissionNote> {
+    const [note] = await db.insert(submissionNotes).values(data).returning();
+    return note;
+  }
+
+  async getSubmissionNotes(
+    submissionId: number
+  ): Promise<(SubmissionNote & { authorName: string })[]> {
+    const rows = await db
+      .select({
+        id: submissionNotes.id,
+        submissionId: submissionNotes.submissionId,
+        authorId: submissionNotes.authorId,
+        authorRole: submissionNotes.authorRole,
+        body: submissionNotes.body,
+        createdAt: submissionNotes.createdAt,
+        authorName: users.name,
+      })
+      .from(submissionNotes)
+      .leftJoin(users, eq(submissionNotes.authorId, users.id))
+      .where(eq(submissionNotes.submissionId, submissionId))
+      .orderBy(submissionNotes.createdAt);
+    return rows.map((r) => ({ ...r, authorName: r.authorName ?? "Unknown" }));
   }
 
   async getTechnicianUsers(): Promise<TechnicianUserView[]> {

@@ -912,6 +912,63 @@ export async function registerRoutes(
   });
 
   // ========================================================================
+  // SUBMISSION NOTES — post-submission follow-up notes
+  // ========================================================================
+
+  app.post(
+    "/api/submissions/:id/notes",
+    authenticateToken,
+    async (req, res) => {
+      try {
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        const sub = await storage.getSubmission(id);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const user = (req as any).user;
+        if (user.role === "technician" && sub.technicianId !== user.id) {
+          return res.status(403).json({ error: "Not your submission" });
+        }
+
+        const noteSchema = z.object({
+          body: z.string().min(1, "Note cannot be empty").max(2000, "Note must be 2000 characters or less"),
+        });
+        const parsed = noteSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Invalid note", details: parsed.error.flatten() });
+        }
+
+        const note = await storage.createSubmissionNote({
+          submissionId: id,
+          authorId: user.id,
+          authorRole: user.role,
+          body: parsed.data.body,
+        });
+        return res.status(201).json({ note });
+      } catch (error) {
+        console.error("Create submission note error:", error);
+        return res.status(500).json({ error: "Failed to add note" });
+      }
+    }
+  );
+
+  app.get(
+    "/api/submissions/:id/notes",
+    authenticateToken,
+    async (req, res) => {
+      try {
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        const notes = await storage.getSubmissionNotes(id);
+        return res.status(200).json({ notes });
+      } catch (error) {
+        console.error("Get submission notes error:", error);
+        return res.status(500).json({ error: "Failed to get notes" });
+      }
+    }
+  );
+
+  // ========================================================================
   // ADMIN AUDIT TRAIL — Full timeline for a submission
   // ========================================================================
 
