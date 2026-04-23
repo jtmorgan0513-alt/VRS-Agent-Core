@@ -98,6 +98,16 @@ export default function TechSubmitPage() {
   const [partNumbers, setPartNumbers] = useState<string[]>([""]);
   const [availableParts, setAvailableParts] = useState<string[]>([]);
 
+  type FailedUpload = {
+    id: string;
+    file: File;
+    category: "estimate" | "issue";
+    lastError: string;
+    attemptsUsed: number;
+  };
+  const [failedUploads, setFailedUploads] = useState<FailedUpload[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+
   function reportUploadError(details: Record<string, unknown>) {
     try {
       const token = getToken();
@@ -203,14 +213,24 @@ export default function TechSubmitPage() {
     setCount({ done: 0, total: filesToUpload.length });
     const newUrls: string[] = [];
     const newPreviews: Record<string, string> = {};
+    const newFailures: FailedUpload[] = [];
+    const categoryForList: "estimate" | "issue" = setUrls === setEstimatePhotoUrls ? "estimate" : "issue";
     for (let i = 0; i < filesToUpload.length; i++) {
-      const localBlob = URL.createObjectURL(filesToUpload[i]);
-      const url = await uploadSinglePhoto(filesToUpload[i]);
+      const file = filesToUpload[i];
+      const localBlob = URL.createObjectURL(file);
+      const url = await uploadSinglePhoto(file);
       if (url) {
         newUrls.push(url);
         newPreviews[url] = localBlob;
       } else {
         URL.revokeObjectURL(localBlob);
+        newFailures.push({
+          id: crypto.randomUUID(),
+          file,
+          category: categoryForList,
+          lastError: "Upload failed after retries",
+          attemptsUsed: 3,
+        });
       }
       setCount({ done: i + 1, total: filesToUpload.length });
     }
@@ -218,11 +238,59 @@ export default function TechSubmitPage() {
     if (setLocalPreviews) {
       setLocalPreviews((prev) => ({ ...prev, ...newPreviews }));
     }
+    if (newFailures.length > 0) {
+      setFailedUploads((prev) => [...prev, ...newFailures]);
+    }
     setUploading(false);
     if (inputRef.current) inputRef.current.value = "";
-    if (newUrls.length < filesToUpload.length) {
-      toast({ title: "Upload Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload after retrying. Check your connection and try again.`, variant: "destructive" });
+    if (newFailures.length > 0) {
+      toast({
+        title: "Some photos failed",
+        description: `${newFailures.length} photo(s) failed. Scroll down to retry.`,
+        variant: "destructive",
+      });
     }
+  }
+
+  async function retryFailedUpload(failedId: string) {
+    const failed = failedUploads.find((f) => f.id === failedId);
+    if (!failed) return;
+    setRetryingIds((prev) => new Set(prev).add(failedId));
+    const url = await uploadSinglePhoto(failed.file);
+    setRetryingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(failedId);
+      return next;
+    });
+    if (url) {
+      const localBlob = URL.createObjectURL(failed.file);
+      if (failed.category === "estimate") {
+        setEstimatePhotoUrls((prev) => [...prev, url]);
+        setEstimatePhotoLocalPreviews((prev) => ({ ...prev, [url]: localBlob }));
+      } else {
+        setIssuePhotoUrls((prev) => [...prev, url]);
+        setIssuePhotoLocalPreviews((prev) => ({ ...prev, [url]: localBlob }));
+      }
+      setFailedUploads((prev) => prev.filter((f) => f.id !== failedId));
+      toast({ title: "Retry succeeded", description: failed.file.name });
+    } else {
+      setFailedUploads((prev) =>
+        prev.map((f) =>
+          f.id === failedId
+            ? { ...f, attemptsUsed: f.attemptsUsed + 3, lastError: "Retry failed" }
+            : f
+        )
+      );
+      toast({
+        title: "Retry failed",
+        description: `${failed.file.name} — check your connection.`,
+        variant: "destructive",
+      });
+    }
+  }
+
+  function dismissFailedUpload(failedId: string) {
+    setFailedUploads((prev) => prev.filter((f) => f.id !== failedId));
   }
 
   function isVideoFile(file: File): boolean {
@@ -1265,6 +1333,43 @@ export default function TechSubmitPage() {
                     ))}
                   </div>
                 )}
+                {failedUploads.filter((f) => f.category === "issue").length > 0 && (
+                  <div className="mt-3 space-y-2" data-testid="failed-uploads-issue">
+                    {failedUploads
+                      .filter((f) => f.category === "issue")
+                      .map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm"
+                          data-testid={`failed-upload-issue-${f.id}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium">{f.file.name}</div>
+                            <div className="text-xs text-muted-foreground">{f.lastError}</div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={retryingIds.has(f.id)}
+                            onClick={() => retryFailedUpload(f.id)}
+                            data-testid={`button-retry-issue-${f.id}`}
+                          >
+                            {retryingIds.has(f.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : "Retry"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => dismissFailedUpload(f.id)}
+                            data-testid={`button-dismiss-issue-${f.id}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
+                )}
                 {issuePhotoUploading && (
                   <div className="flex items-center justify-center gap-2 py-3" data-testid="issue-photo-uploading">
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1327,6 +1432,43 @@ export default function TechSubmitPage() {
                           </Button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {failedUploads.filter((f) => f.category === "estimate").length > 0 && (
+                    <div className="mt-3 space-y-2" data-testid="failed-uploads-estimate">
+                      {failedUploads
+                        .filter((f) => f.category === "estimate")
+                        .map((f) => (
+                          <div
+                            key={f.id}
+                            className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm"
+                            data-testid={`failed-upload-estimate-${f.id}`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{f.file.name}</div>
+                              <div className="text-xs text-muted-foreground">{f.lastError}</div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={retryingIds.has(f.id)}
+                              onClick={() => retryFailedUpload(f.id)}
+                              data-testid={`button-retry-estimate-${f.id}`}
+                            >
+                              {retryingIds.has(f.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : "Retry"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => dismissFailedUpload(f.id)}
+                              data-testid={`button-dismiss-estimate-${f.id}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ))}
                     </div>
                   )}
                   {estimatePhotoUploading && (

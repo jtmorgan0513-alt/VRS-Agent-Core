@@ -1,4 +1,5 @@
 # Session Context
+> Last updated: 2026-04-23
 
 ## Current State
 - Platform is deployed on Replit with PostgreSQL (Neon)
@@ -9,6 +10,7 @@
 - HEIC photo upload fix deployed for iPhone users
 
 ## Recent Changes
+- **Per-file upload failure UI + retry in tech-submit.tsx** (2026-04-23) — `handlePhotosSelect` now tracks per-file failures in `failedUploads` state. Failed files render as red-bordered list items under each photo section (issue/estimate) with Retry and Dismiss buttons. Retry reuses `uploadSinglePhoto` and moves succeeded files into the grid without requiring reselection. Replaces aggregate toast with actionable per-file UI. Task 1 of pilot-feedback-fixes plan.
 - **Added rejection reason preview to tech history list** (2026-04-16) — previously rejected tickets only showed a red badge with no reason in the list; techs had to open each one. Now shows compact `Reason: ...` line under the card for `rejected` / `rejected_closed` statuses, using `rejectionReasons` (JSON) with fallback to `stage1RejectionReason`.
 - **Fixed resubmit form silent failure for AHS / First American tickets** (2026-04-16) — `tech-resubmit.tsx` Zod schema only allowed `sears_protect`, so clicking "Resubmit to VRS" on an AHS rejected ticket silently failed validation (warrantyType field not rendered → no FormMessage shown). Expanded enum to match `tech-submit.tsx`.
 - iPhone photo upload HEIC MIME type fix (accept empty `f.type`)
