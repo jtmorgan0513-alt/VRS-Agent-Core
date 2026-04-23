@@ -851,7 +851,9 @@ export default function TechSubmitPage() {
               )}
             />
 
-            {watchedRequestType === "parts_nla" && (
+            {watchedRequestType === "parts_nla" &&
+              watchedValues.warrantyType !== "american_home_shield" &&
+              watchedValues.warrantyType !== "first_american" && (
               <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3" data-testid="nla-info-banner">
                 <div className="flex items-start gap-2">
                   <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
@@ -875,9 +877,9 @@ export default function TechSubmitPage() {
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
                   <div className="text-sm">
-                    <p className="font-medium text-destructive">Wrong pathway for AHS / First American</p>
+                    <p className="font-medium text-destructive">Use TechHub for AHS / First American NLA</p>
                     <p className="text-destructive/90 mt-0.5">
-                      NLA submissions in VRS are for Sears Protect / PA / Cinch only. For AHS or First American NLA situations, continue through TechHub. Switch the request type to "Authorization" if this is a coverage approval question.
+                      Handle AHS or First American NLA situations through TechHub — VRS does not route these to agents. Switch the request type to "Authorization" if this is a coverage approval question instead.
                     </p>
                   </div>
                 </div>
