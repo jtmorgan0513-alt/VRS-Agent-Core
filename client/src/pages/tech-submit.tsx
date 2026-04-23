@@ -762,6 +762,8 @@ export default function TechSubmitPage() {
     setOriginalBeforeAi(null);
     setDraftRestored(false);
     setDraftSavedAt(null);
+    setFailedUploads([]);
+    setRetryingIds(new Set());
     toast({ title: "Draft discarded", description: "Starting fresh." });
   }
 
@@ -1361,6 +1363,7 @@ export default function TechSubmitPage() {
                             type="button"
                             size="icon"
                             variant="ghost"
+                            disabled={retryingIds.has(f.id)}
                             onClick={() => dismissFailedUpload(f.id)}
                             data-testid={`button-dismiss-issue-${f.id}`}
                           >
@@ -1462,6 +1465,7 @@ export default function TechSubmitPage() {
                               type="button"
                               size="icon"
                               variant="ghost"
+                              disabled={retryingIds.has(f.id)}
                               onClick={() => dismissFailedUpload(f.id)}
                               data-testid={`button-dismiss-estimate-${f.id}`}
                             >
