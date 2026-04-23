@@ -182,7 +182,7 @@ export function buildSubmissionReceivedMessage(
       "NLA requests are researched by the VRS parts team. You will be contacted with sourcing details — typical turnaround is 1–2 business days.";
   } else if (isExternal) {
     waitCopy =
-      "This is a Sears Protect external-warranty request (AHS / First American). Approvals require a provider callback and can take longer than standard Sears Protect tickets. Please remain at the site until you receive the approval/rejection text.";
+      "This is an external-warranty request (AHS / First American). Approvals require a provider callback and can take longer than standard Sears Protect tickets. Please remain at the site until you receive the approval/rejection text.";
   } else {
     waitCopy =
       "A VRS agent will review your request shortly. Standard turnaround is a few minutes during business hours. Please remain at the site until you receive the approval/rejection text.";

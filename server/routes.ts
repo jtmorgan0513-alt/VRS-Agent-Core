@@ -647,18 +647,16 @@ export async function registerRoutes(
         clientNm: procIdResult.clientNm,
       });
 
-      try {
-        const phone = submission.phoneOverride || submission.phone;
-        if (phone) {
-          const body = buildSubmissionReceivedMessage(
-            submission.serviceOrder,
-            submission.warrantyType,
-            submission.requestType,
-          );
-          await sendSms(submission.id, phone, "submission_received", body);
-        }
-      } catch (err) {
-        console.error("[SMS] submission_received failed:", err);
+      const submissionReceivedPhone = submission.phoneOverride || submission.phone;
+      if (submissionReceivedPhone) {
+        const body = buildSubmissionReceivedMessage(
+          submission.serviceOrder,
+          submission.warrantyType,
+          submission.requestType,
+        );
+        sendSms(submission.id, submissionReceivedPhone, "submission_received", body).catch((err) => {
+          console.error("[SMS] submission_received failed:", err);
+        });
       }
 
       if (originalAgent) {
