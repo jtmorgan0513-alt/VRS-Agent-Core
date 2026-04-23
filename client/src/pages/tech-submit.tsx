@@ -28,7 +28,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus, CheckCircle2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -614,6 +624,10 @@ export default function TechSubmitPage() {
     },
   });
 
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<any>(null);
+  const [pendingData, setPendingData] = useState<SubmissionFormData | null>(null);
+
   function onSubmit(data: SubmissionFormData) {
     if (data.requestType === "parts_nla") {
       const nlaParts = partNumbers.filter(p => p.trim() !== "");
@@ -644,7 +658,49 @@ export default function TechSubmitPage() {
         payload.partNumbers = JSON.stringify({ nla: nlaParts, available: otherParts });
       }
     }
-    mutation.mutate(payload as any);
+    setPendingPayload(payload);
+    setPendingData(data);
+    setReviewOpen(true);
+  }
+
+  function confirmAndSubmit() {
+    if (!pendingPayload) return;
+    setReviewOpen(false);
+    mutation.mutate(pendingPayload as any);
+  }
+
+  function getReviewWarnings(data: SubmissionFormData | null): string[] {
+    if (!data) return [];
+    const warnings: string[] = [];
+    const desc = (data.issueDescription || "").trim();
+    if (desc.length < 50) {
+      warnings.push("Description is short (under 50 characters). Agents process requests faster with a clear diagnosis.");
+    }
+    if (data.requestType !== "infestation_non_accessible" && issuePhotoUrls.length < 2) {
+      warnings.push("Only one issue photo uploaded. Multiple angles help the agent approve faster.");
+    }
+    if (data.requestType === "parts_nla") {
+      const nlaParts = partNumbers.filter(p => p.trim() !== "");
+      if (nlaParts.length === 0) {
+        warnings.push("No NLA part numbers entered. Make sure the NLA parts section has the numbers TechHub flagged.");
+      }
+    }
+    return warnings;
+  }
+
+  function formatApplianceLabel(value: string | undefined): string {
+    return APPLIANCE_TYPES.find(a => a.value === value)?.label || value || "—";
+  }
+
+  function formatRequestTypeLabel(value: string | undefined): string {
+    if (value === "authorization") return "Authorization";
+    if (value === "infestation_non_accessible") return "Infestation / Non-Accessible";
+    if (value === "parts_nla") return "Parts — No Longer Available (NLA)";
+    return value || "—";
+  }
+
+  function formatWarrantyLabel(value: string | undefined): string {
+    return WARRANTY_PROVIDERS.find(w => w.value === value)?.label || value || "—";
   }
 
   const watchedRequestType = form.watch("requestType");
@@ -1678,6 +1734,132 @@ export default function TechSubmitPage() {
             </Button>
           </form>
         </Form>
+
+        <AlertDialog open={reviewOpen} onOpenChange={setReviewOpen}>
+          <AlertDialogContent className="max-w-lg" data-testid="dialog-submit-review">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Review before you submit</AlertDialogTitle>
+              <AlertDialogDescription>
+                Once you confirm, this goes to a VRS agent. Double-check the details — especially photos and part numbers.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {pendingData && (
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1" data-testid="section-submit-review-body">
+                <div className="rounded-md border p-3 text-sm space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Service Order</span>
+                    <span className="font-medium text-right" data-testid="review-so">{pendingData.serviceOrder}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Phone</span>
+                    <span className="font-medium text-right" data-testid="review-phone">{pendingData.phone}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Appliance</span>
+                    <span className="font-medium text-right" data-testid="review-appliance">{formatApplianceLabel(pendingData.applianceType)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Warranty</span>
+                    <span className="font-medium text-right" data-testid="review-warranty">{formatWarrantyLabel(pendingData.warrantyType)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Request Type</span>
+                    <span className="font-medium text-right" data-testid="review-request-type">{formatRequestTypeLabel(pendingData.requestType)}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-3 text-sm">
+                  <p className="text-muted-foreground mb-1">Description</p>
+                  <p className="whitespace-pre-wrap" data-testid="review-description">{(pendingData.issueDescription || "").slice(0, 400)}{(pendingData.issueDescription || "").length > 400 ? "…" : ""}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{(pendingData.issueDescription || "").length} characters{aiUsed ? " · AI-enhanced" : ""}</p>
+                </div>
+
+                <div className="rounded-md border p-3 text-sm space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Model/serial & estimate photos</span>
+                    <span className="font-medium" data-testid="review-estimate-count">{estimatePhotoUrls.length}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Issue photos</span>
+                    <span className="font-medium" data-testid="review-issue-count">{issuePhotoUrls.length}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Video</span>
+                    <span className="font-medium" data-testid="review-video">{videoUrl ? "Attached" : "None"}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Voice note</span>
+                    <span className="font-medium" data-testid="review-voice">{voiceNoteUrl ? "Attached" : "None"}</span>
+                  </div>
+                </div>
+
+                {pendingData.requestType === "parts_nla" && (
+                  <div className="rounded-md border p-3 text-sm space-y-1.5" data-testid="review-nla-parts">
+                    <div>
+                      <p className="text-muted-foreground mb-1">NLA part numbers</p>
+                      {partNumbers.filter(p => p.trim()).length > 0 ? (
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {partNumbers.filter(p => p.trim()).map((p, i) => (
+                            <li key={i} className="font-medium">{p}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-destructive">None entered</p>
+                      )}
+                    </div>
+                    <div className="pt-2 border-t">
+                      <p className="text-muted-foreground mb-1">Other required parts (available)</p>
+                      {availableParts.filter(p => p.trim()).length > 0 ? (
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {availableParts.filter(p => p.trim()).map((p, i) => (
+                            <li key={i} className="font-medium">{p}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-muted-foreground">None</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(() => {
+                  const warnings = getReviewWarnings(pendingData);
+                  if (warnings.length === 0) {
+                    return (
+                      <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800 p-3 text-sm flex items-start gap-2" data-testid="review-no-warnings">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                        <p className="text-green-800 dark:text-green-200">Looks complete. Ready to submit.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-3 text-sm" data-testid="review-warnings">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-medium text-amber-800 dark:text-amber-200 mb-1">Heads up before you submit</p>
+                          <ul className="list-disc pl-5 space-y-0.5 text-amber-800 dark:text-amber-200">
+                            {warnings.map((w, i) => (
+                              <li key={i} data-testid={`review-warning-${i}`}>{w}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-review-cancel">Go back & edit</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmAndSubmit} data-testid="button-review-confirm">
+                <Send className="w-4 h-4 mr-2" /> Confirm & submit
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

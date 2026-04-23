@@ -4,6 +4,7 @@
 - [x] Task 2 — pilot-feedback-fixes (implemented 2026-04-23)
 - [x] Task 3 — pilot-feedback-fixes (implemented 2026-04-23)
 - [x] Task 4 — pilot-feedback-fixes (implemented 2026-04-23)
+- [x] Pre-submit review dialog (Kenneth Hokanson field feedback) — implemented 2026-04-23
 
 ## Blocked
 
