@@ -165,7 +165,7 @@ export const submissionNotes = pgTable("submission_notes", {
   id: serial("id").primaryKey(),
   submissionId: integer("submission_id")
     .notNull()
-    .references(() => submissions.id),
+    .references(() => submissions.id, { onDelete: "cascade" }),
   authorId: integer("author_id")
     .notNull()
     .references(() => users.id),

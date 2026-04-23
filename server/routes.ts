@@ -959,6 +959,8 @@ export async function registerRoutes(
       try {
         const id = parseInt(req.params.id as string);
         if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        const sub = await storage.getSubmission(id);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
         const notes = await storage.getSubmissionNotes(id);
         return res.status(200).json({ notes });
       } catch (error) {
