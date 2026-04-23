@@ -961,6 +961,10 @@ export async function registerRoutes(
         if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
         const sub = await storage.getSubmission(id);
         if (!sub) return res.status(404).json({ error: "Submission not found" });
+        const user = (req as any).user;
+        if (user.role === "technician" && sub.technicianId !== user.id) {
+          return res.status(403).json({ error: "Access denied" });
+        }
         const notes = await storage.getSubmissionNotes(id);
         return res.status(200).json({ notes });
       } catch (error) {
