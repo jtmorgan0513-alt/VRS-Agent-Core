@@ -18,7 +18,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake, fetchProcIdForServiceOrder } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage, buildSubmissionReceivedMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -646,6 +646,20 @@ export async function registerRoutes(
         procId: procIdResult.procId,
         clientNm: procIdResult.clientNm,
       });
+
+      try {
+        const phone = submission.phoneOverride || submission.phone;
+        if (phone) {
+          const body = buildSubmissionReceivedMessage(
+            submission.serviceOrder,
+            submission.warrantyType,
+            submission.requestType,
+          );
+          await sendSms(submission.id, phone, "submission_received", body);
+        }
+      } catch (err) {
+        console.error("[SMS] submission_received failed:", err);
+      }
 
       if (originalAgent) {
         broadcastToAgent(originalAgent, {

@@ -1,7 +1,7 @@
 # Tasks
 
 ## In Progress
-- [ ] Task 2 — pilot-feedback-fixes (pending)
+- [x] Task 2 — pilot-feedback-fixes (implemented 2026-04-23)
 - [ ] Task 3 — pilot-feedback-fixes (pending)
 - [ ] Task 4 — pilot-feedback-fixes (pending)
 

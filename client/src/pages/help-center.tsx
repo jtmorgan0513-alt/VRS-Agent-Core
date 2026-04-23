@@ -75,7 +75,7 @@ const faqItems: HelpItem[] = [
   {
     title: "How long does approval usually take?",
     content:
-      "Approval time depends on the current queue volume and agent availability. You can check the availability banner on your home screen to see how many agents are online and how many tickets are in the queue. Most submissions are reviewed during business hours. If your submission has been pending for an extended period, check with your supervisor for assistance.",
+      "Wait time depends on the warranty provider.\n\n• Sears Protect / Sears PA / Sears Home Warranty (Cinch): typically 2–15 minutes during business hours.\n• American Home Shield and First American: these require VRS to call the provider for approval, which can take significantly longer — sometimes over an hour depending on their hold times. Plan to stay at the site until you receive the decision text.\n• NLA Parts requests: researched by the VRS parts team — typical turnaround is 1–2 business days.\n\nYou can check the availability banner on your home screen to see how many agents are online and how many tickets are in the queue. If your submission has been pending for an extended period, check with your supervisor.",
   },
   {
     title: "Can I edit a submission after sending it?",
