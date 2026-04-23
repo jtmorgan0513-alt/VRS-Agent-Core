@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
 import { formatDate } from "@/lib/utils";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Clock,
   CheckCircle,
@@ -21,6 +23,7 @@ import {
   Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Submission } from "@shared/schema";
 import { shouldSuppressCashCall } from "@/lib/smsPreview";
 
@@ -45,6 +48,29 @@ export default function SubmissionDetailPage() {
     queryKey: ["/api/submissions", id, "history"],
     enabled: !!id,
   });
+
+  const notesQuery = useQuery<{ notes: Array<{ id: number; body: string; authorName: string; authorRole: string; createdAt: string }> }>({
+    queryKey: ["/api/submissions", id, "notes"],
+    enabled: !!id,
+  });
+
+  const [noteDraft, setNoteDraft] = useState("");
+  const [postingNote, setPostingNote] = useState(false);
+
+  async function postNote() {
+    if (!noteDraft.trim() || !id) return;
+    setPostingNote(true);
+    try {
+      await apiRequest("POST", `/api/submissions/${id}/notes`, { body: noteDraft.trim() });
+      setNoteDraft("");
+      await queryClient.invalidateQueries({ queryKey: ["/api/submissions", id, "notes"] });
+      toast({ title: "Note added" });
+    } catch (err: any) {
+      toast({ title: "Failed to add note", description: String(err?.message || err), variant: "destructive" });
+    } finally {
+      setPostingNote(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -685,6 +711,46 @@ export default function SubmissionDetailPage() {
             </CardContent>
           </Card>
         )}
+
+        <Card className="mt-4" data-testid="card-submission-notes">
+          <CardContent className="p-4 space-y-3">
+            <h3 className="font-semibold flex items-center gap-2">
+              <ScrollText className="w-4 h-4" /> Notes
+            </h3>
+            {notesQuery.data?.notes.length === 0 && (
+              <p className="text-sm text-muted-foreground">No notes yet.</p>
+            )}
+            {notesQuery.data?.notes.map((n) => (
+              <div key={n.id} className="rounded-md border p-2 text-sm" data-testid={`note-${n.id}`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{n.authorName}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(n.createdAt)}
+                  </span>
+                </div>
+                <div className="whitespace-pre-wrap mt-1">{n.body}</div>
+              </div>
+            ))}
+            <div className="space-y-2">
+              <Textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="Add a note — clarification, new info, updated diagnosis…"
+                rows={3}
+                maxLength={2000}
+                data-testid="input-note-body"
+              />
+              <Button
+                size="sm"
+                onClick={postNote}
+                disabled={!noteDraft.trim() || postingNote}
+                data-testid="button-post-note"
+              >
+                {postingNote ? "Posting…" : "Add note"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <Button variant="outline" className="w-full" data-testid="button-view-next" onClick={() => navigate("/tech")}>
           {(status === "completed" || status === "approved") ? "View Next Job" : "Back to Home"}

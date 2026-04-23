@@ -28,7 +28,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus, CheckCircle2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
 
 const APPLIANCE_TYPES = [
@@ -97,6 +107,16 @@ export default function TechSubmitPage() {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [partNumbers, setPartNumbers] = useState<string[]>([""]);
   const [availableParts, setAvailableParts] = useState<string[]>([]);
+
+  type FailedUpload = {
+    id: string;
+    file: File;
+    category: "estimate" | "issue";
+    lastError: string;
+    attemptsUsed: number;
+  };
+  const [failedUploads, setFailedUploads] = useState<FailedUpload[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
 
   function reportUploadError(details: Record<string, unknown>) {
     try {
@@ -203,14 +223,24 @@ export default function TechSubmitPage() {
     setCount({ done: 0, total: filesToUpload.length });
     const newUrls: string[] = [];
     const newPreviews: Record<string, string> = {};
+    const newFailures: FailedUpload[] = [];
+    const categoryForList: "estimate" | "issue" = setUrls === setEstimatePhotoUrls ? "estimate" : "issue";
     for (let i = 0; i < filesToUpload.length; i++) {
-      const localBlob = URL.createObjectURL(filesToUpload[i]);
-      const url = await uploadSinglePhoto(filesToUpload[i]);
+      const file = filesToUpload[i];
+      const localBlob = URL.createObjectURL(file);
+      const url = await uploadSinglePhoto(file);
       if (url) {
         newUrls.push(url);
         newPreviews[url] = localBlob;
       } else {
         URL.revokeObjectURL(localBlob);
+        newFailures.push({
+          id: crypto.randomUUID(),
+          file,
+          category: categoryForList,
+          lastError: "Upload failed after retries",
+          attemptsUsed: 3,
+        });
       }
       setCount({ done: i + 1, total: filesToUpload.length });
     }
@@ -218,11 +248,59 @@ export default function TechSubmitPage() {
     if (setLocalPreviews) {
       setLocalPreviews((prev) => ({ ...prev, ...newPreviews }));
     }
+    if (newFailures.length > 0) {
+      setFailedUploads((prev) => [...prev, ...newFailures]);
+    }
     setUploading(false);
     if (inputRef.current) inputRef.current.value = "";
-    if (newUrls.length < filesToUpload.length) {
-      toast({ title: "Upload Failed", description: `${filesToUpload.length - newUrls.length} photo(s) failed to upload after retrying. Check your connection and try again.`, variant: "destructive" });
+    if (newFailures.length > 0) {
+      toast({
+        title: "Some photos failed",
+        description: `${newFailures.length} photo(s) failed. Scroll down to retry.`,
+        variant: "destructive",
+      });
     }
+  }
+
+  async function retryFailedUpload(failedId: string) {
+    const failed = failedUploads.find((f) => f.id === failedId);
+    if (!failed) return;
+    setRetryingIds((prev) => new Set(prev).add(failedId));
+    const url = await uploadSinglePhoto(failed.file);
+    setRetryingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(failedId);
+      return next;
+    });
+    if (url) {
+      const localBlob = URL.createObjectURL(failed.file);
+      if (failed.category === "estimate") {
+        setEstimatePhotoUrls((prev) => [...prev, url]);
+        setEstimatePhotoLocalPreviews((prev) => ({ ...prev, [url]: localBlob }));
+      } else {
+        setIssuePhotoUrls((prev) => [...prev, url]);
+        setIssuePhotoLocalPreviews((prev) => ({ ...prev, [url]: localBlob }));
+      }
+      setFailedUploads((prev) => prev.filter((f) => f.id !== failedId));
+      toast({ title: "Retry succeeded", description: failed.file.name });
+    } else {
+      setFailedUploads((prev) =>
+        prev.map((f) =>
+          f.id === failedId
+            ? { ...f, attemptsUsed: f.attemptsUsed + 3, lastError: "Retry failed" }
+            : f
+        )
+      );
+      toast({
+        title: "Retry failed",
+        description: `${failed.file.name} — check your connection.`,
+        variant: "destructive",
+      });
+    }
+  }
+
+  function dismissFailedUpload(failedId: string) {
+    setFailedUploads((prev) => prev.filter((f) => f.id !== failedId));
   }
 
   function isVideoFile(file: File): boolean {
@@ -546,6 +624,10 @@ export default function TechSubmitPage() {
     },
   });
 
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<any>(null);
+  const [pendingData, setPendingData] = useState<SubmissionFormData | null>(null);
+
   function onSubmit(data: SubmissionFormData) {
     if (data.requestType === "parts_nla") {
       const nlaParts = partNumbers.filter(p => p.trim() !== "");
@@ -576,7 +658,52 @@ export default function TechSubmitPage() {
         payload.partNumbers = JSON.stringify({ nla: nlaParts, available: otherParts });
       }
     }
-    mutation.mutate(payload as any);
+    setPendingPayload(payload);
+    setPendingData(data);
+    setReviewOpen(true);
+  }
+
+  function confirmAndSubmit() {
+    if (!pendingPayload || mutation.isPending) return;
+    setReviewOpen(false);
+    mutation.mutate(pendingPayload as any);
+  }
+
+  function getReviewWarnings(data: SubmissionFormData | null): string[] {
+    if (!data) return [];
+    const warnings: string[] = [];
+    const desc = (data.issueDescription || "").trim();
+    if (desc.length < 50) {
+      warnings.push("Description is short (under 50 characters). Agents process requests faster with a clear diagnosis.");
+    }
+    if (data.requestType !== "infestation_non_accessible" && estimatePhotoUrls.length < 2) {
+      warnings.push("Only one model/serial & estimate image uploaded. Agents usually need BOTH the model/serial tag photo AND the TechHub estimate screenshot — double-check before you submit.");
+    }
+    if (data.requestType !== "infestation_non_accessible" && issuePhotoUrls.length < 2) {
+      warnings.push("Only one issue photo uploaded. Multiple angles help the agent approve faster.");
+    }
+    if (data.requestType === "parts_nla") {
+      const nlaParts = partNumbers.filter(p => p.trim() !== "");
+      if (nlaParts.length === 0) {
+        warnings.push("No NLA part numbers entered. Make sure the NLA parts section has the numbers TechHub flagged.");
+      }
+    }
+    return warnings;
+  }
+
+  function formatApplianceLabel(value: string | undefined): string {
+    return APPLIANCE_TYPES.find(a => a.value === value)?.label || value || "—";
+  }
+
+  function formatRequestTypeLabel(value: string | undefined): string {
+    if (value === "authorization") return "Authorization";
+    if (value === "infestation_non_accessible") return "Infestation / Non-Accessible";
+    if (value === "parts_nla") return "Parts — No Longer Available (NLA)";
+    return value || "—";
+  }
+
+  function formatWarrantyLabel(value: string | undefined): string {
+    return WARRANTY_PROVIDERS.find(w => w.value === value)?.label || value || "—";
   }
 
   const watchedRequestType = form.watch("requestType");
@@ -694,6 +821,8 @@ export default function TechSubmitPage() {
     setOriginalBeforeAi(null);
     setDraftRestored(false);
     setDraftSavedAt(null);
+    setFailedUploads([]);
+    setRetryingIds(new Set());
     toast({ title: "Draft discarded", description: "Starting fresh." });
   }
 
@@ -781,7 +910,9 @@ export default function TechSubmitPage() {
               )}
             />
 
-            {watchedRequestType === "parts_nla" && (
+            {watchedRequestType === "parts_nla" &&
+              watchedValues.warrantyType !== "american_home_shield" &&
+              watchedValues.warrantyType !== "first_american" && (
               <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3" data-testid="nla-info-banner">
                 <div className="flex items-start gap-2">
                   <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
@@ -789,6 +920,25 @@ export default function TechSubmitPage() {
                     <p className="text-sm font-medium text-blue-800 dark:text-blue-200">NLA Submissions Only</p>
                     <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">
                       Submit this form ONLY when TechHub shows a part as "No Longer Available" for a Sears Protect (SPHW), Sears PA (MPA), or Sears Home Warranty (Cinch) service call. All other calls should be handled through TechHub directly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {watchedRequestType === "parts_nla" &&
+              (watchedValues.warrantyType === "american_home_shield" ||
+                watchedValues.warrantyType === "first_american") && (
+              <div
+                className="rounded-md border border-destructive bg-destructive/10 p-3"
+                data-testid="banner-nla-wrong-warranty"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-destructive">Use TechHub for AHS / First American NLA</p>
+                    <p className="text-destructive/90 mt-0.5">
+                      Handle AHS or First American NLA situations through TechHub — VRS does not route these to agents. Switch the request type to "Authorization" if this is a coverage approval question instead.
                     </p>
                   </div>
                 </div>
@@ -1265,6 +1415,44 @@ export default function TechSubmitPage() {
                     ))}
                   </div>
                 )}
+                {failedUploads.filter((f) => f.category === "issue").length > 0 && (
+                  <div className="mt-3 space-y-2" data-testid="failed-uploads-issue">
+                    {failedUploads
+                      .filter((f) => f.category === "issue")
+                      .map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm"
+                          data-testid={`failed-upload-issue-${f.id}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium">{f.file.name}</div>
+                            <div className="text-xs text-muted-foreground">{f.lastError}</div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={retryingIds.has(f.id)}
+                            onClick={() => retryFailedUpload(f.id)}
+                            data-testid={`button-retry-issue-${f.id}`}
+                          >
+                            {retryingIds.has(f.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : "Retry"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            disabled={retryingIds.has(f.id)}
+                            onClick={() => dismissFailedUpload(f.id)}
+                            data-testid={`button-dismiss-issue-${f.id}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
+                )}
                 {issuePhotoUploading && (
                   <div className="flex items-center justify-center gap-2 py-3" data-testid="issue-photo-uploading">
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1327,6 +1515,44 @@ export default function TechSubmitPage() {
                           </Button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {failedUploads.filter((f) => f.category === "estimate").length > 0 && (
+                    <div className="mt-3 space-y-2" data-testid="failed-uploads-estimate">
+                      {failedUploads
+                        .filter((f) => f.category === "estimate")
+                        .map((f) => (
+                          <div
+                            key={f.id}
+                            className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm"
+                            data-testid={`failed-upload-estimate-${f.id}`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{f.file.name}</div>
+                              <div className="text-xs text-muted-foreground">{f.lastError}</div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={retryingIds.has(f.id)}
+                              onClick={() => retryFailedUpload(f.id)}
+                              data-testid={`button-retry-estimate-${f.id}`}
+                            >
+                              {retryingIds.has(f.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : "Retry"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              disabled={retryingIds.has(f.id)}
+                              onClick={() => dismissFailedUpload(f.id)}
+                              data-testid={`button-dismiss-estimate-${f.id}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ))}
                     </div>
                   )}
                   {estimatePhotoUploading && (
@@ -1511,6 +1737,138 @@ export default function TechSubmitPage() {
             </Button>
           </form>
         </Form>
+
+        <AlertDialog open={reviewOpen} onOpenChange={setReviewOpen}>
+          <AlertDialogContent className="max-w-lg" data-testid="dialog-submit-review">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Review before you submit</AlertDialogTitle>
+              <AlertDialogDescription>
+                Once you confirm, this goes to a VRS agent. Double-check the details — especially photos and part numbers.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {pendingData && (
+              <div
+                className="space-y-3 max-h-[55vh] overflow-y-auto pr-1"
+                data-testid="section-submit-review-body"
+                tabIndex={0}
+                role="region"
+                aria-label="Submission summary"
+              >
+                <div className="rounded-md border p-3 text-sm space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Service Order</span>
+                    <span className="font-medium text-right" data-testid="review-so">{pendingData.serviceOrder}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Phone</span>
+                    <span className="font-medium text-right" data-testid="review-phone">{pendingData.phone}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Appliance</span>
+                    <span className="font-medium text-right" data-testid="review-appliance">{formatApplianceLabel(pendingData.applianceType)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Warranty</span>
+                    <span className="font-medium text-right" data-testid="review-warranty">{formatWarrantyLabel(pendingData.warrantyType)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Request Type</span>
+                    <span className="font-medium text-right" data-testid="review-request-type">{formatRequestTypeLabel(pendingData.requestType)}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-3 text-sm">
+                  <p className="text-muted-foreground mb-1">Description</p>
+                  <p className="whitespace-pre-wrap" data-testid="review-description">{(pendingData.issueDescription || "").slice(0, 400)}{(pendingData.issueDescription || "").length > 400 ? "…" : ""}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{(pendingData.issueDescription || "").length} characters{aiUsed ? " · AI-enhanced" : ""}</p>
+                </div>
+
+                <div className="rounded-md border p-3 text-sm space-y-1.5">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Model/serial & estimate photos</span>
+                    <span className="font-medium" data-testid="review-estimate-count">{estimatePhotoUrls.length}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Issue photos</span>
+                    <span className="font-medium" data-testid="review-issue-count">{issuePhotoUrls.length}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Video</span>
+                    <span className="font-medium" data-testid="review-video">{videoUrl ? "Attached" : "None"}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Voice note</span>
+                    <span className="font-medium" data-testid="review-voice">{voiceNoteUrl ? "Attached" : "None"}</span>
+                  </div>
+                </div>
+
+                {pendingData.requestType === "parts_nla" && (
+                  <div className="rounded-md border p-3 text-sm space-y-1.5" data-testid="review-nla-parts">
+                    <div>
+                      <p className="text-muted-foreground mb-1">NLA part numbers</p>
+                      {partNumbers.filter(p => p.trim()).length > 0 ? (
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {partNumbers.filter(p => p.trim()).map((p, i) => (
+                            <li key={i} className="font-medium">{p}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-destructive">None entered</p>
+                      )}
+                    </div>
+                    <div className="pt-2 border-t">
+                      <p className="text-muted-foreground mb-1">Other required parts (available)</p>
+                      {availableParts.filter(p => p.trim()).length > 0 ? (
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {availableParts.filter(p => p.trim()).map((p, i) => (
+                            <li key={i} className="font-medium">{p}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-muted-foreground">None</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(() => {
+                  const warnings = getReviewWarnings(pendingData);
+                  if (warnings.length === 0) {
+                    return (
+                      <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800 p-3 text-sm flex items-start gap-2" data-testid="review-no-warnings">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                        <p className="text-green-800 dark:text-green-200">Looks complete. Ready to submit.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-3 text-sm" data-testid="review-warnings">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-medium text-amber-800 dark:text-amber-200 mb-1">Heads up before you submit</p>
+                          <ul className="list-disc pl-5 space-y-0.5 text-amber-800 dark:text-amber-200">
+                            {warnings.map((w, i) => (
+                              <li key={i} data-testid={`review-warning-${i}`}>{w}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-review-cancel">Go back & edit</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmAndSubmit} data-testid="button-review-confirm">
+                <Send className="w-4 h-4 mr-2" /> Confirm & submit
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

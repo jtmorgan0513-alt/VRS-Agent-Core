@@ -18,7 +18,7 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake, fetchProcIdForServiceOrder } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage } from "./sms";
+import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage, buildSubmissionReceivedMessage } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -647,6 +647,18 @@ export async function registerRoutes(
         clientNm: procIdResult.clientNm,
       });
 
+      const submissionReceivedPhone = submission.phoneOverride || submission.phone;
+      if (submissionReceivedPhone) {
+        const body = buildSubmissionReceivedMessage(
+          submission.serviceOrder,
+          submission.warrantyType,
+          submission.requestType,
+        );
+        sendSms(submission.id, submissionReceivedPhone, "submission_received", body).catch((err) => {
+          console.error("[SMS] submission_received failed:", err);
+        });
+      }
+
       if (originalAgent) {
         broadcastToAgent(originalAgent, {
           type: "resubmission_received",
@@ -898,6 +910,69 @@ export async function registerRoutes(
       return res.status(500).json({ error: "Failed to get submission history" });
     }
   });
+
+  // ========================================================================
+  // SUBMISSION NOTES — post-submission follow-up notes
+  // ========================================================================
+
+  app.post(
+    "/api/submissions/:id/notes",
+    authenticateToken,
+    async (req, res) => {
+      try {
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        const sub = await storage.getSubmission(id);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+
+        const user = (req as any).user;
+        if (user.role === "technician" && sub.technicianId !== user.id) {
+          return res.status(403).json({ error: "Not your submission" });
+        }
+
+        const noteSchema = z.object({
+          body: z.string().min(1, "Note cannot be empty").max(2000, "Note must be 2000 characters or less"),
+        });
+        const parsed = noteSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Invalid note", details: parsed.error.flatten() });
+        }
+
+        const note = await storage.createSubmissionNote({
+          submissionId: id,
+          authorId: user.id,
+          authorRole: user.role,
+          body: parsed.data.body,
+        });
+        return res.status(201).json({ note });
+      } catch (error) {
+        console.error("Create submission note error:", error);
+        return res.status(500).json({ error: "Failed to add note" });
+      }
+    }
+  );
+
+  app.get(
+    "/api/submissions/:id/notes",
+    authenticateToken,
+    async (req, res) => {
+      try {
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        const sub = await storage.getSubmission(id);
+        if (!sub) return res.status(404).json({ error: "Submission not found" });
+        const user = (req as any).user;
+        if (user.role === "technician" && sub.technicianId !== user.id) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        const notes = await storage.getSubmissionNotes(id);
+        return res.status(200).json({ notes });
+      } catch (error) {
+        console.error("Get submission notes error:", error);
+        return res.status(500).json({ error: "Failed to get notes" });
+      }
+    }
+  );
 
   // ========================================================================
   // ADMIN AUDIT TRAIL — Full timeline for a submission

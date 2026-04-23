@@ -159,6 +159,30 @@ export type InsertSubmission = z.infer<typeof insertSubmissionSchema>;
 export type Submission = typeof submissions.$inferSelect;
 
 // ============================================================================
+// SUBMISSION NOTES TABLE (technician follow-up notes after submission)
+// ============================================================================
+export const submissionNotes = pgTable("submission_notes", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id")
+    .notNull()
+    .references(() => submissions.id, { onDelete: "cascade" }),
+  authorId: integer("author_id")
+    .notNull()
+    .references(() => users.id),
+  authorRole: text("author_role").notNull(), // 'technician', 'vrs_agent', 'admin'
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const insertSubmissionNoteSchema = createInsertSchema(submissionNotes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertSubmissionNote = z.infer<typeof insertSubmissionNoteSchema>;
+export type SubmissionNote = typeof submissionNotes.$inferSelect;
+
+// ============================================================================
 // SMS NOTIFICATIONS TABLE
 // ============================================================================
 export const smsNotifications = pgTable("sms_notifications", {
