@@ -664,7 +664,7 @@ export default function TechSubmitPage() {
   }
 
   function confirmAndSubmit() {
-    if (!pendingPayload) return;
+    if (!pendingPayload || mutation.isPending) return;
     setReviewOpen(false);
     mutation.mutate(pendingPayload as any);
   }
@@ -675,6 +675,9 @@ export default function TechSubmitPage() {
     const desc = (data.issueDescription || "").trim();
     if (desc.length < 50) {
       warnings.push("Description is short (under 50 characters). Agents process requests faster with a clear diagnosis.");
+    }
+    if (data.requestType !== "infestation_non_accessible" && estimatePhotoUrls.length < 2) {
+      warnings.push("Only one model/serial & estimate image uploaded. Agents usually need BOTH the model/serial tag photo AND the TechHub estimate screenshot — double-check before you submit.");
     }
     if (data.requestType !== "infestation_non_accessible" && issuePhotoUrls.length < 2) {
       warnings.push("Only one issue photo uploaded. Multiple angles help the agent approve faster.");
@@ -1745,7 +1748,13 @@ export default function TechSubmitPage() {
             </AlertDialogHeader>
 
             {pendingData && (
-              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1" data-testid="section-submit-review-body">
+              <div
+                className="space-y-3 max-h-[55vh] overflow-y-auto pr-1"
+                data-testid="section-submit-review-body"
+                tabIndex={0}
+                role="region"
+                aria-label="Submission summary"
+              >
                 <div className="rounded-md border p-3 text-sm space-y-1.5">
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">Service Order</span>
