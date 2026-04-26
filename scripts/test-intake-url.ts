@@ -160,20 +160,33 @@ console.log("\nallow-list filtering");
   );
 }
 
-console.log("\nINVALID branch (no procId match)");
+console.log("\nINVALID branch (procId not in PROC_ID_LABEL — verbatim passthrough)");
 {
-  const { branch, warnings, params } = buildIntakeFormUrl({
+  // Tyler 2026-04-26 (post-audit fix): the live Smartsheet dropdown has
+  // ~80+ options; we only enumerate ~23. Any procId we don't have a
+  // label for is passed through verbatim — Smartsheet's dropdown is the
+  // arbiter, not our hand-curated subset.
+  const { branch, params } = buildIntakeFormUrl({
     submission: makeSub({ procId: "ZZZ999" }),
     payload: {},
   });
   assert("branch=INVALID", branch === "INVALID");
   assert(
-    "warning about missing dropdown lookup",
-    warnings.some((w) => w.toLowerCase().includes("not in the verified"))
+    "Proc ID column passes through verbatim",
+    params["Proc ID/Third Part ID"] === "ZZZ999"
   );
+}
+
+console.log("\nAHSCLL passthrough (real Snowflake-sourced AHS proc id, not in label table)");
+{
+  const { branch, params } = buildIntakeFormUrl({
+    submission: makeSub({ procId: "AHSCLL" }),
+    payload: {},
+  });
+  assert("branch=AHS", branch === "AHS");
   assert(
-    "Proc ID column is omitted (no value resolved)",
-    !("Proc ID/Third Part ID" in params)
+    "AHSCLL passes through verbatim (not silently dropped)",
+    params["Proc ID/Third Part ID"] === "AHSCLL"
   );
 }
 
@@ -184,7 +197,7 @@ console.log("\nempty payload + null procId");
     payload: {},
   });
   assert("branch=INVALID for null procId", branch === "INVALID");
-  assert("no Proc ID in params", !("Proc ID/Third Part ID" in params));
+  assert("no Proc ID in params (nothing to pass through)", !("Proc ID/Third Part ID" in params));
 }
 
 console.log("");

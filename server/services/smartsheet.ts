@@ -160,12 +160,20 @@ export function buildIntakeFormUrl(
   // Pro or WOM"), so we pass it unmodified.
   const serviceOrder = submission.serviceOrder ?? "";
 
+  // Tyler 2026-04-26 (post-audit fix): the live Smartsheet dropdown has
+  // ~80+ options; PROC_ID_LABEL only enumerates 23 of them. Filtering the
+  // ticket's procId through that subset caused real Snowflake-sourced
+  // values (e.g. AHSCLL) to be silently dropped from the prefill, leaving
+  // the required dropdown blank for the agent every time.
+  //
+  // The procId comes from the real service order (Snowflake CMB_THD_PTY_ID)
+  // — by definition a value Smartsheet's own data accepts. We pass it
+  // through verbatim and only prefer the richer label when our hand-curated
+  // table happens to know one. PROC_ID_LABEL / lookupProcIdLabel stay in
+  // the file (still used for branch-routing nuance, future label
+  // enrichment, and existing call sites).
   const procIdLabel = lookupProcIdLabel(submission.procId);
-  if (submission.procId && !procIdLabel) {
-    warnings.push(
-      `Proc ID "${submission.procId}" is not in the verified Smartsheet dropdown lookup; the agent will need to pick it manually.`
-    );
-  }
+  const procIdValue = procIdLabel ?? (submission.procId || undefined);
 
   const applianceLabel = applianceTypeToSmartsheet(submission.applianceType);
 
@@ -175,7 +183,7 @@ export function buildIntakeFormUrl(
     "IH Unit Number": submission.ihUnitNumber || undefined,
     "IH Service Order Number": serviceOrder || undefined,
     "Servicer Type": "W2-In Home Field Tech", // Phase 1 = W2 only
-    "Proc ID/Third Part ID": procIdLabel,
+    "Proc ID/Third Part ID": procIdValue,
   };
 
   // Branch-defaults (only for verified fields where the answer is mechanically

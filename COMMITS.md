@@ -547,3 +547,42 @@ credentials" flow and the intake_forms persistence become fully functional in
 addition to the already-working iframe + auto-open behaviour.
 
 No data migration is required — both tables are new and start empty.
+
+---
+
+## Hotfix — Proc ID prefill verbatim passthrough (post-audit, 2026-04-26 PM)
+
+```
+fix(intake): pass submission.procId through to Smartsheet prefill verbatim
+
+The hand-curated PROC_ID_LABEL table in server/services/smartsheet.ts only
+enumerates ~23 of the ~80+ Smartsheet "Proc ID/Third Part ID" dropdown
+options (verified live 2026-04-25). The previous prefill builder gated on
+that table — any procId we hadn't manually labeled was silently omitted
+from the prefill URL, leaving the required Smartsheet dropdown blank.
+
+This bit every warranty family. Surfaced via AHSCLL: Snowflake's
+CMB_THD_PTY_ID returns AHSCLL for AHS-family service orders, but AHSCLL
+is not in our 23-entry subset, so every AHS ticket prefilled with that
+field empty.
+
+Fix: pass submission.procId through verbatim. Prefer the richer label
+("AHS000-American Home Shield") when our table happens to know one;
+otherwise fall through to the raw Snowflake-sourced value. Smartsheet's
+own dropdown is the arbiter — values flowing through real service orders
+are by definition options Smartsheet's data accepts.
+
+PROC_ID_LABEL and lookupProcIdLabel are NOT removed — kept for branch-
+routing nuance, future label enrichment, and existing call sites. The
+gate is removed; the lookup stays.
+
+Refs: post-build audit Critical finding C2.
+```
+
+Files:
+- `server/services/smartsheet.ts` (modified — `procIdValue = procIdLabel ?? submission.procId`)
+- `scripts/test-intake-url.ts` (modified — added `AHSCLL` passthrough case + `ZZZ999` verbatim case; removed obsolete "is omitted" assertion)
+
+No schema changes. No db:push required. No client changes (the only client surface was
+the warning strip in `intake-form-review-modal.tsx`, which still functions for the
+remaining `Some Bogus Field` allow-list warnings).
