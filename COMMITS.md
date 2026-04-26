@@ -510,3 +510,40 @@ for every ticket and the fallback button visibility depends only on
 re-opened from the resolution panel as long as the agent still owns the
 ticket.
 
+
+================================================================================
+DEFERRED WORK — RUN BEFORE NEXT PROD DEPLOY (added 2026-04-26)
+================================================================================
+
+`npm run db:push` was paused per Tyler's directive during the additive-only
+session. The following tables defined in `shared/schema.ts` do NOT yet exist
+in the dev (or prod) database and MUST be created before deploying:
+
+  * `intake_forms`              — backs the intake review/confirm flow
+  * `agent_external_credentials` — backs Calculator saved-credentials flow
+
+Impact while these tables are missing:
+  * `/api/submissions/:id/intake-form-status` returns benign "no row" responses
+    (the storage layer + dashboard tolerate this).
+  * `/api/agent/credentials/calculator/reveal` throws on the SELECT and returns
+    HTTP 500. The Calculator iframe component now catches this gracefully and
+    falls back to the manual sign-in path (no red banner) — see
+    `client/src/components/calculator-iframe.tsx`. Once the table exists this
+    fallback becomes a true "no creds saved yet" empty state.
+  * `/api/agent/credentials/calculator` (GET) likewise returns 500 until the
+    table exists; the Settings dialog should also tolerate this.
+
+Required step before next deploy:
+
+    npm run db:push       # or: npm run db:push --force  if Drizzle prompts
+
+Verification after push:
+
+    psql "$DATABASE_URL" -c "\dt intake_forms"
+    psql "$DATABASE_URL" -c "\dt agent_external_credentials"
+
+Both should appear in the public schema. After that, the Calculator "Save
+credentials" flow and the intake_forms persistence become fully functional in
+addition to the already-working iframe + auto-open behaviour.
+
+No data migration is required — both tables are new and start empty.

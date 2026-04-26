@@ -27,6 +27,12 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export const CALCULATOR_BASE_URL = "https://repairreplacecalculator.replit.app/";
+// Streamlit embed mode — hides the hamburger menu (which exposes
+// "Development / Run on save / Appearance" options) and footer chrome so the
+// iframe only shows the calculator app itself. Without this, Streamlit's
+// chrome is mistaken for a Replit IDE settings panel inside the iframe.
+// See https://docs.streamlit.io/library/advanced-features/configuration#embed-options.
+const CALCULATOR_IFRAME_SRC = `${CALCULATOR_BASE_URL}?embed=true&embed_options=hide_loading_screen`;
 const CALCULATOR_ORIGIN = (() => {
   try {
     return new URL(CALCULATOR_BASE_URL).origin;
@@ -68,8 +74,19 @@ export function CalculatorIframe({ onOpenSettings }: CalculatorIframeProps) {
         const data = (await res.json()) as RevealResponse;
         if (!cancelled) setCreds(data);
       } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Failed to load credentials");
+        // Reveal can fail benignly when:
+        //   * The agent_external_credentials table hasn't been pushed yet
+        //     (db:push deferred per Tyler's directive).
+        //   * SESSION_SECRET rotated since the row was written.
+        // In every failure mode the correct UX is "no auto-login available;
+        // sign in manually in the iframe". We deliberately do NOT surface
+        // a red destructive banner because the iframe itself is fully usable
+        // — the agent just has to type their calculator credentials by hand.
+        if (!cancelled) {
+          setCreds({ exists: false });
+          // Keep the message in the console for debugging but don't render it.
+          console.warn("[calculator] reveal failed — falling back to manual sign-in:", e);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -79,9 +96,11 @@ export function CalculatorIframe({ onOpenSettings }: CalculatorIframeProps) {
     };
   }, []);
 
-  // iframe URL is the calculator base only — credentials are NEVER appended
-  // as query params (they would leak to history + remote access logs).
-  const iframeSrc = CALCULATOR_BASE_URL;
+  // iframe URL is the calculator base + embed flag only — credentials are
+  // NEVER appended as query params (they would leak to history + remote
+  // access logs). The embed flag strips Streamlit's hamburger menu / footer
+  // chrome so the iframe doesn't look like a leaked dev tool.
+  const iframeSrc = CALCULATOR_IFRAME_SRC;
 
   // postMessage auto-login bridge — fires once on iframe load. The calculator
   // app only acts on this if it has registered a `message` listener that
