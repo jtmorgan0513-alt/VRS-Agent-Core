@@ -30,8 +30,14 @@ export interface IntakeFormReviewModalProps {
   /** Agent's working payload (Smartsheet column label -> value). */
   payload: Record<string, string>;
   /** Called once the agent has confirmed Smartsheet success and the audit row
-   *  is created. Used by parent to release the claim gate / clear state. */
+   *  is created. Used by parent to clear local working state. */
   onConfirmed: () => void;
+  /** Tyler 2026-04-26 (D4 max-derivation): emits the server-side derived
+   *  defaults so the parent can seed the Stage 3 fallback fieldset state.
+   *  This way an agent who closes the auto-opened modal sees the same
+   *  pre-fill when re-opening from the Stage 3 card. Strictly additive —
+   *  modal continues to work without this callback. */
+  onPreviewLoaded?: (derivedDefaults: Record<string, string>) => void;
 }
 
 interface PreviewResponse {
@@ -39,6 +45,7 @@ interface PreviewResponse {
   params: Record<string, string>;
   branch: string;
   warnings: string[];
+  derivedDefaults?: Record<string, string>;
 }
 
 export function IntakeFormReviewModal({
@@ -47,6 +54,7 @@ export function IntakeFormReviewModal({
   submissionId,
   payload,
   onConfirmed,
+  onPreviewLoaded,
 }: IntakeFormReviewModalProps) {
   const { toast } = useToast();
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -73,7 +81,19 @@ export function IntakeFormReviewModal({
           { payload }
         );
         const data = (await res.json()) as PreviewResponse;
-        if (!cancelled) setPreview(data);
+        if (!cancelled) {
+          setPreview(data);
+          // Skip the callback when there are no defaults to merge — guards
+          // against any chance of a feedback loop with parents that wire
+          // derivedDefaults back into `payload`.
+          if (
+            onPreviewLoaded &&
+            data.derivedDefaults &&
+            Object.keys(data.derivedDefaults).length > 0
+          ) {
+            onPreviewLoaded(data.derivedDefaults);
+          }
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to build pre-fill URL";
         if (!cancelled) setError(msg);
@@ -102,7 +122,8 @@ export function IntakeFormReviewModal({
         title: "Intake recorded",
         description: "Smartsheet submission logged. You can claim the next ticket.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/agent/intake-status"] });
+      // Per-submission status is what now drives Stage 3 visibility — the
+      // per-agent /api/agent/intake-status rollup was retired with the gate.
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       onOpenChange(false);
       onConfirmed();

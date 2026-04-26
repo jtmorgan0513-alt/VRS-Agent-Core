@@ -1154,23 +1154,13 @@ export async function registerRoutes(
       }
 
       // -----------------------------------------------------------------
-      // Intake-form gate — agents must finish the Smartsheet intake form
-      // for any non-NLA submission they reviewed in the last 24h before
-      // claiming a new one. Admins bypass the gate (they may be picking
-      // up someone else's queue or covering escalations).
+      // 24h intake-form claim gate REMOVED 2026-04-26 (Tyler D2). The
+      // intake_forms audit row is still written when the agent confirms
+      // the modal post-Authorize, but agents are NEVER blocked from
+      // claiming a new ticket. See ADR-013. The atomic UPDATE-WHERE
+      // pattern below still provides race protection between concurrent
+      // agents for the same row — only the gate logic was stripped.
       // -----------------------------------------------------------------
-      if (authReq.user!.role === "vrs_agent") {
-        const missing = await storage.getMissingIntakeForAgent(authReq.user!.id);
-        if (missing.length > 0) {
-          const blocker = missing[0];
-          return res.status(409).json({
-            error: `Finish the intake form for SO #${blocker.serviceOrder} before claiming a new ticket`,
-            code: "INTAKE_REQUIRED",
-            blockingSubmissionId: blocker.id,
-            blockingServiceOrder: blocker.serviceOrder,
-          });
-        }
-      }
 
       if (authReq.user!.role === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
@@ -3491,8 +3481,11 @@ export async function registerRoutes(
 
   // Stage 3 visibility — single source of truth for whether a given submission
   // currently requires the agent to fill the Smartsheet intake form. Used by
-  // the agent dashboard to decide whether to render the Stage 3 card. Same
-  // gating as storage.getMissingIntakeForAgent but scoped to one submission.
+  // the agent dashboard to decide whether to render the Stage 3 fallback card
+  // (the auto-opened modal post-Authorize is the primary path; this card is
+  // the re-open path if the agent dismisses the modal). Per-submission only —
+  // the per-agent "intake missing" rollup endpoint was retired 2026-04-26
+  // along with the 24h claim gate (Tyler D2, ADR-013).
   //
   // required = true  → render Stage 3 (post-Authorize, no intake row yet)
   // required = false → either not yet authorized, NLA, or already recorded
@@ -3553,9 +3546,19 @@ export async function registerRoutes(
         const owned = await loadOwnedSubmission(authReq, id);
         if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
 
+        // Tyler 2026-04-26 (D4 max-derivation): IH Unit Number lives on the
+        // technicians table, not on submissions. Resolve it via the LDAP id
+        // join so the pre-fill builder can default the field. Best-effort —
+        // missing technician row is non-fatal (field stays blank).
+        let ihUnitNumber: string | null = null;
+        if (owned.submission.technicianLdapId) {
+          const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
+          ihUnitNumber = (tech as any)?.techUnNo ?? null;
+        }
+
         const { buildIntakeFormUrl } = await import("./services/smartsheet");
         const result = buildIntakeFormUrl({
-          submission: owned.submission,
+          submission: { ...owned.submission, ihUnitNumber },
           payload: parsed.data.payload,
         });
         return res.status(200).json(result);
@@ -3591,9 +3594,18 @@ export async function registerRoutes(
           });
         }
 
+        // Tyler 2026-04-26 (D4 max-derivation): mirror the preview route so
+        // the URL we record matches what the agent saw — IH Unit Number is
+        // resolved from the technicians table via LDAP id.
+        let ihUnitNumber: string | null = null;
+        if (owned.submission.technicianLdapId) {
+          const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
+          ihUnitNumber = (tech as any)?.techUnNo ?? null;
+        }
+
         const { buildIntakeFormUrl } = await import("./services/smartsheet");
         const built = buildIntakeFormUrl({
-          submission: owned.submission,
+          submission: { ...owned.submission, ihUnitNumber },
           payload: parsed.data.payload,
         });
 
@@ -3737,24 +3749,12 @@ export async function registerRoutes(
   );
 
   // ==========================================================================
-  // AGENT INTAKE STATUS — tells the dashboard whether the gate is active
+  // AGENT INTAKE STATUS — endpoint REMOVED 2026-04-26 (Tyler D2). The 24h
+  // claim gate has been retired in favor of an auto-opened intake modal
+  // post-Authorize. Per-submission status (used by the Stage 3 fallback
+  // card) lives at GET /api/submissions/:id/intake-form-status above.
+  // See ADR-013.
   // ==========================================================================
-
-  app.get(
-    "/api/agent/intake-status",
-    authenticateToken,
-    requireRole("vrs_agent", "admin"),
-    async (req, res) => {
-      try {
-        const authReq = req as AuthenticatedRequest;
-        const missing = await storage.getMissingIntakeForAgent(authReq.user!.id);
-        return res.status(200).json({ missing });
-      } catch (error) {
-        console.error("Intake status error:", error);
-        return res.status(500).json({ error: "Failed to load intake status" });
-      }
-    }
-  );
 
   return httpServer;
 }

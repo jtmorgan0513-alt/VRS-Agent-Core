@@ -318,3 +318,131 @@ Surfaced by architect review of the Stage 3 reordering follow-up.
 Files:
 - `client/src/pages/agent-dashboard.tsx` (Stage 1/2 card render predicate tightened, comment block added)
 - `.claude/memory/decisions.md` (ADR-012 amended with race-fix note + per-submission-vs-per-agent predicate clarification)
+
+---
+
+# 2026-04-26 — Tyler's 4-decision directive (gate retirement + auto-open + max-derivation)
+# (Tyler decisions D1–D4: keep audit trail, rip out 24h gate, auto-open modal
+#  on Authorize & Send, maximize auto-population.)
+
+## Commit 14 — Tyler D1+D2: keep audit trail, rip out 24h claim gate
+
+```
+feat(intake): retire 24h "intake missing" claim gate; keep audit trail (ADR-013)
+
+Tyler decided the 24h gate was friction without value: the intake_forms
+audit row is still useful as a paper trail, but agents should never be
+blocked from claiming the next ticket. The gate is removed end-to-end:
+
+Server:
+- PATCH /api/submissions/:id/claim — gate block (lines 1156-1173) removed,
+  replaced with a comment block referencing ADR-013. Atomic UPDATE-WHERE
+  race protection between concurrent agents is preserved.
+- IStorage.getMissingIntakeForAgent + DatabaseStorage impl removed.
+- GET /api/agent/intake-status endpoint removed (was only consumed by the
+  sidebar badge).
+- Per-submission GET /api/submissions/:id/intake-form-status retained — it
+  still drives the Stage 3 fallback card visibility on the selected ticket.
+
+Client:
+- Sidebar "Pending Smartsheet Intake" badge + nav-pending-intake item +
+  badge-pending-intake-count removed.
+- missingIntakeQuery / missingIntakeCount / missingIntakeMostRecent state
+  removed.
+- claimMutation 409 INTAKE_REQUIRED branch + intakeBlockingSubmissionId
+  state removed. The fetch bypass is preserved for future structured 409s
+  (e.g. ALREADY_CLAIMED race-loser).
+- All ["/api/agent/intake-status"] cache invalidations removed (parent +
+  modal). Per-submission status query is what now drives Stage 3 visibility.
+```
+
+Files:
+- `server/storage.ts` (IStorage decl + DatabaseStorage method removed; tombstone comments)
+- `server/routes.ts` (gate block in /claim removed; orphaned /api/agent/intake-status route removed; comment refresh)
+- `client/src/pages/agent-dashboard.tsx` (sidebar badge + missingIntakeQuery + intakeBlockingSubmissionId + 409 handler all stripped; modal mount simplified)
+- `client/src/components/intake-form-review-modal.tsx` (intake-status invalidation removed)
+
+---
+
+## Commit 15 — Tyler D3: auto-open intake modal on successful Authorize & Send
+
+```
+feat(agent): auto-open intake review modal post-Authorize for non-NLA tickets
+
+Replaces the previous "scroll Stage 3 card into view" UX with directly
+opening the IntakeFormReviewModal so the agent doesn't have to hunt for
+the card. Stage 3 fieldset card still renders underneath as the fallback
+re-open path if the agent dismisses the modal (Tyler D2 — see ADR-013).
+Re-open button relabeled "Re-open intake form" to reflect its new role.
+
+processMutation.onSuccess flow:
+- approve_submission (Stage 1 mid-flow) — selection kept, no modal (unchanged).
+- approve on non-NLA — selection kept; setIntakeModalOpen(true) fires after
+  the cache invalidation lands so the per-submission intake-form-status
+  query has time to flip required=true.
+- approve on NLA / reject / invalid / reject_and_close — selection cleared
+  (unchanged).
+```
+
+Files:
+- `client/src/pages/agent-dashboard.tsx` (processMutation.onSuccess + Stage 3 button label + comment block)
+
+---
+
+## Commit 16 — Tyler D4: maximize intake-form auto-population
+
+```
+feat(intake): maximize server-side auto-population for intake fieldset
+
+Extends buildIntakeFormUrl to derive far more fields server-side from the
+submission row, so agents have less to type post-Authorize. Strictly
+additive — every default still loses to an explicit agent value in the
+payload. Modal exposes the new derived defaults via onPreviewLoaded so
+the parent can seed the Stage 3 fallback fieldset state.
+
+Defaults added per branch:
+- SHW: "Reason for Calling VRS Hotline SHW" preselected by request type
+  (authorization → "Un-economical to Repair";
+   infestation_non_accessible → "Customer Abuse/Neglect Not Covered.";
+   parts_nla → "Un-Repairable Sealed System").
+  "SHW Uneconomical to Repair Calculated Amount" pre-filled from
+  submission.estimateAmount when the dominant reason is selected.
+- SPHW: "VRS Tech Repair/Replacement Review Decision" defaults to
+  "Repair Product"; "Pre-Existing Condition SPHW" defaults to "No";
+  "Comments to support repair or replace decision" auto-populated from
+  submission.agentNotes.
+- AHS: "Reason for calling the VRS Hotline AHS" pre-fills with truncated
+  submission.issueDescription (200ch) so the agent has something to edit
+  instead of a blank field.
+
+Always-visible "IH Unit Number" now resolves from the technicians table
+via LDAP id lookup (preview + confirm routes).
+
+BuildIntakeFormUrlInput extended with estimateAmount, agentNotes,
+requestType, issueDescription. BuildIntakeFormUrlResult adds
+derivedDefaults — the subset of params that came from server-side
+defaults rather than the agent's payload. Modal forwards these to the
+parent via the new optional onPreviewLoaded callback so the Stage 3
+fallback fieldset stays in sync with the modal.
+```
+
+Files:
+- `server/services/smartsheet.ts` (BuildIntakeFormUrlInput + result extended; SHW/SPHW/AHS branch defaults)
+- `server/routes.ts` (preview + confirm routes resolve techUnNo via storage.getTechnicianByLdapId)
+- `client/src/components/intake-form-review-modal.tsx` (onPreviewLoaded callback added; PreviewResponse extended)
+- `client/src/pages/agent-dashboard.tsx` (modal mount wires onPreviewLoaded to merge into intakeValues for unset keys)
+
+---
+
+## Commit 17 — Tyler 4-decision directive: docs
+
+```
+docs: ADR-013 + CHANGELOG + memory + COMMITS for the 4-decision directive
+```
+
+Files:
+- `CHANGELOG.md` (Unreleased entry)
+- `.claude/memory/decisions.md` (ADR-013: gate retirement rationale)
+- `.claude/memory/context.md` (Recent Changes entry)
+- `COMMITS.md` (this file)
+

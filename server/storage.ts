@@ -180,10 +180,10 @@ export interface IStorage {
   // Smartsheet "VRS Unrep Intake Form 2.0" audit rows
   createIntakeForm(data: InsertIntakeForm): Promise<IntakeForm>;
   getIntakeFormBySubmission(submissionId: number): Promise<IntakeForm | undefined>;
-  getMissingIntakeForAgent(
-    agentId: number,
-    sinceHours?: number
-  ): Promise<{ id: number; serviceOrder: string; reviewedAt: Date | null }[]>;
+  // NOTE: getMissingIntakeForAgent removed 2026-04-26 (Tyler D2). The
+  // intake_forms table is still written as audit trail, but agents are
+  // no longer gated on completing it before claiming the next ticket.
+  // See ADR-013.
 
   // Atomic ticket-claim — succeeds only if the row is still 'queued'
   claimSubmission(
@@ -1202,37 +1202,10 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getMissingIntakeForAgent(
-    agentId: number,
-    sinceHours: number = 24
-  ): Promise<{ id: number; serviceOrder: string; reviewedAt: Date | null }[]> {
-    // Stage 3 ordering (2026-04-26): intake is now collected AFTER Authorize &
-    // Send, so the gate only fires for tickets that actually got authorized.
-    // Rejected / invalid / closed tickets don't need a Smartsheet intake row,
-    // so they no longer block the agent's next claim.
-    //
-    // Required for "intake missing":
-    //   - reviewed_by  = $agent          (agent owns the responsibility)
-    //   - ticket_status = 'approved'      (Authorize & Send completed)
-    //   - auth_code IS NOT NULL           (an actual auth code went out)
-    //   - request_type != 'parts_nla'    (NLA path doesn't use Smartsheet)
-    //   - reviewed_at >= now() - sinceHours
-    //   - no row in intake_forms for this submission
-    const since = new Date(Date.now() - sinceHours * 3600 * 1000);
-    const result = await db.execute(sql`
-      SELECT s.id, s.service_order AS "serviceOrder", s.reviewed_at AS "reviewedAt"
-      FROM submissions s
-      LEFT JOIN intake_forms i ON i.submission_id = s.id
-      WHERE s.reviewed_by = ${agentId}
-        AND s.request_type != 'parts_nla'
-        AND s.ticket_status = 'approved'
-        AND s.auth_code IS NOT NULL
-        AND s.reviewed_at >= ${since.toISOString()}
-        AND i.id IS NULL
-      ORDER BY s.reviewed_at ASC
-    `);
-    return result.rows as { id: number; serviceOrder: string; reviewedAt: Date | null }[];
-  }
+  // getMissingIntakeForAgent removed 2026-04-26 (Tyler D2). See ADR-013 — the
+  // 24h "intake missing" gate has been retired in favor of an auto-opened
+  // intake modal post-Authorize. The intake_forms audit row is still written
+  // when the agent confirms the modal, so historical audit data is preserved.
 
   // Atomic claim: relies on the single-statement UPDATE WHERE status='queued'
   // pattern so two concurrent agents racing for the same row will see exactly

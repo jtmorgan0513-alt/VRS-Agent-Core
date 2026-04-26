@@ -267,9 +267,9 @@ export default function AgentDashboard() {
   // ----------------------------------------------------------------------
   const [intakeValues, setIntakeValues] = useState<Record<string, string>>({});
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
-  const [intakeBlockingSubmissionId, setIntakeBlockingSubmissionId] = useState<number | null>(null);
   // Stage 3 scroll target — set by the post-Authorize flow so we can land
-  // the agent's view directly on the new Smartsheet Intake card.
+  // the agent's view directly on the new Smartsheet Intake fallback card
+  // when the agent dismisses the auto-opened modal.
   const stage3CardRef = useRef<HTMLDivElement | null>(null);
   const [shsaiLoading, setShsaiLoading] = useState(false);
   const [shsaiError, setShsaiError] = useState<string | null>(null);
@@ -573,13 +573,9 @@ export default function AgentDashboard() {
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
 
   // Reset intake form working values when switching submissions so we don't
-  // leak data between tickets. The blockingSubmissionId state is also cleared
-  // unless the new selection IS the blocking submission (auto-route case).
+  // leak data between tickets.
   useEffect(() => {
     setIntakeValues({});
-    if (intakeBlockingSubmissionId !== null && intakeBlockingSubmissionId !== selectedId) {
-      setIntakeBlockingSubmissionId(null);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -610,23 +606,10 @@ export default function AgentDashboard() {
   const stage3Required = !!intakeFormStatusQuery.data?.required;
   const stage3Recorded = !!intakeFormStatusQuery.data?.recorded;
 
-  // Sidebar badge — list of authorized-but-not-recorded submissions belonging
-  // to this agent in the last 24h. Reuses the existing endpoint that powers
-  // the claim-gate logic so the badge can never disagree with the gate.
-  const missingIntakeQuery = useQuery<{
-    missing: { id: number; serviceOrder: string; reviewedAt: string | null }[];
-  }>({
-    queryKey: ["/api/agent/intake-status"],
-    enabled: !isAdminViewing,
-    refetchInterval: 60_000,
-  });
-  const missingIntakeCount = missingIntakeQuery.data?.missing?.length ?? 0;
-  const missingIntakeMostRecent = useMemo(() => {
-    const list = missingIntakeQuery.data?.missing ?? [];
-    if (list.length === 0) return null;
-    // The endpoint orders ASC by reviewedAt, so the *most recent* is last.
-    return list[list.length - 1];
-  }, [missingIntakeQuery.data]);
+  // Sidebar "Pending Smartsheet Intake" badge REMOVED 2026-04-26 (Tyler D2).
+  // The 24h claim gate is gone, so there's no concept of "missing intake
+  // forms" blocking future claims. Per-submission Stage 3 status is still
+  // surfaced inline on the selected ticket via /intake-form-status.
 
   const REJECTION_SUGGESTIONS = [
     "Photos do not meet submission criteria",
@@ -671,9 +654,10 @@ export default function AgentDashboard() {
     "Other",
   ];
 
-  // T5: bypass apiRequest so we can inspect the 409 body for INTAKE_REQUIRED /
-  // ALREADY_CLAIMED structured codes. apiRequest throws on !res.ok and only
-  // surfaces the error message string — losing the discriminating code.
+  // 24h INTAKE_REQUIRED claim gate REMOVED 2026-04-26 (Tyler D2). The fetch
+  // bypass is preserved so future structured 409 codes (e.g. ALREADY_CLAIMED
+  // race-loser) can still be discriminated, but no body codes are currently
+  // consumed — every non-2xx surfaces as a destructive toast.
   const claimMutation = useMutation({
     mutationFn: async (submissionId: number) => {
       const token = localStorage.getItem("vrs_token");
@@ -683,12 +667,7 @@ export default function AgentDashboard() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err: Error & { code?: string; blockingSubmissionId?: number } = new Error(
-          body.error || res.statusText || "Failed to claim"
-        );
-        err.code = body.code;
-        err.blockingSubmissionId = body.blockingSubmissionId;
-        throw err;
+        throw new Error(body.error || res.statusText || "Failed to claim");
       }
       return body;
     },
@@ -698,20 +677,7 @@ export default function AgentDashboard() {
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     },
-    onError: (err: Error & { code?: string; blockingSubmissionId?: number }) => {
-      if (err.code === "INTAKE_REQUIRED" && err.blockingSubmissionId) {
-        // Auto-route to the blocking submission and pop the intake modal so
-        // the agent can finish the gate immediately.
-        setSelectedId(err.blockingSubmissionId);
-        setIntakeBlockingSubmissionId(err.blockingSubmissionId);
-        setIntakeModalOpen(true);
-        toast({
-          title: "Intake form required",
-          description: err.message,
-          variant: "destructive",
-        });
-        return;
-      }
+    onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -727,11 +693,13 @@ export default function AgentDashboard() {
       toast({ title: actionLabel, description: actionDesc });
 
       // Stage 3 hand-off: a successful "approve" on a non-NLA ticket means
-      // Stage 3 (Smartsheet Intake) is now required. Keep the ticket
-      // selected so the resolution panel re-renders into the Stage 3 card,
-      // and scroll to it after the cache flips. Stage 1 mid-flow
-      // ("approve_submission" on 2-stage warranties) keeps the ticket
-      // selected as before. Everything else clears selection.
+      // Stage 3 (Smartsheet Intake) is now required. Tyler 2026-04-26 (D3):
+      // auto-open the intake modal directly so the agent doesn't have to
+      // hunt for the Stage 3 card. The Stage 3 fieldset card still renders
+      // underneath as a fallback re-open path if the agent dismisses the
+      // modal (D2). Stage 1 mid-flow ("approve_submission" on 2-stage
+      // warranties) keeps the ticket selected as before. Everything else
+      // clears selection.
       const justAuthorized = selectedAction === "approve" && selectedSubmission?.requestType !== "parts_nla";
       const keepSelected = selectedAction === "approve_submission" || justAuthorized;
       if (!keepSelected) {
@@ -739,18 +707,18 @@ export default function AgentDashboard() {
         setLocalAgentStatus("online");
       } else if (justAuthorized) {
         setLocalAgentStatus("online");
-        // Scroll Stage 3 card into view once it mounts. The intake-form-status
-        // query fires on cache invalidation below; small timeout lets the
-        // re-render land before we measure.
+        // Auto-open the intake modal once the cache invalidation lands so
+        // the per-submission intake-form-status query has had a chance to
+        // flip required=true. The modal will fetch its own preview and
+        // emit derivedDefaults to seed the fallback fieldset.
         window.setTimeout(() => {
-          stage3CardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          setIntakeModalOpen(true);
         }, 350);
       }
 
       resetActionState();
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/agent/intake-status"] });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -1081,35 +1049,11 @@ export default function AgentDashboard() {
               <SidebarGroupLabel>{queueMode === "nla" ? "NLA Tickets" : "Tickets"}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {/* Stage 3 sidebar badge — surfaces non-NLA tickets the
-                      agent has authorized but not yet logged in Smartsheet.
-                      Click routes to the most-recent blocking submission and
-                      opens it in My Tickets so Stage 3 auto-renders. The
-                      claim gate uses the same predicate, so this badge
-                      can never disagree with a 409 INTAKE_REQUIRED. */}
-                  {missingIntakeCount > 0 && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        onClick={() => {
-                          if (!missingIntakeMostRecent) return;
-                          setQueueMode("vrs");
-                          setActiveView("mytickets");
-                          setSelectedId(missingIntakeMostRecent.id);
-                        }}
-                        data-testid="nav-pending-intake"
-                      >
-                        <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        <span>Pending Smartsheet Intake</span>
-                        <Badge
-                          variant="secondary"
-                          className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                          data-testid="badge-pending-intake-count"
-                        >
-                          {missingIntakeCount}
-                        </Badge>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
+                  {/* Stage 3 "Pending Smartsheet Intake" sidebar badge REMOVED
+                      2026-04-26 (Tyler D2). The 24h claim gate is gone, so
+                      there's no concept of pending-intake blocking the next
+                      claim. Per-submission Stage 3 status is still surfaced
+                      inline on the selected ticket. */}
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       onClick={() => { setActiveView(queueMode === "nla" ? "nla_queue" : "queue"); setSelectedId(null); }}
@@ -2492,6 +2436,13 @@ export default function AgentDashboard() {
                             values={intakeValues}
                             onChange={setIntakeValues}
                           />
+                          {/* Tyler 2026-04-26 (D2): the intake modal now
+                              auto-opens after Authorize & Send, so this
+                              button is the re-open path if the agent
+                              dismisses it. The fieldset above stays in
+                              sync via the modal's onPreviewLoaded callback,
+                              so the agent sees the same pre-filled values
+                              they saw in the modal. */}
                           <div className="flex justify-end">
                             <Button
                               type="button"
@@ -2505,7 +2456,7 @@ export default function AgentDashboard() {
                               data-testid="button-open-intake-review"
                             >
                               <Send className="w-4 h-4 mr-2" />
-                              Submit Intake to Smartsheet
+                              Re-open intake form
                             </Button>
                           </div>
                         </CardContent>
@@ -3445,19 +3396,39 @@ export default function AgentDashboard() {
 
       <IntakeFormReviewModal
         open={intakeModalOpen}
-        onOpenChange={(o) => {
-          setIntakeModalOpen(o);
-          if (!o) setIntakeBlockingSubmissionId(null);
-        }}
-        submissionId={intakeBlockingSubmissionId ?? selectedId}
+        onOpenChange={setIntakeModalOpen}
+        submissionId={selectedId}
         payload={intakeValues}
+        onPreviewLoaded={(derivedDefaults) => {
+          // Tyler 2026-04-26 (D4 max-derivation): merge server-derived
+          // defaults into the working payload for any keys the agent
+          // hasn't explicitly set. This way the Stage 3 fallback fieldset
+          // shows the same pre-fill the agent saw in the auto-opened
+          // modal if they close it and re-open via the card.
+          //
+          // CRITICAL: must return `prev` unchanged when nothing is
+          // actually written, otherwise a fresh object reference retriggers
+          // the modal's preview useEffect (which depends on `payload`),
+          // which calls back into onPreviewLoaded — an infinite refetch
+          // loop. (Architect-flagged regression risk on first review.)
+          setIntakeValues((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            for (const [k, v] of Object.entries(derivedDefaults)) {
+              if (next[k] === undefined || next[k] === "") {
+                next[k] = v;
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+        }}
         onConfirmed={() => {
-          // Intake row is recorded — release local state, refresh queues so
-          // the gate clears, and let the agent claim again.
+          // Intake row is recorded — clear local working state and refresh
+          // the per-submission status query so Stage 3 collapses to the
+          // recorded-banner card.
           setIntakeModalOpen(false);
-          setIntakeBlockingSubmissionId(null);
           setIntakeValues({});
-          queryClient.invalidateQueries({ queryKey: ["/api/agent/intake-status"] });
           queryClient.invalidateQueries({
             predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions"),
           });

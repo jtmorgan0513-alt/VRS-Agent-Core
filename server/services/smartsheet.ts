@@ -117,6 +117,10 @@ export interface BuildIntakeFormUrlInput {
     | "applianceType"
     | "phone"
     | "phoneOverride"
+    | "estimateAmount"
+    | "agentNotes"
+    | "requestType"
+    | "issueDescription"
   > & { ihUnitNumber?: string | null };
   /** Agent-supplied conditional fields, keyed by Smartsheet column label. */
   payload: Record<string, string | number | undefined | null>;
@@ -126,6 +130,13 @@ export interface BuildIntakeFormUrlResult {
   url: string;
   /** Resolved param map (post-defaulting, post-allow-list filtering). */
   params: Record<string, string>;
+  /**
+   * Subset of `params` that came from server-side derivation (not from the
+   * agent payload). Used by the client to seed the fallback fieldset state
+   * so an agent who closes the auto-opened modal sees the same pre-fill
+   * when re-opening. Strictly an additive surface — does not affect URL.
+   */
+  derivedDefaults: Record<string, string>;
   branch: IntakeBranch;
   warnings: string[];
 }
@@ -174,21 +185,74 @@ export function buildIntakeFormUrl(
     const phone = submission.phoneOverride || submission.phone;
     if (phone) defaults["Tech Cell Phone Number"] = phone;
     defaults["SHW W2 or 1099 Contractor"] = "W2";
+
+    // Tyler 2026-04-26 (D4 max-derivation): pre-select the dominant SHW
+    // reason. Agent overrides in the modal if the situation differs.
+    //   - authorization (most common) → "Un-economical to Repair"
+    //   - infestation_non_accessible  → "Customer Abuse/Neglect Not Covered."
+    //   - parts_nla                   → "Un-Repairable Sealed System"
+    if (submission.requestType === "authorization") {
+      defaults["Reason for Calling VRS Hotline SHW"] = "Un-economical to Repair";
+    } else if (submission.requestType === "infestation_non_accessible") {
+      defaults["Reason for Calling VRS Hotline SHW"] = "Customer Abuse/Neglect Not Covered.";
+    } else if (submission.requestType === "parts_nla") {
+      defaults["Reason for Calling VRS Hotline SHW"] = "Un-Repairable Sealed System";
+    }
+
+    // Pre-fill the calculator amount from the technician's estimate when
+    // the dominant "Un-economical to Repair" reason is selected. The
+    // showWhen predicate on the client mirrors this so the field renders.
+    if (submission.estimateAmount && submission.requestType === "authorization") {
+      const cleaned = String(submission.estimateAmount).replace(/[^0-9.]/g, "");
+      if (cleaned) defaults["SHW Uneconomical to Repair Calculated Amount"] = cleaned;
+    }
+  }
+
+  if (branch === "SPHW") {
+    // Default decision: post-Authorize means we approved a repair; agent
+    // overrides to "Product Placed in Replacement Review" if appropriate.
+    defaults["VRS Tech Repair/Replacement Review Decision"] = "Repair Product";
+    // Pre-existing condition default — vast majority is "No". Agent
+    // overrides if the field tech flagged it during the call.
+    defaults["Pre-Existing Condition SPHW"] = "No";
+    // Fulfill the existing "Auto-pasted from your agent notes" promise on
+    // the client config — the textarea was previously labeled but unfilled.
+    if (submission.agentNotes) {
+      defaults["Comments to support repair or replace decision"] = submission.agentNotes;
+    }
+  }
+
+  if (branch === "AHS") {
+    // AHS branch downstream is not walked, but pre-fill the free-text
+    // reason starter from the issue description so the agent has something
+    // to edit instead of a blank field. Truncated to keep the URL sane.
+    if (submission.issueDescription) {
+      defaults["Reason for calling the VRS Hotline AHS"] =
+        submission.issueDescription.length > 200
+          ? submission.issueDescription.slice(0, 197) + "..."
+          : submission.issueDescription;
+    }
   }
 
   // Merge: payload overrides defaults, allow-list filters out unknown keys.
+  // Track which keys came from defaults so we can emit derivedDefaults for
+  // the client to seed its fallback fieldset.
   const merged: Record<string, string> = {};
+  const derivedDefaults: Record<string, string> = {};
   for (const key of ALLOWED_COLUMN_LABELS) {
     const overridden = payload[key];
     const fallback = defaults[key];
     let value: string | undefined;
+    let fromDefault = false;
     if (overridden !== undefined && overridden !== null && overridden !== "") {
       value = String(overridden);
     } else if (fallback !== undefined && fallback !== "") {
       value = fallback;
+      fromDefault = true;
     }
     if (value !== undefined && value !== "") {
       merged[key] = value;
+      if (fromDefault) derivedDefaults[key] = value;
     }
   }
 
@@ -205,5 +269,5 @@ export function buildIntakeFormUrl(
 
   const url = qs ? `${VRS_INTAKE_FORM_BASE}?${qs}` : VRS_INTAKE_FORM_BASE;
 
-  return { url, params: merged, branch, warnings };
+  return { url, params: merged, derivedDefaults, branch, warnings };
 }
