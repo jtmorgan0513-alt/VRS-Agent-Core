@@ -446,3 +446,67 @@ Files:
 - `.claude/memory/context.md` (Recent Changes entry)
 - `COMMITS.md` (this file)
 
+
+---
+
+## Test ticket seeding (manual, not committed)
+
+`scripts/seed-test-tickets.ts` — idempotent seed script for 3 end-to-end test
+submissions. Skips any service_order that already exists. Run manually:
+
+```
+tsx scripts/seed-test-tickets.ts
+```
+
+Creates (if missing):
+- `users` row id=103: name=TEST_TECH_1, role=technician, rac_id=TEST_TECH_1
+- `technicians` row ldap_id=test_tech_1, tech_un_no=T_TEST_001
+- Submission 73: SO 99999000001, sears_protect, queued, proc_id=SPRCLL
+- Submission 74: SO 99999000002, american_home_shield, queued, proc_id=AHSCLL
+- Submission 75: SO 99999000003, sears_protect, approved, auth_code='TEST-AUTH-001',
+  proc_id=SPRCLL (assigned_to was set manually post-seed for whichever test
+  agent will exercise the Stage 3 landing path)
+
+All three issue_descriptions are prefixed with `[TEST]` for grep-ability.
+
+### Cleanup SQL (run when done testing)
+
+```sql
+-- Remove the 3 seeded submissions (and any cascade-related rows).
+DELETE FROM submission_notes WHERE submission_id IN (
+  SELECT id FROM submissions WHERE service_order LIKE '99999%' AND issue_description LIKE '[TEST]%'
+);
+DELETE FROM sms_notifications WHERE submission_id IN (
+  SELECT id FROM submissions WHERE service_order LIKE '99999%' AND issue_description LIKE '[TEST]%'
+);
+DELETE FROM submissions
+ WHERE service_order LIKE '99999%'
+   AND issue_description LIKE '[TEST]%';
+
+-- Remove the seeded technician + user (only if no other submissions reference them).
+DELETE FROM technicians WHERE ldap_id = 'test_tech_1';
+DELETE FROM users WHERE rac_id = 'TEST_TECH_1';
+```
+
+### Walkthrough notes (April 2026)
+
+End-to-end walkthrough of Ticket 1 (SO 99999000001) using the seeded admin
+account (rac_id `TESTADMIN`, password `VRS2026!`) confirmed:
+- Stage 1 -> Stage 2 transition works.
+- Stage 2 authorize+send completes successfully.
+- **Decision 3 auto-open works:** the intake review modal opened automatically
+  after the Stage 2 success toast (~350ms after onSuccess).
+- The fallback "Re-open intake form" button was NOT visible after the modal was
+  closed because Ticket 1 had transitioned to `ticket_status='completed'` —
+  the resolution panel hides the fallback for completed tickets. Use Ticket 3
+  (SO 99999000003, `ticket_status='approved'`, no `intake_forms` row) to
+  exercise the fallback path on the Stage 3 landing.
+
+Note: the `intake_forms` table does not exist in the dev DB at the time of
+writing (db:push was paused per Tyler's directive), so the
+`/api/submissions/:id/intake-form-status` endpoint reports "no intake form"
+for every ticket and the fallback button visibility depends only on
+`ticketStatus`. This matches the design intent: the modal can always be
+re-opened from the resolution panel as long as the agent still owns the
+ticket.
+
