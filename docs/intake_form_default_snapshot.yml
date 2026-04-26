@@ -1,0 +1,73 @@
+- main "VRS Unrep Intake Form 2.0 Form" [ref=e4]:
+  - generic [ref=e7]:
+    - img "Brand Logo" [ref=e9]
+    - heading "VRS Unrep Intake Form 2.0" [level=1] [ref=e11]:
+      - paragraph [ref=e13]:
+        - strong [ref=e14]: VRS Unrep Intake Form 2.0
+    - form "46 questions in this form, questions with * are required." [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e20]:
+          - generic [ref=e23]: VRS Tech ID *
+          - combobox [ref=e26]:
+            - textbox "VRS Tech ID" [ref=e27]
+            - button "Toggle menu" [ref=e29] [cursor=pointer]:
+              - generic [ref=e31]:
+                - img
+          - alert
+        - generic [ref=e35]:
+          - generic [ref=e38]: IH Unit Number *
+          - combobox [ref=e41]:
+            - textbox "IH Unit Number" [ref=e42]
+            - button "Toggle menu" [ref=e44] [cursor=pointer]:
+              - generic [ref=e46]:
+                - img
+          - alert
+        - generic [ref=e50]:
+          - generic [ref=e53]: IH Service Order Number *
+          - paragraph [ref=e58]: Please Copy and Paste from Service Pro or WOM
+          - textbox "IH Service Order Number" [ref=e62]
+          - alert
+        - generic [ref=e65]:
+          - generic [ref=e68]: Servicer Type *
+          - generic [ref=e71]:
+            - generic [ref=e72]:
+              - radio "W2-In Home Field Tech" [ref=e74] [cursor=pointer]
+              - generic [ref=e75]: W2-In Home Field Tech
+            - generic [ref=e76]:
+              - radio "1099-ISP Contractor" [ref=e78] [cursor=pointer]
+              - generic [ref=e79]: 1099-ISP Contractor
+          - alert
+        - generic [ref=e82]:
+          - generic [ref=e85]: Proc ID/Third Part ID *
+          - combobox [ref=e88]:
+            - textbox "Proc ID/Third Part ID" [ref=e89]
+            - button "Toggle menu" [ref=e91] [cursor=pointer]:
+              - generic [ref=e93]:
+                - img
+          - alert
+        - generic [ref=e97]:
+          - generic [ref=e101]: "*"
+          - generic [ref=e104]:
+            - separator [ref=e105]
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - checkbox "Send me a copy of my responses" [ref=e108] [cursor=pointer]
+                - generic [ref=e110]:
+                  - img
+              - generic [ref=e111]: Send me a copy of my responses
+          - alert
+        - button "Submit" [disabled] [ref=e113]:
+          - generic [ref=e114]: Submit
+        - generic [ref=e115]:
+          - generic [ref=e116]:
+            - generic [ref=e117]: Powered by
+            - link "Open smartsheet.com in another tab" [ref=e118] [cursor=pointer]:
+              - /url: https://www.smartsheet.com?s=154
+              - img [ref=e120]
+          - generic [ref=e124]:
+            - link "Open Smartsheet Privacy notice in a new tab" [ref=e125] [cursor=pointer]:
+              - /url: https://www.smartsheet.com/legal/privacy
+              - generic [ref=e126]: Privacy Policy
+            - link "Open Report Abuse form in a new tab" [ref=e128] [cursor=pointer]:
+              - /url: https://app.smartsheet.com/b/reportabuse?EQBCT=aa5f07c589b64ae993f5f75e20f71d5f
+              - generic [ref=e129]: Report Abuse
