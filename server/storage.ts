@@ -30,6 +30,12 @@ import {
   TechnicianUserView,
   systemSettings,
   SystemSetting,
+  intakeForms,
+  InsertIntakeForm,
+  IntakeForm,
+  agentExternalCredentials,
+  InsertAgentExternalCredential,
+  AgentExternalCredential,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -170,6 +176,30 @@ export interface IStorage {
 
   getSystemSetting(key: string): Promise<string | undefined>;
   setSystemSetting(key: string, value: string): Promise<void>;
+
+  // Smartsheet "VRS Unrep Intake Form 2.0" audit rows
+  createIntakeForm(data: InsertIntakeForm): Promise<IntakeForm>;
+  getIntakeFormBySubmission(submissionId: number): Promise<IntakeForm | undefined>;
+  getMissingIntakeForAgent(
+    agentId: number,
+    sinceHours?: number
+  ): Promise<{ id: number; serviceOrder: string; reviewedAt: Date | null }[]>;
+
+  // Atomic ticket-claim — succeeds only if the row is still 'queued'
+  claimSubmission(
+    submissionId: number,
+    agentId: number
+  ): Promise<Submission | undefined>;
+
+  // Encrypted per-agent credentials for external tools (e.g. calculator)
+  getAgentCredential(
+    userId: number,
+    service: string
+  ): Promise<AgentExternalCredential | undefined>;
+  upsertAgentCredential(
+    data: InsertAgentExternalCredential
+  ): Promise<AgentExternalCredential>;
+  deleteAgentCredential(userId: number, service: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1151,6 +1181,130 @@ export class DatabaseStorage implements IStorage {
         target: systemSettings.key,
         set: { value, updatedAt: new Date() },
       });
+  }
+
+  // ==========================================================================
+  // Intake forms (Smartsheet "VRS Unrep Intake Form 2.0")
+  // ==========================================================================
+
+  async createIntakeForm(data: InsertIntakeForm): Promise<IntakeForm> {
+    const [row] = await db.insert(intakeForms).values(data).returning();
+    return row;
+  }
+
+  async getIntakeFormBySubmission(
+    submissionId: number
+  ): Promise<IntakeForm | undefined> {
+    const result = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.submissionId, submissionId));
+    return result[0];
+  }
+
+  async getMissingIntakeForAgent(
+    agentId: number,
+    sinceHours: number = 24
+  ): Promise<{ id: number; serviceOrder: string; reviewedAt: Date | null }[]> {
+    const since = new Date(Date.now() - sinceHours * 3600 * 1000);
+    const result = await db.execute(sql`
+      SELECT s.id, s.service_order AS "serviceOrder", s.reviewed_at AS "reviewedAt"
+      FROM submissions s
+      LEFT JOIN intake_forms i ON i.submission_id = s.id
+      WHERE s.reviewed_by = ${agentId}
+        AND s.request_type != 'parts_nla'
+        AND s.ticket_status IN ('completed', 'rejected', 'invalid', 'approved')
+        AND s.reviewed_at >= ${since.toISOString()}
+        AND i.id IS NULL
+      ORDER BY s.reviewed_at ASC
+    `);
+    return result.rows as { id: number; serviceOrder: string; reviewedAt: Date | null }[];
+  }
+
+  // Atomic claim: relies on the single-statement UPDATE WHERE status='queued'
+  // pattern so two concurrent agents racing for the same row will see exactly
+  // one winner (Postgres MVCC). Returns undefined when the row was already
+  // claimed/processed/deleted.
+  async claimSubmission(
+    submissionId: number,
+    agentId: number
+  ): Promise<Submission | undefined> {
+    const now = new Date();
+    const [updated] = await db
+      .update(submissions)
+      .set({
+        ticketStatus: "pending",
+        statusChangedAt: now,
+        claimedAt: now,
+        assignedTo: agentId,
+        updatedAt: now,
+      } as any)
+      .where(
+        and(
+          eq(submissions.id, submissionId),
+          eq(submissions.ticketStatus, "queued")
+        )
+      )
+      .returning();
+    return updated;
+  }
+
+  // ==========================================================================
+  // Encrypted external credentials (per agent, per third-party service)
+  // ==========================================================================
+
+  async getAgentCredential(
+    userId: number,
+    service: string
+  ): Promise<AgentExternalCredential | undefined> {
+    const result = await db
+      .select()
+      .from(agentExternalCredentials)
+      .where(
+        and(
+          eq(agentExternalCredentials.userId, userId),
+          eq(agentExternalCredentials.service, service)
+        )
+      );
+    return result[0];
+  }
+
+  async upsertAgentCredential(
+    data: InsertAgentExternalCredential
+  ): Promise<AgentExternalCredential> {
+    const [row] = await db
+      .insert(agentExternalCredentials)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [agentExternalCredentials.userId, agentExternalCredentials.service],
+        set: {
+          usernameHint: data.usernameHint,
+          usernameCipher: data.usernameCipher,
+          passwordCipher: data.passwordCipher,
+          iv: data.iv,
+          authTag: data.authTag,
+          scryptSalt: data.scryptSalt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async deleteAgentCredential(
+    userId: number,
+    service: string
+  ): Promise<boolean> {
+    const result = await db
+      .delete(agentExternalCredentials)
+      .where(
+        and(
+          eq(agentExternalCredentials.userId, userId),
+          eq(agentExternalCredentials.service, service)
+        )
+      )
+      .returning();
+    return result.length > 0;
   }
 }
 

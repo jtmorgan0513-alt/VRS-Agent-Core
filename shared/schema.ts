@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { sql } from "drizzle-orm";
-import { pgTable, serial, text, varchar, integer, timestamp, date, unique, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, integer, timestamp, date, unique, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -295,6 +295,87 @@ export const systemSettings = pgTable("system_settings", {
 });
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
+
+// ============================================================================
+// INTAKE FORMS TABLE (Smartsheet "VRS Unrep Intake Form 2.0" submission audit)
+// ============================================================================
+// One row per submission once the agent has confirmed they completed the
+// Smartsheet intake form. The presence of this row releases the claim gate
+// for that agent. Server-built pre-fill URL is captured for audit.
+export const intakeForms = pgTable("intake_forms", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id")
+    .notNull()
+    .references(() => submissions.id, { onDelete: "cascade" }),
+  agentId: integer("agent_id")
+    .notNull()
+    .references(() => users.id),
+  payload: jsonb("payload").notNull(), // canonical form data, keyed by Smartsheet column label
+  smartsheetUrlSubmitted: text("smartsheet_url_submitted"), // the pre-filled URL the agent reviewed
+  agentConfirmedAt: timestamp("agent_confirmed_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertIntakeFormSchema = createInsertSchema(intakeForms).omit({
+  id: true,
+  agentConfirmedAt: true,
+  createdAt: true,
+});
+
+export type InsertIntakeForm = z.infer<typeof insertIntakeFormSchema>;
+export type IntakeForm = typeof intakeForms.$inferSelect;
+
+// ============================================================================
+// AGENT EXTERNAL CREDENTIALS TABLE (encrypted creds for third-party tools)
+// ============================================================================
+// Stores per-agent encrypted credentials for external tools the agent uses
+// from inside VRS (currently: Streamlit Repair/Replace Calculator at
+// repairreplacecalculator.replit.app).
+//
+// Encryption: AES-256-GCM. Key derived from SESSION_SECRET via scrypt with the
+// per-row scryptSalt. Server stores ONLY ciphertext + iv + authTag + scryptSalt.
+// Cleartext is never logged or written to disk. See server/services/crypto.ts.
+//
+// On retrieval the server decrypts and returns the cleartext to the agent's
+// browser over HTTPS for the brief moment of postMessage injection into the
+// calculator iframe. The agent explicitly consents to this at credential-save
+// time. usernameHint is stored in the clear so the UI can show "saved as <user>"
+// without revealing the password.
+export const agentExternalCredentials = pgTable(
+  "agent_external_credentials",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    service: text("service").notNull(), // 'calculator'
+    usernameHint: text("username_hint").notNull(), // cleartext username — used as UI label only
+    usernameCipher: text("username_cipher").notNull(), // base64 ciphertext of username
+    passwordCipher: text("password_cipher").notNull(), // base64 ciphertext of password
+    iv: text("iv").notNull(), // base64 12-byte AES-GCM IV
+    authTag: text("auth_tag").notNull(), // base64 16-byte AES-GCM auth tag
+    scryptSalt: text("scrypt_salt").notNull(), // base64 16-byte per-row salt
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueUserService: unique().on(table.userId, table.service),
+  })
+);
+
+export const insertAgentExternalCredentialSchema = createInsertSchema(
+  agentExternalCredentials
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentExternalCredential = z.infer<
+  typeof insertAgentExternalCredentialSchema
+>;
+export type AgentExternalCredential =
+  typeof agentExternalCredentials.$inferSelect;
 
 // ============================================================================
 // TECHNICIAN USER VIEW (for admin Field Technicians tab)

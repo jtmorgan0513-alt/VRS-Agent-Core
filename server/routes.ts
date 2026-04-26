@@ -1153,6 +1153,25 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Ticket is no longer available — it may have been claimed by another agent" });
       }
 
+      // -----------------------------------------------------------------
+      // Intake-form gate — agents must finish the Smartsheet intake form
+      // for any non-NLA submission they reviewed in the last 24h before
+      // claiming a new one. Admins bypass the gate (they may be picking
+      // up someone else's queue or covering escalations).
+      // -----------------------------------------------------------------
+      if (authReq.user!.role === "vrs_agent") {
+        const missing = await storage.getMissingIntakeForAgent(authReq.user!.id);
+        if (missing.length > 0) {
+          const blocker = missing[0];
+          return res.status(409).json({
+            error: `Finish the intake form for SO #${blocker.serviceOrder} before claiming a new ticket`,
+            code: "INTAKE_REQUIRED",
+            blockingSubmissionId: blocker.id,
+            blockingServiceOrder: blocker.serviceOrder,
+          });
+        }
+      }
+
       if (authReq.user!.role === "vrs_agent") {
         const specs = await storage.getSpecializations(authReq.user!.id);
         const divisions = specs.map(s => s.division);
@@ -1180,13 +1199,16 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.updateSubmission(id, {
-        ticketStatus: "pending",
-        statusChangedAt: new Date(),
-        claimedAt: new Date(),
-        assignedTo: authReq.user!.id,
-        updatedAt: new Date(),
-      } as any);
+      // Atomic claim — succeeds only if the row is still 'queued' at update
+      // time, so two concurrent agents racing for the same row both go through
+      // the auth checks but only one wins the UPDATE.
+      const updated = await storage.claimSubmission(id, authReq.user!.id);
+      if (!updated) {
+        return res.status(409).json({
+          error: "Ticket was just claimed by another agent — refresh the queue",
+          code: "ALREADY_CLAIMED",
+        });
+      }
 
       if (authReq.user!.role === "vrs_agent" && authReq.user!.agentStatus !== "working") {
         await storage.updateUser(authReq.user!.id, { agentStatus: "working", updatedAt: new Date() } as any);
@@ -3440,6 +3462,251 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to update settings" });
     }
   });
+
+  // ==========================================================================
+  // INTAKE FORM ROUTES — preview pre-filled URL + record submission
+  // ==========================================================================
+  // These back the IntakeFormReviewModal in the agent dashboard. The
+  // server-side allow-list (server/services/smartsheet.ts ALLOWED_COLUMN_LABELS)
+  // is the security boundary — bogus payload keys are silently dropped.
+
+  const intakeFormPayloadSchema = z.object({
+    payload: z.record(z.string(), z.union([z.string(), z.number()])).default({}),
+    smartsheetUrlSubmitted: z.string().url().optional(),
+  });
+
+  type LoadOwnedResult =
+    | { ok: true; submission: Awaited<ReturnType<typeof storage.getSubmission>> & {} }
+    | { ok: false; status: number; error: string };
+
+  async function loadOwnedSubmission(req: AuthenticatedRequest, id: number): Promise<LoadOwnedResult> {
+    const submission = await storage.getSubmission(id);
+    if (!submission) return { ok: false, status: 404, error: "Submission not found" };
+    const isAdmin = req.user!.role === "admin" || req.user!.role === "super_admin";
+    if (!isAdmin && submission.assignedTo !== req.user!.id && submission.reviewedBy !== req.user!.id) {
+      return { ok: false, status: 403, error: "You don't have access to this submission" };
+    }
+    return { ok: true, submission };
+  }
+
+  app.post(
+    "/api/submissions/:id/intake-form/preview",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+
+        const parsed = intakeFormPayloadSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+        const owned = await loadOwnedSubmission(authReq, id);
+        if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
+
+        const { buildIntakeFormUrl } = await import("./services/smartsheet");
+        const result = buildIntakeFormUrl({
+          submission: owned.submission,
+          payload: parsed.data.payload,
+        });
+        return res.status(200).json(result);
+      } catch (error) {
+        console.error("Intake form preview error:", error);
+        return res.status(500).json({ error: "Failed to build intake form URL" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/submissions/:id/intake-form/confirm",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+
+        const parsed = intakeFormPayloadSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+        const owned = await loadOwnedSubmission(authReq, id);
+        if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
+
+        const existing = await storage.getIntakeFormBySubmission(id);
+        if (existing) {
+          return res.status(409).json({
+            error: "Intake form already recorded for this submission",
+            code: "ALREADY_RECORDED",
+            intakeForm: existing,
+          });
+        }
+
+        const { buildIntakeFormUrl } = await import("./services/smartsheet");
+        const built = buildIntakeFormUrl({
+          submission: owned.submission,
+          payload: parsed.data.payload,
+        });
+
+        // Branch is informational only — folded into the payload blob so we
+        // can audit which branch the agent saw without adding a column.
+        const payloadWithBranch = {
+          ...parsed.data.payload,
+          __branch: built.branch,
+        };
+
+        const created = await storage.createIntakeForm({
+          submissionId: id,
+          agentId: authReq.user!.id,
+          payload: payloadWithBranch as Record<string, string | number>,
+          smartsheetUrlSubmitted: parsed.data.smartsheetUrlSubmitted ?? built.url,
+        } as any);
+
+        return res.status(200).json({ intakeForm: created });
+      } catch (error) {
+        console.error("Intake form confirm error:", error);
+        return res.status(500).json({ error: "Failed to record intake form" });
+      }
+    }
+  );
+
+  // ==========================================================================
+  // AGENT EXTERNAL CREDENTIALS — currently scoped to "calculator"
+  // ==========================================================================
+  // Cleartext is encrypted server-side via server/services/crypto.ts. We never
+  // log cleartext. The /reveal endpoint returns it once over HTTPS so the
+  // client can postMessage it into the calculator iframe.
+
+  const CALC_SERVICE = "calculator" as const;
+
+  const calcCredentialSchema = z.object({
+    username: z.string().min(1).max(200),
+    password: z.string().min(1).max(500),
+  });
+
+  function maskUsername(username: string): string {
+    if (username.length <= 2) return username;
+    if (username.length <= 4) return username[0] + "***" + username[username.length - 1];
+    return username.slice(0, 2) + "***" + username.slice(-2);
+  }
+
+  app.get(
+    "/api/agent/credentials/calculator",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const cred = await storage.getAgentCredential(authReq.user!.id, CALC_SERVICE);
+        if (!cred) return res.status(200).json({ exists: false });
+        return res.status(200).json({ exists: true, usernameHint: cred.usernameHint });
+      } catch (error) {
+        console.error("Get calculator credential error:", error);
+        return res.status(500).json({ error: "Failed to load credential status" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/agent/credentials/calculator",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const parsed = calcCredentialSchema.safeParse(req.body);
+        if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+
+        const { encryptCredential } = await import("./services/crypto");
+        const enc = encryptCredential(parsed.data.username, parsed.data.password);
+        const usernameHint = maskUsername(parsed.data.username);
+
+        await storage.upsertAgentCredential({
+          userId: authReq.user!.id,
+          service: CALC_SERVICE,
+          usernameHint,
+          usernameCipher: enc.usernameCipher,
+          passwordCipher: enc.passwordCipher,
+          iv: enc.iv,
+          authTag: enc.authTag,
+          scryptSalt: enc.scryptSalt,
+        } as any);
+
+        return res.status(200).json({ ok: true, usernameHint });
+      } catch (error) {
+        console.error("Save calculator credential error:", error);
+        return res.status(500).json({ error: "Failed to save calculator credentials" });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/agent/credentials/calculator",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        await storage.deleteAgentCredential(authReq.user!.id, CALC_SERVICE);
+        return res.status(200).json({ ok: true });
+      } catch (error) {
+        console.error("Delete calculator credential error:", error);
+        return res.status(500).json({ error: "Failed to delete calculator credentials" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/agent/credentials/calculator/reveal",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const cred = await storage.getAgentCredential(authReq.user!.id, CALC_SERVICE);
+        if (!cred) return res.status(200).json({ exists: false });
+
+        const { decryptCredential } = await import("./services/crypto");
+        const { username, password } = decryptCredential({
+          usernameCipher: cred.usernameCipher,
+          passwordCipher: cred.passwordCipher,
+          iv: cred.iv,
+          authTag: cred.authTag,
+          scryptSalt: cred.scryptSalt,
+        });
+        return res.status(200).json({
+          exists: true,
+          username,
+          password,
+          usernameHint: cred.usernameHint,
+        });
+      } catch (error) {
+        console.error("Reveal calculator credential error:", error);
+        return res.status(500).json({ error: "Failed to decrypt credentials" });
+      }
+    }
+  );
+
+  // ==========================================================================
+  // AGENT INTAKE STATUS — tells the dashboard whether the gate is active
+  // ==========================================================================
+
+  app.get(
+    "/api/agent/intake-status",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const missing = await storage.getMissingIntakeForAgent(authReq.user!.id);
+        return res.status(200).json({ missing });
+      } catch (error) {
+        console.error("Intake status error:", error);
+        return res.status(500).json({ error: "Failed to load intake status" });
+      }
+    }
+  );
 
   return httpServer;
 }

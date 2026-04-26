@@ -1,3 +1,7 @@
+# VRS Unrep Intake Form 2.0 — DEFAULT (always-visible) snapshot
+# Captured live 2026-04-25 via Playwright on Smartsheet form aa5f07c589b64ae993f5f75e20f71d5f.
+# Branch detail (conditional fields) lives in docs/intake_form_field_map.md.
+
 - main "VRS Unrep Intake Form 2.0 Form" [ref=e4]:
   - generic [ref=e7]:
     - img "Brand Logo" [ref=e9]
@@ -19,7 +23,7 @@
           - combobox [ref=e41]:
             - textbox "IH Unit Number" [ref=e42]
             - button "Toggle menu" [ref=e44] [cursor=pointer]:
-              - generic [ref=e46]:
+              - generic [ref=e31]:
                 - img
           - alert
         - generic [ref=e50]:
@@ -71,3 +75,53 @@
             - link "Open Report Abuse form in a new tab" [ref=e128] [cursor=pointer]:
               - /url: https://app.smartsheet.com/b/reportabuse?EQBCT=aa5f07c589b64ae993f5f75e20f71d5f
               - generic [ref=e129]: Report Abuse
+
+# ===========================================================================
+# Branch summary — see docs/intake_form_field_map.md for full conditional fields
+# ===========================================================================
+branches:
+  AHS:
+    proc_id_prefixes: [AHS, AHT, FAA]
+    program_name: ["American Home Shield", "First American"]
+    status: INCOMPLETE
+    verified_fields:
+      - "Reason for calling the VRS Hotline AHS"  # dropdown, options not enumerated
+    notes: |
+      Reason field exists with calculator-link helper text. Downstream conditional
+      fields not walked — Replit Agent should stub these in the resolution-panel
+      form and let the agent fill the rest in the Smartsheet iframe directly.
+  SPHW:
+    proc_id_prefixes: [SPR, SPRC]
+    program_name: "Sears Protect Home Warranty"
+    status: VERIFIED  # for SPRCLL specifically; presumed identical for SPRC00, SPRCLH, SPHT75
+    verified_fields:
+      - "SPHW Active Date"            # date input mm/dd/yyyy, required
+      - "SPHW Days Active"            # radio, required
+      - "Pre-Existing Condition SPHW" # radio Yes/No, required
+      - "Pre-existing Issue Comments SPHW"  # text, required if Pre-Existing=Yes
+      - "File Upload"                 # file zone, conditional on long-active+pre-existing combos
+      - "VRS Tech Repair/Replacement Review Decision"  # radio, required
+      - "Comments to support repair or replace decision"  # text, required
+  SHW:
+    proc_id_prefixes: [THM]
+    program_name: "Sears Home Warranty"
+    status: VERIFIED
+    verified_fields:
+      - "Reason for Calling VRS Hotline SHW"            # radio, required
+      - "SHW Uneconomical to Repair Calculated Amount"  # number/currency, required if Reason=Un-economical
+      - "SHW W2 or 1099 Contractor"                     # radio, required
+      - "Appliance Type"                                # dropdown, required
+      - "Tech Cell Phone Number"                        # text/phone, required
+  SRW:
+    proc_id_prefixes: [SRW]
+    program_name: "Kenmore-IW"
+    status: NOT_WALKED
+    notes: "Branch identity unconfirmed — likely SPHW or its own. Treat as INCOMPLETE."
+  ISP:
+    trigger: "Servicer Type = 1099-ISP Contractor"
+    status: NOT_WALKED
+    notes: "Phase 1 pilot is W2-only; ISP fields not captured."
+  INVALID:
+    trigger: "Proc ID not in form dropdown"
+    status: NOT_WALKED
+    notes: "Not walked — fall back to iframe-only intake."

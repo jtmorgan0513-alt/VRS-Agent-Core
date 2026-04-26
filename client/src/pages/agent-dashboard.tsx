@@ -7,6 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings, getNotificationPermission } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { IntakeFormFieldset } from "@/components/intake-form-fieldset";
+import { IntakeFormReviewModal } from "@/components/intake-form-review-modal";
+import { CalculatorIframe } from "@/components/calculator-iframe";
+import { CalculatorSettingsDialog } from "@/components/calculator-settings-dialog";
+import { detectBranch as detectIntakeBranch, findMissingRequired as findIntakeMissingRequired } from "@/lib/intake-form-config";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -233,6 +239,35 @@ export default function AgentDashboard() {
     setLightboxOpen(true);
   };
   const [shsaiVisible, setShsaiVisible] = useState(true);
+  // ----------------------------------------------------------------------
+  // Right-panel tabs (T2): keep `shsaiVisible` for back-compat with the
+  // existing show/hide buttons (test IDs button-show-shsai / button-hide-shsai
+  // are preserved). Within the panel we now switch between the SHSAI Service
+  // Order History and the Repair/Replace Calculator iframe.
+  // ----------------------------------------------------------------------
+  type RightPanelView = "shsai" | "calculator";
+  const [rightPanelView, setRightPanelView] = useState<RightPanelView>("shsai");
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const saved = localStorage.getItem(`agent:${user.id}:rightPanel`);
+      if (saved === "shsai" || saved === "calculator") setRightPanelView(saved);
+    } catch {}
+  }, [user?.id]);
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      localStorage.setItem(`agent:${user.id}:rightPanel`, rightPanelView);
+    } catch {}
+  }, [user?.id, rightPanelView]);
+  const [calcSettingsOpen, setCalcSettingsOpen] = useState(false);
+  // ----------------------------------------------------------------------
+  // Intake form (T3/T4/T5): per-submission working values + review modal
+  // state. Reset on selection change so we don't leak data across tickets.
+  // ----------------------------------------------------------------------
+  const [intakeValues, setIntakeValues] = useState<Record<string, string>>({});
+  const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [intakeBlockingSubmissionId, setIntakeBlockingSubmissionId] = useState<number | null>(null);
   const [shsaiLoading, setShsaiLoading] = useState(false);
   const [shsaiError, setShsaiError] = useState<string | null>(null);
   const [shsaiSession, setShsaiSession] = useState<{ sessionId: string; trackId: string; threadId: string; deviceInfo: string } | null>(null);
@@ -534,6 +569,17 @@ export default function AgentDashboard() {
 
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
 
+  // Reset intake form working values when switching submissions so we don't
+  // leak data between tickets. The blockingSubmissionId state is also cleared
+  // unless the new selection IS the blocking submission (auto-route case).
+  useEffect(() => {
+    setIntakeValues({});
+    if (intakeBlockingSubmissionId !== null && intakeBlockingSubmissionId !== selectedId) {
+      setIntakeBlockingSubmissionId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
   const submissionHistoryQuery = useQuery<{
     history: any[];
     reviewerNames: Record<number, string>;
@@ -588,10 +634,26 @@ export default function AgentDashboard() {
     "Other",
   ];
 
+  // T5: bypass apiRequest so we can inspect the 409 body for INTAKE_REQUIRED /
+  // ALREADY_CLAIMED structured codes. apiRequest throws on !res.ok and only
+  // surfaces the error message string — losing the discriminating code.
   const claimMutation = useMutation({
     mutationFn: async (submissionId: number) => {
-      const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/claim`);
-      return res.json();
+      const token = localStorage.getItem("vrs_token");
+      const res = await fetch(`/api/submissions/${submissionId}/claim`, {
+        method: "PATCH",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err: Error & { code?: string; blockingSubmissionId?: number } = new Error(
+          body.error || res.statusText || "Failed to claim"
+        );
+        err.code = body.code;
+        err.blockingSubmissionId = body.blockingSubmissionId;
+        throw err;
+      }
+      return body;
     },
     onSuccess: () => {
       toast({ title: "Ticket Claimed", description: "You are now working on this ticket." });
@@ -599,7 +661,20 @@ export default function AgentDashboard() {
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
     },
-    onError: (err: Error) => {
+    onError: (err: Error & { code?: string; blockingSubmissionId?: number }) => {
+      if (err.code === "INTAKE_REQUIRED" && err.blockingSubmissionId) {
+        // Auto-route to the blocking submission and pop the intake modal so
+        // the agent can finish the gate immediately.
+        setSelectedId(err.blockingSubmissionId);
+        setIntakeBlockingSubmissionId(err.blockingSubmissionId);
+        setIntakeModalOpen(true);
+        toast({
+          title: "Intake form required",
+          description: err.message,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -2293,6 +2368,36 @@ export default function AgentDashboard() {
                       </Card>
                     )}
 
+                    {/* T3: Smartsheet intake form fieldset — collected during
+                        review and submitted alongside (or after) the ticket
+                        action. Hidden for NLA tickets and for non-pending
+                        states where there's nothing to record. */}
+                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && (
+                      <>
+                        <IntakeFormFieldset
+                          procId={(selectedSubmission as any).procId ?? null}
+                          values={intakeValues}
+                          onChange={setIntakeValues}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIntakeModalOpen(true)}
+                            disabled={
+                              findIntakeMissingRequired(
+                                detectIntakeBranch((selectedSubmission as any).procId ?? null),
+                                intakeValues
+                              ).length > 0
+                            }
+                            data-testid="button-open-intake-review"
+                          >
+                            Submit Intake to Smartsheet
+                          </Button>
+                        </div>
+                      </>
+                    )}
+
                     {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && (
                       <Card>
                         <CardHeader className="pb-3">
@@ -3012,31 +3117,52 @@ export default function AgentDashboard() {
                 </ScrollArea>
                 {isMyTicketsView && shsaiVisible && selectedSubmission && selectedSubmission.requestType !== "parts_nla" && (
                   <div className="hidden md:flex w-[40%] flex-col min-h-0" data-testid="panel-shsai">
-                    <div className="px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-semibold">Service Order History</span>
+                    {/* T2: Tabbed right panel — Service Order History (default) /
+                        Calculator. The hide button (button-hide-shsai) and
+                        refresh button (button-shsai-refresh) are preserved as
+                        existing test IDs require. */}
+                    <Tabs
+                      value={rightPanelView}
+                      onValueChange={(v) => setRightPanelView(v as RightPanelView)}
+                      className="flex flex-col flex-1 min-h-0"
+                    >
+                      <div className="px-2 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
+                        <TabsList data-testid="tabs-right-panel">
+                          <TabsTrigger value="shsai" data-testid="tab-shsai">
+                            <Globe className="w-4 h-4 mr-1" />
+                            Service Order History
+                          </TabsTrigger>
+                          <TabsTrigger value="calculator" data-testid="tab-calculator">
+                            Calculator
+                          </TabsTrigger>
+                        </TabsList>
+                        <div className="flex items-center gap-1">
+                          {rightPanelView === "shsai" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => fetchShsaiData(selectedSubmission.serviceOrder, selectedSubmission.id)}
+                              disabled={shsaiLoading}
+                              data-testid="button-shsai-refresh"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${shsaiLoading ? "animate-spin" : ""}`} />
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setShsaiVisible(false)}
+                            data-testid="button-hide-shsai"
+                          >
+                            <PanelRightClose className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => fetchShsaiData(selectedSubmission.serviceOrder, selectedSubmission.id)}
-                          disabled={shsaiLoading}
-                          data-testid="button-shsai-refresh"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${shsaiLoading ? "animate-spin" : ""}`} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setShsaiVisible(false)}
-                          data-testid="button-hide-shsai"
-                        >
-                          <PanelRightClose className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
+                      <TabsContent
+                        value="shsai"
+                        className="flex-1 flex flex-col min-h-0 m-0 data-[state=inactive]:hidden"
+                        forceMount
+                      >
                     <ScrollArea className="flex-1">
                       <div className="p-4 space-y-3">
                         {shsaiLoading && (
@@ -3144,6 +3270,15 @@ export default function AgentDashboard() {
                         </form>
                       </div>
                     )}
+                      </TabsContent>
+                      <TabsContent
+                        value="calculator"
+                        className="flex-1 m-0 data-[state=inactive]:hidden"
+                        forceMount
+                      >
+                        <CalculatorIframe onOpenSettings={() => setCalcSettingsOpen(true)} />
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 )}
                 </div>
@@ -3152,6 +3287,32 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      <IntakeFormReviewModal
+        open={intakeModalOpen}
+        onOpenChange={(o) => {
+          setIntakeModalOpen(o);
+          if (!o) setIntakeBlockingSubmissionId(null);
+        }}
+        submissionId={intakeBlockingSubmissionId ?? selectedId}
+        payload={intakeValues}
+        onConfirmed={() => {
+          // Intake row is recorded — release local state, refresh queues so
+          // the gate clears, and let the agent claim again.
+          setIntakeModalOpen(false);
+          setIntakeBlockingSubmissionId(null);
+          setIntakeValues({});
+          queryClient.invalidateQueries({ queryKey: ["/api/agent/intake-status"] });
+          queryClient.invalidateQueries({
+            predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions"),
+          });
+        }}
+      />
+
+      <CalculatorSettingsDialog
+        open={calcSettingsOpen}
+        onOpenChange={setCalcSettingsOpen}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

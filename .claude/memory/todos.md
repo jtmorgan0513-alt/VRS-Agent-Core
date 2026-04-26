@@ -1,7 +1,9 @@
 # Tasks
 
 ## In Progress
-- [ ] Calculator + Intake Form plan execution — `docs/superpowers/plans/2026-04-25-calculator-and-intake-form.md`. **Blocked on Tyler's D1–D4 decisions.** D1=tech review step? D2=quiz UX shape? D3=defer credential storage table? D4=Task 0 budget 1d vs 2d?
+- [ ] **Tyler action required**: run `npm run db:push` against the production-bound `DATABASE_URL` to apply `intake_forms` + `agent_external_credentials` tables before deploying the calculator + intake form release. Until then, the new claim-gate will surface "Failed to claim" for vrs_agent role users (admins bypass and continue to work).
+- [ ] **Tyler action required**: review `COMMITS.md` and run the suggested commits 1–8 in sequence on the feature branch.
+- [ ] **Follow-up — incomplete branches in field map**: `docs/intake_form_field_map.md` has the SPHW / SHW / SRW / ISP branches flagged INCOMPLETE pending another verbatim walk. The fieldset will render only the fields we DO know for those branches; missing required fields will be added in a follow-up PR.
 
 ## Blocked
 - Phase 2 calculator auto-login — pending decision between (a) get calc owner to add `?token=` param, (b) build VRS-distributed Chrome extension, (c) fork the Replit. Needs an external conversation first.
@@ -9,6 +11,7 @@
 - Phase 3 direct Smartsheet API row-write — original proposal path; needs API token from Todd Pennington.
 
 ## Done
+- [x] **Executed Calculator + Intake Form plan** (2026-04-26) — all 7 tasks (T0–T6) plus T7 docs. D1=a, D2=a, D3=b, D4=GO. See `CHANGELOG.md [Unreleased] → Added — Calculator + Smartsheet Intake Form (2026-04-26)` and `COMMITS.md` for the per-task commit messages and file lists.
 - [x] Drafted Calculator + Intake Form plan (2026-04-25). Verified Smartsheet pre-fill + iframe behavior live via Playwright. Plan covers Phase 1 (this PR), Phase 2 (deferred auto-login + redirect URL), Phase 3 (proposal's API path).
 - [x] Task 2 — pilot-feedback-fixes (implemented 2026-04-23)
 - [x] Task 3 — pilot-feedback-fixes (implemented 2026-04-23)
