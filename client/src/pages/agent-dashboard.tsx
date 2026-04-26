@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -268,6 +268,9 @@ export default function AgentDashboard() {
   const [intakeValues, setIntakeValues] = useState<Record<string, string>>({});
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [intakeBlockingSubmissionId, setIntakeBlockingSubmissionId] = useState<number | null>(null);
+  // Stage 3 scroll target — set by the post-Authorize flow so we can land
+  // the agent's view directly on the new Smartsheet Intake card.
+  const stage3CardRef = useRef<HTMLDivElement | null>(null);
   const [shsaiLoading, setShsaiLoading] = useState(false);
   const [shsaiError, setShsaiError] = useState<string | null>(null);
   const [shsaiSession, setShsaiSession] = useState<{ sessionId: string; trackId: string; threadId: string; deviceInfo: string } | null>(null);
@@ -591,6 +594,40 @@ export default function AgentDashboard() {
     enabled: !!selectedId,
   });
 
+  // Stage 3 visibility — server is the single source of truth (matches the
+  // 24h claim-gate predicate on the storage side). `required: true` means the
+  // selected ticket has been authorized, an auth code went out, the request
+  // type isn't NLA, and no intake_forms row exists yet.
+  const intakeFormStatusQuery = useQuery<{
+    required: boolean;
+    recorded: boolean;
+    reason?: string;
+    intakeForm?: { id: number; createdAt: string; smartsheetUrlSubmitted?: string };
+  }>({
+    queryKey: ["/api/submissions", selectedId, "intake-form-status"],
+    enabled: !!selectedId,
+  });
+  const stage3Required = !!intakeFormStatusQuery.data?.required;
+  const stage3Recorded = !!intakeFormStatusQuery.data?.recorded;
+
+  // Sidebar badge — list of authorized-but-not-recorded submissions belonging
+  // to this agent in the last 24h. Reuses the existing endpoint that powers
+  // the claim-gate logic so the badge can never disagree with the gate.
+  const missingIntakeQuery = useQuery<{
+    missing: { id: number; serviceOrder: string; reviewedAt: string | null }[];
+  }>({
+    queryKey: ["/api/agent/intake-status"],
+    enabled: !isAdminViewing,
+    refetchInterval: 60_000,
+  });
+  const missingIntakeCount = missingIntakeQuery.data?.missing?.length ?? 0;
+  const missingIntakeMostRecent = useMemo(() => {
+    const list = missingIntakeQuery.data?.missing ?? [];
+    if (list.length === 0) return null;
+    // The endpoint orders ASC by reviewedAt, so the *most recent* is last.
+    return list[list.length - 1];
+  }, [missingIntakeQuery.data]);
+
   const REJECTION_SUGGESTIONS = [
     "Photos do not meet submission criteria",
     "Missing required photos",
@@ -688,13 +725,32 @@ export default function AgentDashboard() {
       const actionLabel = selectedAction === "approve_submission" ? "Submission Approved" : selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : selectedAction === "reject_and_close" ? "Rejected & Closed" : "Marked Invalid";
       const actionDesc = selectedAction === "approve_submission" ? "Technician has been notified. Enter the authorization code to complete this ticket." : selectedAction === "reject_and_close" ? "Technician has been notified. This service order is permanently closed." : "Technician has been notified.";
       toast({ title: actionLabel, description: actionDesc });
-      if (selectedAction !== "approve_submission") {
+
+      // Stage 3 hand-off: a successful "approve" on a non-NLA ticket means
+      // Stage 3 (Smartsheet Intake) is now required. Keep the ticket
+      // selected so the resolution panel re-renders into the Stage 3 card,
+      // and scroll to it after the cache flips. Stage 1 mid-flow
+      // ("approve_submission" on 2-stage warranties) keeps the ticket
+      // selected as before. Everything else clears selection.
+      const justAuthorized = selectedAction === "approve" && selectedSubmission?.requestType !== "parts_nla";
+      const keepSelected = selectedAction === "approve_submission" || justAuthorized;
+      if (!keepSelected) {
         setSelectedId(null);
         setLocalAgentStatus("online");
+      } else if (justAuthorized) {
+        setLocalAgentStatus("online");
+        // Scroll Stage 3 card into view once it mounts. The intake-form-status
+        // query fires on cache invalidation below; small timeout lets the
+        // re-render land before we measure.
+        window.setTimeout(() => {
+          stage3CardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 350);
       }
+
       resetActionState();
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent/intake-status"] });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -1025,6 +1081,35 @@ export default function AgentDashboard() {
               <SidebarGroupLabel>{queueMode === "nla" ? "NLA Tickets" : "Tickets"}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
+                  {/* Stage 3 sidebar badge — surfaces non-NLA tickets the
+                      agent has authorized but not yet logged in Smartsheet.
+                      Click routes to the most-recent blocking submission and
+                      opens it in My Tickets so Stage 3 auto-renders. The
+                      claim gate uses the same predicate, so this badge
+                      can never disagree with a 409 INTAKE_REQUIRED. */}
+                  {missingIntakeCount > 0 && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        onClick={() => {
+                          if (!missingIntakeMostRecent) return;
+                          setQueueMode("vrs");
+                          setActiveView("mytickets");
+                          setSelectedId(missingIntakeMostRecent.id);
+                        }}
+                        data-testid="nav-pending-intake"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        <span>Pending Smartsheet Intake</span>
+                        <Badge
+                          variant="secondary"
+                          className="ml-auto text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                          data-testid="badge-pending-intake-count"
+                        >
+                          {missingIntakeCount}
+                        </Badge>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       onClick={() => { setActiveView(queueMode === "nla" ? "nla_queue" : "queue"); setSelectedId(null); }}
@@ -2368,37 +2453,97 @@ export default function AgentDashboard() {
                       </Card>
                     )}
 
-                    {/* T3: Smartsheet intake form fieldset — collected during
-                        review and submitted alongside (or after) the ticket
-                        action. Hidden for NLA tickets and for non-pending
-                        states where there's nothing to record. */}
-                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && (
-                      <>
-                        <IntakeFormFieldset
-                          procId={(selectedSubmission as any).procId ?? null}
-                          values={intakeValues}
-                          onChange={setIntakeValues}
-                        />
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setIntakeModalOpen(true)}
-                            disabled={
-                              findIntakeMissingRequired(
-                                detectIntakeBranch((selectedSubmission as any).procId ?? null),
-                                intakeValues
-                              ).length > 0
-                            }
-                            data-testid="button-open-intake-review"
-                          >
-                            Submit Intake to Smartsheet
-                          </Button>
-                        </div>
-                      </>
+                    {/* Stage 3: Smartsheet Intake — replaces Stage 2 in the
+                        resolution-panel slot AFTER Authorize & Send completes.
+                        Server is the single source of truth (see
+                        /api/submissions/:id/intake-form-status). The card
+                        shows when the ticket is approved + has an auth code +
+                        is non-NLA + has no intake_forms row yet. Once the
+                        agent confirms the Smartsheet submission, the same
+                        endpoint flips `recorded: true` and we render the
+                        success banner instead. */}
+                    {isMyTicketsView && stage3Required && selectedSubmission.requestType !== "parts_nla" && (
+                      <Card ref={stage3CardRef} data-testid="card-stage3-intake">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Layers className="w-4 h-4" />
+                            Stage 3: Smartsheet Intake
+                          </CardTitle>
+                          {/* 3-segment progress bar — Stage 1 + Stage 2 done
+                              (green), Stage 3 in progress (blue). Mirrors the
+                              earlier 2-stage bar's visual language. */}
+                          <div className="flex items-center gap-2 mt-1" data-testid="progress-stage3">
+                            <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+                            <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+                            <div className="h-1.5 flex-1 rounded-full bg-blue-500" />
+                          </div>
+                          <div className="mt-2 p-2 bg-green-50 dark:bg-green-950 rounded-md border border-green-200 dark:border-green-800">
+                            <p className="text-xs font-medium text-green-700 dark:text-green-300 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Authorization Sent
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1" data-testid="text-stage3-context">
+                              Technician received the auth code. Last step: log this ticket in Smartsheet so the next claim isn't blocked.
+                            </p>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <IntakeFormFieldset
+                            procId={(selectedSubmission as any).procId ?? null}
+                            values={intakeValues}
+                            onChange={setIntakeValues}
+                          />
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              onClick={() => setIntakeModalOpen(true)}
+                              disabled={
+                                findIntakeMissingRequired(
+                                  detectIntakeBranch((selectedSubmission as any).procId ?? null),
+                                  intakeValues
+                                ).length > 0
+                              }
+                              data-testid="button-open-intake-review"
+                            >
+                              <Send className="w-4 h-4 mr-2" />
+                              Submit Intake to Smartsheet
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     )}
 
-                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && (
+                    {/* Stage 3 success banner — shown once the agent has
+                        recorded the intake row. Confirms to the agent that
+                        the gate is released. */}
+                    {isMyTicketsView && stage3Recorded && selectedSubmission.requestType !== "parts_nla" && (
+                      <Card data-testid="card-stage3-recorded">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2 text-green-700 dark:text-green-300">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Smartsheet Intake Recorded
+                          </CardTitle>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+                            <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+                            <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-xs text-muted-foreground" data-testid="text-stage3-recorded">
+                            Intake row logged. You can claim the next ticket.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Stage 1/2 (non-NLA) — strictly hidden once Stage 3 is in
+                        play so we never render Stage 2 + Stage 3 simultaneously
+                        during the brief invalidation window after Authorize.
+                        Server's /intake-form-status check is the single source
+                        of truth for Stage 3 visibility, but selectedSubmission
+                        comes from a separate query and may briefly still report
+                        ticketStatus='pending' before refetch lands. */}
+                    {isMyTicketsView && selectedSubmission.ticketStatus === "pending" && selectedSubmission.requestType !== "parts_nla" && !stage3Required && !stage3Recorded && (
                       <Card>
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2">
@@ -2409,7 +2554,17 @@ export default function AgentDashboard() {
                               ? "Stage 2: Authorization"
                               : "Review Actions"}
                           </CardTitle>
-                          {isTwoStageWarranty(selectedSubmission) && (
+                          {isTwoStageWarranty(selectedSubmission) && selectedSubmission.requestType !== "parts_nla" && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-green-500" : "bg-blue-500"}`} />
+                              <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-blue-500" : "bg-muted"}`} />
+                              {/* Stage 3 anticipated — muted while pending,
+                                  fills blue/green from the new Stage 3 card
+                                  once the agent reaches Authorize & Send. */}
+                              <div className="h-1.5 flex-1 rounded-full bg-muted" />
+                            </div>
+                          )}
+                          {isTwoStageWarranty(selectedSubmission) && selectedSubmission.requestType === "parts_nla" && (
                             <div className="flex items-center gap-2 mt-1">
                               <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-green-500" : "bg-blue-500"}`} />
                               <div className={`h-1.5 flex-1 rounded-full ${isSubmissionApprovedStage(selectedSubmission) ? "bg-blue-500" : "bg-muted"}`} />

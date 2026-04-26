@@ -191,3 +191,130 @@ Files:
 - `.claude/memory/todos.md` (mark plan execution Done)
 - `.claude/memory/decisions.md` (ADR for crypto + claim-gate choices)
 - `COMMITS.md` (this file)
+
+---
+
+# 2026-04-26 — Stage 3 reordering follow-up
+# (Tyler asked: "Smartsheet should be the LAST step, gated behind a successful
+#  Authorize and Send.")
+
+## Commit 9 — T8: tighten claim-gate predicate + add intake-form-status route
+
+```
+feat(intake): tighten claim-gate to authorized-only + add per-submission status route
+
+- storage.getMissingIntakeForAgent: predicate narrowed from
+  ticket_status IN ('completed','rejected','invalid','approved')
+  to ticket_status = 'approved' AND auth_code IS NOT NULL.
+  Rejected / invalid tickets no longer block the agent's next claim
+  (they never needed a Smartsheet row in the first place).
+- New GET /api/submissions/:id/intake-form-status — single source of
+  truth for whether the new Stage 3 card should render. Returns
+  { required, recorded, reason?, intakeForm? }. Same gating logic,
+  scoped to one submission.
+
+No schema changes (reuses existing ticket_status, auth_code, intake_forms).
+```
+
+Files:
+- `server/storage.ts` (`getMissingIntakeForAgent` predicate tightened, doc-comment added)
+- `server/routes.ts` (new `GET /api/submissions/:id/intake-form-status` route)
+
+---
+
+## Commit 10 — T9: required Smartsheet success attestation in intake review modal
+
+```
+feat(intake): require checkbox attestation before recording intake row
+
+The "I submitted Smartsheet" button is now disabled until the agent
+ticks "I confirmed the Smartsheet success page appeared after clicking
+Submit inside the form above." Guards against the audit row in
+intake_forms being recorded when the agent skipped Smartsheet's own
+Submit button inside the iframe.
+
+Checkbox state resets when the modal opens.
+```
+
+Files:
+- `client/src/components/intake-form-review-modal.tsx`
+
+---
+
+## Commit 11 — T10: 3-stage progressive disclosure + sidebar badge + post-Authorize redirect
+
+```
+feat(agent-dashboard): Stage 3 Smartsheet Intake replaces Stage 2 after Authorize & Send
+
+- Resolution panel now follows 3-stage progressive disclosure:
+    Stage 1 (Submission Review)  : pending + !submissionApprovedAt
+    Stage 2 (Authorization)      : pending +  submissionApprovedAt
+    Stage 3 (Smartsheet Intake)  : approved + auth_code + non-NLA + no intake row
+- Stage 3 card lives in the same resolution-panel slot Stage 2 used to,
+  with its own 3-segment progress bar (green/green/blue), an
+  "Authorization Sent" callout, the existing IntakeFormFieldset, and
+  the existing Submit-Intake-to-Smartsheet button.
+- Once recorded, Stage 3 collapses to a "Smartsheet Intake Recorded"
+  success card so the agent can see the gate has released.
+- Pending Smartsheet Intake (N) sidebar item — surfaces the same set
+  the claim-gate uses, click-through routes to most-recent blocking
+  submission and switches to My Tickets so Stage 3 auto-renders.
+- processMutation.onSuccess: a successful "approve" on a non-NLA ticket
+  now keeps the ticket selected so the resolution panel re-renders
+  into Stage 3, then scrolls Stage 3 into view. Stage 1
+  ("approve_submission") behavior unchanged. Reject / invalid /
+  reject_and_close clear selection as before.
+- Existing 2-stage progress bar extended to 3 segments for non-NLA
+  warranties so the journey is visible from the start.
+- Server query is the single source of truth via the new
+  /intake-form-status endpoint — UI never re-derives the gate locally.
+
+Test IDs added: card-stage3-intake, card-stage3-recorded,
+progress-stage3, text-stage3-context, text-stage3-recorded,
+nav-pending-intake, badge-pending-intake-count.
+```
+
+Files:
+- `client/src/pages/agent-dashboard.tsx`
+
+---
+
+## Commit 12 — T11: docs (CHANGELOG + memory + COMMITS.md)
+
+```
+docs: stage 3 reordering — changelog, ADR-012, todos, COMMITS
+
+Refs: stage-3 reordering follow-up
+```
+
+Files:
+- `CHANGELOG.md` (Changed entry under [Unreleased])
+- `.claude/memory/context.md` (Recent Changes entry)
+- `.claude/memory/todos.md` (mark Stage 3 reordering Done)
+- `.claude/memory/decisions.md` (ADR-012: Stage 3 reordering rationale)
+- `COMMITS.md` (this file)
+
+---
+
+## Commit 13 — Stage 3 dual-render race fix (post-architect-review)
+
+```
+fix(agent-dashboard): prevent dual-render of Stage 1/2 + Stage 3 during cache invalidation
+
+selectedSubmission and intakeFormStatusQuery come from two separate queries.
+During the brief invalidation window after Authorize & Send, the per-submission
+intake-form-status endpoint can already report required=true while the cached
+selectedSubmission still reports ticketStatus='pending', causing both cards to
+render simultaneously for a few hundred ms.
+
+Tighten the Stage 1/2 (non-NLA) render predicate to require
+!stage3Required && !stage3Recorded so Stage 3 truly replaces Stage 2 in the
+resolution-panel slot. NLA Stage 1/2 unaffected — NLA tickets never trigger
+Stage 3.
+
+Surfaced by architect review of the Stage 3 reordering follow-up.
+```
+
+Files:
+- `client/src/pages/agent-dashboard.tsx` (Stage 1/2 card render predicate tightened, comment block added)
+- `.claude/memory/decisions.md` (ADR-012 amended with race-fix note + per-submission-vs-per-agent predicate clarification)

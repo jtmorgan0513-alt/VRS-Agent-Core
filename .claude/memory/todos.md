@@ -1,9 +1,10 @@
 # Tasks
 
 ## In Progress
-- [ ] **Tyler action required**: run `npm run db:push` against the production-bound `DATABASE_URL` to apply `intake_forms` + `agent_external_credentials` tables before deploying the calculator + intake form release. Until then, the new claim-gate will surface "Failed to claim" for vrs_agent role users (admins bypass and continue to work).
-- [ ] **Tyler action required**: review `COMMITS.md` and run the suggested commits 1–8 in sequence on the feature branch.
+- [ ] **Tyler action required**: run `npm run db:push` against the production-bound `DATABASE_URL` to apply `intake_forms` + `agent_external_credentials` tables before deploying the calculator + intake form release. Until then, the new claim-gate will surface "Failed to claim" for vrs_agent role users (admins bypass and continue to work). **NOTE**: the Stage 3 reordering follow-up (2026-04-26) needs NO additional db:push — it reuses existing columns only.
+- [ ] **Tyler action required**: review `COMMITS.md` and run the suggested commits 1–12 in sequence on the feature branch (commits 9–12 are the Stage 3 reordering).
 - [ ] **Follow-up — incomplete branches in field map**: `docs/intake_form_field_map.md` has the SPHW / SHW / SRW / ISP branches flagged INCOMPLETE pending another verbatim walk. The fieldset will render only the fields we DO know for those branches; missing required fields will be added in a follow-up PR.
+- [ ] **Follow-up — Smartsheet success-page detection**: the new modal attestation checkbox is honor-system because Smartsheet's hosted form is cross-origin. If Todd Pennington enables Smartsheet's redirect-URL feature (already on the Phase 2 deferred list), we can replace the checkbox with a real success signal.
 
 ## Blocked
 - Phase 2 calculator auto-login — pending decision between (a) get calc owner to add `?token=` param, (b) build VRS-distributed Chrome extension, (c) fork the Replit. Needs an external conversation first.

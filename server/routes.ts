@@ -3489,6 +3489,54 @@ export async function registerRoutes(
     return { ok: true, submission };
   }
 
+  // Stage 3 visibility — single source of truth for whether a given submission
+  // currently requires the agent to fill the Smartsheet intake form. Used by
+  // the agent dashboard to decide whether to render the Stage 3 card. Same
+  // gating as storage.getMissingIntakeForAgent but scoped to one submission.
+  //
+  // required = true  → render Stage 3 (post-Authorize, no intake row yet)
+  // required = false → either not yet authorized, NLA, or already recorded
+  //                    (`reason` explains which)
+  app.get(
+    "/api/submissions/:id/intake-form-status",
+    authenticateToken,
+    requireRole("vrs_agent", "admin"),
+    async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const id = parseInt(req.params.id as string);
+        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+
+        const owned = await loadOwnedSubmission(authReq, id);
+        if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
+
+        const sub = owned.submission;
+        if (sub.requestType === "parts_nla") {
+          return res.status(200).json({ required: false, recorded: false, reason: "nla" });
+        }
+        if (sub.ticketStatus !== "approved") {
+          return res.status(200).json({ required: false, recorded: false, reason: "not_approved" });
+        }
+        if (!sub.authCode) {
+          return res.status(200).json({ required: false, recorded: false, reason: "no_auth_code" });
+        }
+        const existing = await storage.getIntakeFormBySubmission(id);
+        if (existing) {
+          return res.status(200).json({
+            required: false,
+            recorded: true,
+            reason: "already_recorded",
+            intakeForm: existing,
+          });
+        }
+        return res.status(200).json({ required: true, recorded: false });
+      } catch (error) {
+        console.error("Intake form status error:", error);
+        return res.status(500).json({ error: "Failed to load intake form status" });
+      }
+    }
+  );
+
   app.post(
     "/api/submissions/:id/intake-form/preview",
     authenticateToken,

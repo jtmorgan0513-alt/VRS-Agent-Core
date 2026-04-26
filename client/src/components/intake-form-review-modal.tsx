@@ -17,6 +17,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Loader2, ExternalLink, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -51,11 +53,13 @@ export function IntakeFormReviewModal({
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [smartsheetSuccessConfirmed, setSmartsheetSuccessConfirmed] = useState(false);
 
   useEffect(() => {
     if (!open || !submissionId) {
       setPreview(null);
       setError(null);
+      setSmartsheetSuccessConfirmed(false);
       return;
     }
     let cancelled = false;
@@ -159,41 +163,65 @@ export function IntakeFormReviewModal({
           )}
         </div>
 
-        <DialogFooter className="px-6 py-3 border-t flex-row items-center justify-between gap-2 sm:justify-between">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Button
-              variant="ghost"
-              size="sm"
-              asChild
-              data-testid="link-intake-open-new-tab"
-            >
-              <a href={preview?.url || "#"} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-3 h-3 mr-1" />
-                Open in new tab
-              </a>
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={confirming}
-              data-testid="button-intake-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={onConfirm}
+        <DialogFooter className="px-6 py-3 border-t flex-col items-stretch gap-3 sm:flex-col">
+          {/* Required attestation — guards against agents clicking "I
+              submitted Smartsheet" without actually clicking Smartsheet's
+              own Submit button inside the iframe. The audit row in
+              intake_forms is only as trustworthy as this checkbox. */}
+          <div className="flex items-start gap-2 px-1" data-testid="container-intake-confirm-attestation">
+            <Checkbox
+              id="intake-smartsheet-confirmed"
+              checked={smartsheetSuccessConfirmed}
+              onCheckedChange={(v) => setSmartsheetSuccessConfirmed(v === true)}
               disabled={confirming || !preview}
-              data-testid="button-intake-confirm"
+              data-testid="checkbox-smartsheet-success-confirmed"
+            />
+            <Label
+              htmlFor="intake-smartsheet-confirmed"
+              className="text-xs leading-snug cursor-pointer"
+              data-testid="label-smartsheet-success-confirmed"
             >
-              {confirming ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-              )}
-              I submitted Smartsheet
-            </Button>
+              I confirmed the Smartsheet success page appeared after clicking
+              <strong> Submit </strong>
+              inside the form above.
+            </Label>
+          </div>
+          <div className="flex flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                data-testid="link-intake-open-new-tab"
+              >
+                <a href={preview?.url || "#"} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Open in new tab
+                </a>
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={confirming}
+                data-testid="button-intake-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={onConfirm}
+                disabled={confirming || !preview || !smartsheetSuccessConfirmed}
+                data-testid="button-intake-confirm"
+              >
+                {confirming ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                )}
+                I submitted Smartsheet
+              </Button>
+            </div>
           </div>
         </DialogFooter>
       </DialogContent>

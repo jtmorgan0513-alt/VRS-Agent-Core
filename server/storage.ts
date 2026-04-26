@@ -1206,6 +1206,18 @@ export class DatabaseStorage implements IStorage {
     agentId: number,
     sinceHours: number = 24
   ): Promise<{ id: number; serviceOrder: string; reviewedAt: Date | null }[]> {
+    // Stage 3 ordering (2026-04-26): intake is now collected AFTER Authorize &
+    // Send, so the gate only fires for tickets that actually got authorized.
+    // Rejected / invalid / closed tickets don't need a Smartsheet intake row,
+    // so they no longer block the agent's next claim.
+    //
+    // Required for "intake missing":
+    //   - reviewed_by  = $agent          (agent owns the responsibility)
+    //   - ticket_status = 'approved'      (Authorize & Send completed)
+    //   - auth_code IS NOT NULL           (an actual auth code went out)
+    //   - request_type != 'parts_nla'    (NLA path doesn't use Smartsheet)
+    //   - reviewed_at >= now() - sinceHours
+    //   - no row in intake_forms for this submission
     const since = new Date(Date.now() - sinceHours * 3600 * 1000);
     const result = await db.execute(sql`
       SELECT s.id, s.service_order AS "serviceOrder", s.reviewed_at AS "reviewedAt"
@@ -1213,7 +1225,8 @@ export class DatabaseStorage implements IStorage {
       LEFT JOIN intake_forms i ON i.submission_id = s.id
       WHERE s.reviewed_by = ${agentId}
         AND s.request_type != 'parts_nla'
-        AND s.ticket_status IN ('completed', 'rejected', 'invalid', 'approved')
+        AND s.ticket_status = 'approved'
+        AND s.auth_code IS NOT NULL
         AND s.reviewed_at >= ${since.toISOString()}
         AND i.id IS NULL
       ORDER BY s.reviewed_at ASC
