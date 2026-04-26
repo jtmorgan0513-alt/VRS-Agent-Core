@@ -3379,9 +3379,15 @@ export default function AgentDashboard() {
                       </TabsContent>
                       <TabsContent
                         value="calculator"
-                        className="flex-1 m-0 data-[state=inactive]:hidden"
+                        className="flex-1 flex flex-col min-h-0 m-0 data-[state=inactive]:hidden"
                         forceMount
                       >
+                        {/* flex flex-col min-h-0 is REQUIRED here — without it the
+                            inner CalculatorIframe's flex-1 has no flex parent to
+                            grow into and the iframe collapses to ~the height of
+                            the Streamlit logo (clipping the Username / Password /
+                            Sign In form below). Mirrors the SHSAI TabsContent
+                            classes above so both tabs fill the panel identically. */}
                         <CalculatorIframe onOpenSettings={() => setCalcSettingsOpen(true)} />
                       </TabsContent>
                     </Tabs>
