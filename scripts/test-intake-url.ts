@@ -66,7 +66,14 @@ console.log("\nSPHW pre-fill (always-visible only)");
   });
   assert("starts with form base", url.startsWith(VRS_INTAKE_FORM_BASE + "?"));
   assert("branch=SPHW", branch === "SPHW");
-  assert("Tech ID uppercased", params["VRS Tech ID"] === "COZAKIG");
+  assert(
+    "VRS Tech ID falls back to technicianLdapId uppercased when no authUserRacId",
+    params["VRS Tech ID"] === "COZAKIG"
+  );
+  assert(
+    "IH Tech Ent ID populated from technicianLdapId uppercased",
+    params["IH Tech Ent ID"] === "COZAKIG"
+  );
   assert(
     "service order passed unchanged",
     params["IH Service Order Number"] === "1234-56789012"
@@ -138,6 +145,99 @@ console.log("\nSHW pre-fill auto-defaults branch fields");
   assert(
     "Reason field carried through",
     params["Reason for Calling VRS Hotline SHW"] === "Un-economical to Repair"
+  );
+}
+
+console.log("\nVRS Tech ID + IH Tech Ent ID source split (Tyler 2026-04-26)");
+{
+  // With authUserRacId provided, VRS Tech ID = agent's racId (uppercased);
+  // IH Tech Ent ID = field tech's LDAP id (uppercased). Two distinct columns,
+  // two distinct sources.
+  const { params } = buildIntakeFormUrl({
+    submission: makeSub({ technicianLdapId: "jmorga1" }),
+    payload: {},
+    authUserRacId: "mthoma2",
+  });
+  assert(
+    "VRS Tech ID = authUserRacId uppercased",
+    params["VRS Tech ID"] === "MTHOMA2"
+  );
+  assert(
+    "IH Tech Ent ID = technicianLdapId uppercased",
+    params["IH Tech Ent ID"] === "JMORGA1"
+  );
+}
+
+console.log("\nVRS Tech ID fallback when agent racId missing");
+{
+  // Tyler's safety net: agent record without a racId must NOT silently blank
+  // the VRS Tech ID column — fall back to the field tech's LDAP id.
+  const { params } = buildIntakeFormUrl({
+    submission: makeSub({ technicianLdapId: "cozakig" }),
+    payload: {},
+    authUserRacId: null,
+  });
+  assert(
+    "VRS Tech ID falls back to technicianLdapId when authUserRacId is null",
+    params["VRS Tech ID"] === "COZAKIG"
+  );
+  assert(
+    "IH Tech Ent ID still populated from technicianLdapId",
+    params["IH Tech Ent ID"] === "COZAKIG"
+  );
+}
+
+console.log("\nVRS Tech ID fallback when agent racId is empty string");
+{
+  // Defence-in-depth: empty-string racId on the agent row should also fall
+  // back to the field tech's LDAP — the `||` chain in buildIntakeFormUrl
+  // treats "" as falsy, same as null.
+  const { params } = buildIntakeFormUrl({
+    submission: makeSub({ technicianLdapId: "cozakig" }),
+    payload: {},
+    authUserRacId: "",
+  });
+  assert(
+    "VRS Tech ID falls back to technicianLdapId when authUserRacId is empty string",
+    params["VRS Tech ID"] === "COZAKIG"
+  );
+}
+
+console.log("\nlegacy submission with null technicianLdapId");
+{
+  // Legacy / Snowflake-only submission rows can have a null technicianLdapId.
+  // Make sure the source-split degrades gracefully — VRS Tech ID still
+  // populates from the agent's racId; IH Tech Ent ID is omitted (column
+  // simply unavailable, agent fills it manually in the iframe).
+  const { params } = buildIntakeFormUrl({
+    submission: makeSub({ technicianLdapId: null as any }),
+    payload: {},
+    authUserRacId: "mthoma2",
+  });
+  assert(
+    "VRS Tech ID still populated from authUserRacId",
+    params["VRS Tech ID"] === "MTHOMA2"
+  );
+  assert(
+    "IH Tech Ent ID omitted when technicianLdapId is null",
+    !("IH Tech Ent ID" in params)
+  );
+}
+
+console.log("\nVRS Tech ID URL encoding with alphanumeric racId");
+{
+  const { url } = buildIntakeFormUrl({
+    submission: makeSub({}),
+    payload: {},
+    authUserRacId: "mthoma2",
+  });
+  assert(
+    "URL encodes VRS Tech ID with uppercased racId",
+    url.includes("VRS%20Tech%20ID=MTHOMA2")
+  );
+  assert(
+    "URL includes IH Tech Ent ID column",
+    url.includes("IH%20Tech%20Ent%20ID=COZAKIG")
   );
 }
 

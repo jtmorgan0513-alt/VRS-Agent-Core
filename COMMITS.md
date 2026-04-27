@@ -586,3 +586,52 @@ Files:
 No schema changes. No db:push required. No client changes (the only client surface was
 the warning strip in `intake-form-review-modal.tsx`, which still functions for the
 remaining `Some Bogus Field` allow-list warnings).
+
+---
+
+## Hotfix — IH Tech Ent ID + VRS Tech ID source split (post-audit, 2026-04-26 PM)
+
+```
+fix(intake): split VRS Tech ID and IH Tech Ent ID sources
+
+Smartsheet's "VRS Unrep Intake Form 2.0" has two LDAP-shaped columns
+that we were collapsing onto one source:
+
+  - "VRS Tech ID"      — should be the authenticated VRS agent's racId
+                         (the agent calling on behalf of the field tech).
+  - "IH Tech Ent ID"   — should be the field tech's LDAP id (the value
+                         that used to drive "VRS Tech ID" alone).
+
+This corrects the audit semantic so the intake row attributes the call
+to the agent who placed it while still recording the field tech's
+identifier on the row.
+
+Implementation:
+  - server/services/smartsheet.ts: add "IH Tech Ent ID" to the allow-list,
+    add `authUserRacId?: string | null` to BuildIntakeFormUrlInput, split
+    the always-visible defaults so VRS Tech ID = authUserRacId (uppercased)
+    and IH Tech Ent ID = submission.technicianLdapId (uppercased). VRS Tech
+    ID falls back to technicianLdapId when authUserRacId is missing so the
+    column is never silently blank. Also added "racId" to the submission
+    Pick for future readers/observability.
+  - server/routes.ts: both intake routes (preview + confirm) do one extra
+    storage.getUser(authReq.user!.id) call and pass the agent's racId
+    through to the URL builder.
+  - scripts/test-intake-url.ts: 3 new test blocks — split-source case,
+    fallback case, and URL-encoding case for the new column.
+
+No schema changes. No db:push. No client changes. Smartsheet form
+definition is unmodified — we only changed what we prefill INTO it.
+
+Refs: post-build audit follow-up (Tyler 2026-04-26 PM).
+```
+
+Files:
+- `server/services/smartsheet.ts` (modified — `ALLOWED_COLUMN_LABELS` += "IH Tech Ent ID"; `BuildIntakeFormUrlInput` += `racId` Pick + `authUserRacId`; defaults split into `vrsTechId` / `ihTechEntId`)
+- `server/routes.ts` (modified — both intake routes do `storage.getUser(authReq.user!.id)` and pass `authUserRacId`)
+- `scripts/test-intake-url.ts` (modified — 3 new blocks: split-source, fallback, URL encoding)
+
+Verification: `npx tsx scripts/test-intake-url.ts` all-green; live curl walk
+of SO 99999000001 / 99999000002 / 99999000003 against the preview endpoint
+as TESTADMIN confirms both columns populate correctly with the agent's
+racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.

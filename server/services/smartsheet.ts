@@ -85,6 +85,7 @@ export function applianceTypeToSmartsheet(applianceType: string | null | undefin
 export const ALLOWED_COLUMN_LABELS: readonly string[] = [
   // Always-visible
   "VRS Tech ID",
+  "IH Tech Ent ID",
   "IH Unit Number",
   "IH Service Order Number",
   "Servicer Type",
@@ -121,9 +122,18 @@ export interface BuildIntakeFormUrlInput {
     | "agentNotes"
     | "requestType"
     | "issueDescription"
+    | "racId"
   > & { ihUnitNumber?: string | null };
   /** Agent-supplied conditional fields, keyed by Smartsheet column label. */
   payload: Record<string, string | number | undefined | null>;
+  /**
+   * Tyler 2026-04-26: the racId of the authenticated VRS agent/admin who is
+   * opening the intake form (looked up from `users` via the JWT user.id at
+   * the call site). Drives the `VRS Tech ID` Smartsheet column. Falls back
+   * to `submission.technicianLdapId` (the field tech's LDAP) when the
+   * agent's racId is missing so the field is never silently blank.
+   */
+  authUserRacId?: string | null;
 }
 
 export interface BuildIntakeFormUrlResult {
@@ -151,7 +161,7 @@ export interface BuildIntakeFormUrlResult {
 export function buildIntakeFormUrl(
   input: BuildIntakeFormUrlInput
 ): BuildIntakeFormUrlResult {
-  const { submission, payload } = input;
+  const { submission, payload, authUserRacId } = input;
   const branch = detectBranch(submission.procId);
   const warnings: string[] = [];
 
@@ -177,9 +187,25 @@ export function buildIntakeFormUrl(
 
   const applianceLabel = applianceTypeToSmartsheet(submission.applianceType);
 
+  // Tyler 2026-04-26 (always-visible field source split):
+  //   - "VRS Tech ID"   ← authenticated VRS agent's racId (LDAP-shaped, e.g.
+  //                       "MTHOMA2"). Falls back to the field tech's LDAP id
+  //                       when the agent's racId is missing so the column is
+  //                       never silently blank.
+  //   - "IH Tech Ent ID" ← field tech's LDAP id (was previously the only
+  //                        source for "VRS Tech ID"; semantic now lives on
+  //                        the new column).
+  // Both are uppercased to match Smartsheet's LDAP combobox option style.
+  const vrsTechId =
+    ((authUserRacId || submission.technicianLdapId || "") as string)
+      .toUpperCase() || undefined;
+  const ihTechEntId =
+    (submission.technicianLdapId || "").toUpperCase() || undefined;
+
   // Always-visible defaults — agent-provided value in payload wins.
   const defaults: Record<string, string | undefined> = {
-    "VRS Tech ID": (submission.technicianLdapId || "").toUpperCase() || undefined,
+    "VRS Tech ID": vrsTechId,
+    "IH Tech Ent ID": ihTechEntId,
     "IH Unit Number": submission.ihUnitNumber || undefined,
     "IH Service Order Number": serviceOrder || undefined,
     "Servicer Type": "W2-In Home Field Tech", // Phase 1 = W2 only

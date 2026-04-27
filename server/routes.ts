@@ -3556,10 +3556,25 @@ export async function registerRoutes(
           ihUnitNumber = (tech as any)?.techUnNo ?? null;
         }
 
+        // Tyler 2026-04-26 (post-audit): "VRS Tech ID" Smartsheet column is
+        // now sourced from the authenticated agent's racId (LDAP-shaped),
+        // not the field tech's LDAP id. One small storage lookup per
+        // request — additive, bounded. Wrapped in try/catch so a transient
+        // DB hiccup degrades to the technicianLdapId fallback inside
+        // buildIntakeFormUrl rather than 500-ing the whole intake flow.
+        let authUserRacId: string | null = null;
+        try {
+          const agent = await storage.getUser(authReq.user!.id);
+          authUserRacId = agent?.racId ?? null;
+        } catch (lookupErr) {
+          console.warn("Intake preview agent racId lookup failed; falling back to technicianLdapId:", lookupErr);
+        }
+
         const { buildIntakeFormUrl } = await import("./services/smartsheet");
         const result = buildIntakeFormUrl({
           submission: { ...owned.submission, ihUnitNumber },
           payload: parsed.data.payload,
+          authUserRacId,
         });
         return res.status(200).json(result);
       } catch (error) {
@@ -3603,10 +3618,23 @@ export async function registerRoutes(
           ihUnitNumber = (tech as any)?.techUnNo ?? null;
         }
 
+        // Tyler 2026-04-26 (post-audit): mirror the preview route so the
+        // recorded URL's "VRS Tech ID" comes from the same agent racId
+        // lookup the agent saw in the iframe. Same try/catch fallback as
+        // the preview route.
+        let authUserRacId: string | null = null;
+        try {
+          const agent = await storage.getUser(authReq.user!.id);
+          authUserRacId = agent?.racId ?? null;
+        } catch (lookupErr) {
+          console.warn("Intake confirm agent racId lookup failed; falling back to technicianLdapId:", lookupErr);
+        }
+
         const { buildIntakeFormUrl } = await import("./services/smartsheet");
         const built = buildIntakeFormUrl({
           submission: { ...owned.submission, ihUnitNumber },
           payload: parsed.data.payload,
+          authUserRacId,
         });
 
         // Branch is informational only — folded into the payload blob so we
