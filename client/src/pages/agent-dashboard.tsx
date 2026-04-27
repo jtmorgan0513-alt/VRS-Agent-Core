@@ -9,7 +9,7 @@ import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPe
 import NotificationSettings from "@/components/notification-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { IntakeFormFieldset } from "@/components/intake-form-fieldset";
-import { IntakeFormReviewModal } from "@/components/intake-form-review-modal";
+import { IntakeFormTab } from "@/components/intake-form-tab";
 import { CalculatorIframe } from "@/components/calculator-iframe";
 import { CalculatorSettingsDialog } from "@/components/calculator-settings-dialog";
 import { detectBranch as detectIntakeBranch, findMissingRequired as findIntakeMissingRequired } from "@/lib/intake-form-config";
@@ -240,18 +240,22 @@ export default function AgentDashboard() {
   };
   const [shsaiVisible, setShsaiVisible] = useState(true);
   // ----------------------------------------------------------------------
-  // Right-panel tabs (T2): keep `shsaiVisible` for back-compat with the
-  // existing show/hide buttons (test IDs button-show-shsai / button-hide-shsai
-  // are preserved). Within the panel we now switch between the SHSAI Service
-  // Order History and the Repair/Replace Calculator iframe.
+  // Right-panel tabs (T2 + 2026-04-27 modal->tab migration):
+  // keep `shsaiVisible` for back-compat with the existing show/hide buttons
+  // (test IDs button-show-shsai / button-hide-shsai are preserved).
+  // Within the panel we switch between Service Order History (SHSAI),
+  // the Repair/Replace Calculator iframe, and the new Intake Form tab
+  // that replaced the IntakeFormReviewModal popup.
   // ----------------------------------------------------------------------
-  type RightPanelView = "shsai" | "calculator";
+  type RightPanelView = "shsai" | "calculator" | "intake";
   const [rightPanelView, setRightPanelView] = useState<RightPanelView>("shsai");
   useEffect(() => {
     if (!user?.id) return;
     try {
       const saved = localStorage.getItem(`agent:${user.id}:rightPanel`);
-      if (saved === "shsai" || saved === "calculator") setRightPanelView(saved);
+      if (saved === "shsai" || saved === "calculator" || saved === "intake") {
+        setRightPanelView(saved);
+      }
     } catch {}
   }, [user?.id]);
   useEffect(() => {
@@ -260,13 +264,28 @@ export default function AgentDashboard() {
       localStorage.setItem(`agent:${user.id}:rightPanel`, rightPanelView);
     } catch {}
   }, [user?.id, rightPanelView]);
+  // Tyler 2026-04-27 (Q2 = AUTO-SELECT ONCE, THEN RESPECT USER):
+  // The post-Authorize "open intake" trigger schedules a tab switch on a
+  // 350ms timer. If the agent picks a different tab during those 350ms we
+  // cancel the pending switch — they made an explicit choice and we don't
+  // yank them back. The flag is set true at trigger schedule time and
+  // cleared either when the timer fires OR when the agent clicks any tab.
+  // Selection change also clears it so a fresh ticket arms cleanly.
+  const pendingIntakeAutoFireRef = useRef(false);
+  const handleRightPanelViewChange = (v: RightPanelView) => {
+    if (pendingIntakeAutoFireRef.current) pendingIntakeAutoFireRef.current = false;
+    setRightPanelView(v);
+  };
   const [calcSettingsOpen, setCalcSettingsOpen] = useState(false);
   // ----------------------------------------------------------------------
-  // Intake form (T3/T4/T5): per-submission working values + review modal
-  // state. Reset on selection change so we don't leak data across tickets.
+  // Intake form (T3/T4/T5; modal->tab migrated 2026-04-27):
+  // per-submission working values for the Stage 3 fallback fieldset. The
+  // review-modal state was removed — the form now lives as a third tab in
+  // the right panel (see RightPanelView type above) and reads its own
+  // payload from `intakeValues`. Reset on selection change so we don't
+  // leak data across tickets.
   // ----------------------------------------------------------------------
   const [intakeValues, setIntakeValues] = useState<Record<string, string>>({});
-  const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   // Stage 3 scroll target — set by the post-Authorize flow so we can land
   // the agent's view directly on the new Smartsheet Intake fallback card
   // when the agent dismisses the auto-opened modal.
@@ -573,9 +592,12 @@ export default function AgentDashboard() {
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
 
   // Reset intake form working values when switching submissions so we don't
-  // leak data between tickets.
+  // leak data between tickets. Also clears the pending auto-fire flag so a
+  // fresh ticket arms cleanly for the post-Authorize tab-switch trigger
+  // (Tyler Q2 = re-selecting re-arms the auto-select).
   useEffect(() => {
     setIntakeValues({});
+    pendingIntakeAutoFireRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -707,12 +729,24 @@ export default function AgentDashboard() {
         setLocalAgentStatus("online");
       } else if (justAuthorized) {
         setLocalAgentStatus("online");
-        // Auto-open the intake modal once the cache invalidation lands so
-        // the per-submission intake-form-status query has had a chance to
-        // flip required=true. The modal will fetch its own preview and
-        // emit derivedDefaults to seed the fallback fieldset.
+        // Tyler 2026-04-27 (modal -> tab migration): auto-select the new
+        // Intake Form tab in the right panel instead of opening the
+        // retired modal popup. The 350ms delay is preserved so the
+        // per-submission intake-form-status query has time to flip
+        // required=true (otherwise the tab would render its pre-auth
+        // ghost empty state). We also force-show the right panel in
+        // case the agent had it hidden — without that, the tab switch
+        // would be silently invisible.
+        // Q2 (AUTO-SELECT ONCE THEN RESPECT USER) is enforced via
+        // `pendingIntakeAutoFireRef`: the flag is set true here and
+        // cleared either when the timer fires or when the agent picks
+        // any tab during the 350ms window (cancelling the pending fire).
+        pendingIntakeAutoFireRef.current = true;
         window.setTimeout(() => {
-          setIntakeModalOpen(true);
+          if (!pendingIntakeAutoFireRef.current) return;
+          pendingIntakeAutoFireRef.current = false;
+          setShsaiVisible(true);
+          setRightPanelView("intake");
         }, 350);
       }
 
@@ -2441,29 +2475,18 @@ export default function AgentDashboard() {
                             values={intakeValues}
                             onChange={setIntakeValues}
                           />
-                          {/* Tyler 2026-04-26 (D2): the intake modal now
-                              auto-opens after Authorize & Send, so this
-                              button is the re-open path if the agent
-                              dismisses it. The fieldset above stays in
-                              sync via the modal's onPreviewLoaded callback,
-                              so the agent sees the same pre-filled values
-                              they saw in the modal. */}
-                          <div className="flex justify-end">
-                            <Button
-                              type="button"
-                              onClick={() => setIntakeModalOpen(true)}
-                              disabled={
-                                findIntakeMissingRequired(
-                                  detectIntakeBranch((selectedSubmission as any).procId ?? null),
-                                  intakeValues
-                                ).length > 0
-                              }
-                              data-testid="button-open-intake-review"
-                            >
-                              <Send className="w-4 h-4 mr-2" />
-                              Re-open intake form
-                            </Button>
-                          </div>
+                          {/* Tyler 2026-04-27 (modal -> tab migration):
+                              the "Re-open intake form" button (formerly
+                              data-testid="button-open-intake-review") was
+                              removed because the form now lives as the
+                              third tab in the right panel — there is no
+                              modal to re-open. The fieldset above stays
+                              the working-payload editor; values flow
+                              into the tab's iframe pre-fill in real
+                              time via `intakeValues` prop. Agents who
+                              switched away from the Intake tab can
+                              click it back from the right-panel TabsList
+                              (data-testid="tab-intake"). */}
                         </CardContent>
                       </Card>
                     )}
@@ -3234,17 +3257,49 @@ export default function AgentDashboard() {
                         existing test IDs require. */}
                     <Tabs
                       value={rightPanelView}
-                      onValueChange={(v) => setRightPanelView(v as RightPanelView)}
+                      onValueChange={(v) => handleRightPanelViewChange(v as RightPanelView)}
                       className="flex flex-col flex-1 min-h-0"
                     >
                       <div className="px-2 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
-                        <TabsList data-testid="tabs-right-panel">
+                        {/* Tyler 2026-04-27 (Q2 hardening, architect-flagged):
+                            Radix Tabs only fires onValueChange when the value
+                            actually changes. If the agent is on Calculator
+                            when they click Authorize and then re-clicks the
+                            Calculator tab within the 350ms window, no value
+                            change fires and the pending intake auto-fire was
+                            slipping through. Capturing pointer-down on the
+                            entire TabsList catches *any* click intent — same
+                            tab or different tab — and cancels the pending
+                            auto-fire deterministically. */}
+                        <TabsList
+                          data-testid="tabs-right-panel"
+                          onPointerDownCapture={() => {
+                            if (pendingIntakeAutoFireRef.current) {
+                              pendingIntakeAutoFireRef.current = false;
+                            }
+                          }}
+                        >
                           <TabsTrigger value="shsai" data-testid="tab-shsai">
                             <Globe className="w-4 h-4 mr-1" />
                             Service Order History
                           </TabsTrigger>
                           <TabsTrigger value="calculator" data-testid="tab-calculator">
                             Calculator
+                          </TabsTrigger>
+                          {/* Tyler 2026-04-27 Q1 = CONDITIONAL + PRE-AUTH GHOST:
+                              the Intake Form tab always renders for predictable
+                              order, but is `disabled` until the per-submission
+                              intake-form-status query reports either required
+                              (post-Authorize, no row yet) or recorded (audit
+                              row exists). Disabled state keeps the tab visible
+                              as a clear visual cue that the step is coming. */}
+                          <TabsTrigger
+                            value="intake"
+                            data-testid="tab-intake"
+                            disabled={!stage3Required && !stage3Recorded}
+                          >
+                            <ClipboardList className="w-4 h-4 mr-1" />
+                            Intake Form
                           </TabsTrigger>
                         </TabsList>
                         <div className="flex items-center gap-1">
@@ -3395,6 +3450,62 @@ export default function AgentDashboard() {
                             classes above so both tabs fill the panel identically. */}
                         <CalculatorIframe onOpenSettings={() => setCalcSettingsOpen(true)} />
                       </TabsContent>
+                      {/* Tyler 2026-04-27: Intake Form tab — replaces the
+                          retired IntakeFormReviewModal. Same flex-col min-h-0
+                          pattern as Calculator so the inner iframe fills.
+                          forceMount keeps the iframe alive across tab
+                          switches so the agent doesn't lose Smartsheet form
+                          progress when peeking at the Calculator/SHSAI tabs.
+                          onConfirmed only clears intakeValues — the green
+                          banner is server-driven (intake-form-status query)
+                          so it appears automatically on the next refetch. */}
+                      <TabsContent
+                        value="intake"
+                        className="flex-1 flex flex-col min-h-0 m-0 data-[state=inactive]:hidden"
+                        forceMount
+                      >
+                        <IntakeFormTab
+                          submissionId={selectedId}
+                          serviceOrder={selectedSubmission?.serviceOrder ?? null}
+                          payload={intakeValues}
+                          intakeStatus={intakeFormStatusQuery.data}
+                          onPreviewLoaded={(derivedDefaults) => {
+                            // Tyler 2026-04-26 (D4 max-derivation): merge
+                            // server-derived defaults into the working
+                            // payload for any keys the agent hasn't
+                            // explicitly set — same plumbing the modal had.
+                            // CRITICAL: must return `prev` unchanged when
+                            // nothing is actually written, otherwise a fresh
+                            // object reference retriggers the tab's preview
+                            // useEffect (which depends on `payload`), which
+                            // calls back into onPreviewLoaded — infinite
+                            // refetch loop. (Architect-flagged regression
+                            // risk on first review of the modal version.)
+                            setIntakeValues((prev) => {
+                              let changed = false;
+                              const next = { ...prev };
+                              for (const [k, v] of Object.entries(derivedDefaults)) {
+                                if (next[k] === undefined || next[k] === "") {
+                                  next[k] = v;
+                                  changed = true;
+                                }
+                              }
+                              return changed ? next : prev;
+                            });
+                          }}
+                          onConfirmed={() => {
+                            // Intake row is recorded — clear local working
+                            // state. The green banner shows automatically
+                            // because the intake-form-status query was
+                            // invalidated inside IntakeFormTab.onConfirm.
+                            setIntakeValues({});
+                            queryClient.invalidateQueries({
+                              predicate: (q) =>
+                                (q.queryKey[0] as string).startsWith("/api/submissions"),
+                            });
+                          }}
+                        />
+                      </TabsContent>
                     </Tabs>
                   </div>
                 )}
@@ -3405,46 +3516,10 @@ export default function AgentDashboard() {
         </div>
       </div>
 
-      <IntakeFormReviewModal
-        open={intakeModalOpen}
-        onOpenChange={setIntakeModalOpen}
-        submissionId={selectedId}
-        payload={intakeValues}
-        onPreviewLoaded={(derivedDefaults) => {
-          // Tyler 2026-04-26 (D4 max-derivation): merge server-derived
-          // defaults into the working payload for any keys the agent
-          // hasn't explicitly set. This way the Stage 3 fallback fieldset
-          // shows the same pre-fill the agent saw in the auto-opened
-          // modal if they close it and re-open via the card.
-          //
-          // CRITICAL: must return `prev` unchanged when nothing is
-          // actually written, otherwise a fresh object reference retriggers
-          // the modal's preview useEffect (which depends on `payload`),
-          // which calls back into onPreviewLoaded — an infinite refetch
-          // loop. (Architect-flagged regression risk on first review.)
-          setIntakeValues((prev) => {
-            let changed = false;
-            const next = { ...prev };
-            for (const [k, v] of Object.entries(derivedDefaults)) {
-              if (next[k] === undefined || next[k] === "") {
-                next[k] = v;
-                changed = true;
-              }
-            }
-            return changed ? next : prev;
-          });
-        }}
-        onConfirmed={() => {
-          // Intake row is recorded — clear local working state and refresh
-          // the per-submission status query so Stage 3 collapses to the
-          // recorded-banner card.
-          setIntakeModalOpen(false);
-          setIntakeValues({});
-          queryClient.invalidateQueries({
-            predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions"),
-          });
-        }}
-      />
+      {/* Tyler 2026-04-27: <IntakeFormReviewModal> removed — replaced by
+          the <IntakeFormTab> rendered inside the right-panel <Tabs> above.
+          The onPreviewLoaded / onConfirmed callbacks moved with it
+          unchanged. See COMMITS.md for the full migration note. */}
 
       <CalculatorSettingsDialog
         open={calcSettingsOpen}

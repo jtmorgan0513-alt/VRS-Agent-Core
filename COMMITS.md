@@ -729,3 +729,55 @@ racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.
 **Test ID surface:** unchanged (`panel-shsai`, `tab-shsai`, `tab-calculator`, `button-show-shsai`, `button-hide-shsai`, `button-shsai-refresh` all intact).
 
 **No git commits. No schema changes. No backend changes. No JS logic changes — pure Tailwind width swap.**
+
+---
+
+## Refactor 2026-04-27 — intake form: modal popup → third right-panel tab
+
+**Scope authorized by Tyler this session.** The Smartsheet intake form was previously rendered inside `IntakeFormReviewModal` — a popup dialog that auto-opened 350ms after Authorize & Send. Per Tyler's new direction, the modal is retired and the form now lives as a third tab in the right-side panel of the ticket resolution page, sitting next to Service Order History (SHSAI) and Calculator.
+
+### Four product calls Tyler made (recorded for posterity)
+
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Tab visibility | **CONDITIONAL + PRE-AUTH GHOST** — third tab always renders for predictable order; `disabled` until intake-form-status reports `required` or `recorded` |
+| Q2 | Auto-tab-select behavior | **AUTO-SELECT ONCE, THEN RESPECT USER** — post-Authorize timer auto-switches once; manual tab clicks during the 350ms window cancel the pending switch; selection change re-arms |
+| Q3 | Success-banner persistence | **PERSIST FROM SERVER** — banner reads `intake_forms.createdAt` via the per-submission status query, so it shows on every re-visit; tab choice falls back to last-used localStorage (no auto-default to Intake on re-visit) |
+| Q4 | Plan doc cleanup | **MARK CANCELLED** — append "ON HOLD 2026-04-27" note in `docs/superpowers/plans/2026-04-25-calculator-and-intake-form.md` next to the redirect-URL section, preserving Todd Pennington's context |
+
+### Files touched
+
+| File | Change |
+|---|---|
+| `client/src/components/intake-form-tab.tsx` | **NEW** — replaces the modal. Three modes: pre-auth ghost empty state / required (iframe + attestation + button) / recorded (iframe + green banner above). Mirrors modal's preview load semantics, anti-feedback-loop guard on `onPreviewLoaded`, and confirm POST flow. |
+| `client/src/components/intake-form-review-modal.tsx` | **DELETED** — retired. The Option B onLoad probe instrumentation died with it. |
+| `client/src/pages/agent-dashboard.tsx` | Removed `IntakeFormReviewModal` import, `intakeModalOpen` state, the `<IntakeFormReviewModal>` element block (~40 lines), and the "Re-open intake form" button + wrapping flex div (~25 lines). Added `IntakeFormTab` import, extended `RightPanelView` union with `"intake"`, widened the localStorage allowlist, added `pendingIntakeAutoFireRef` + `handleRightPanelViewChange` for the Q2 cancellable auto-fire, added the third `<TabsTrigger value="intake" disabled={...}>` and `<TabsContent value="intake">`, and replaced the post-Authorize `setIntakeModalOpen(true)` call with `setShsaiVisible(true) + setRightPanelView("intake")` (gated by the pending-fire flag). |
+| `docs/superpowers/plans/2026-04-25-calculator-and-intake-form.md` | Appended ON HOLD note next to the Smartsheet thank-you redirect section (line 215) so Todd Pennington's context isn't lost. |
+
+### Auto-close probe / Option B — CANCELLED
+
+The interim Option B work (iframe `onLoad` counter logging `[INTAKE-PROBE]` to console, intended to detect Smartsheet's post-submit thank-you nav and auto-fire `handleSmartsheetSuccess()`) is N/A — there is no modal to close. The probe instrumentation was deleted along with `intake-form-review-modal.tsx`. The session-level evidence (one `loadCount: 1` capture from SO 99999000004, no `loadCount: 2` ever observed) is now historical-only; future redirect-URL work (formerly Option D, see plan doc note) is paused pending Todd Pennington and a separate UX decision about whether to keep the attestation checkbox as belt-and-suspenders.
+
+### Constraints honored
+
+- **Additive on the data layer.** No schema changes. The `intake_forms` table, `agent_external_credentials` table, and all server endpoints (`/api/submissions/:id/intake-form-status`, `/preview`, `/confirm`) are byte-identical to before. `buildIntakeFormUrl` and the prefill logic are untouched.
+- **No deletions of existing functionality.** The intake form itself, prefill logic, attestation checkbox, "I submitted Smartsheet" button, and confirm endpoint all stay — they just live in a tab now instead of a modal. The IntakeFormFieldset card on the resolution panel stays as the working-payload editor; only its trailing "Re-open intake form" button was removed (modal it pointed at no longer exists).
+- **Cancel button** stays removed (already done in the prior modal-era session — no change here).
+- **Responsive collapse preserved.** The right panel still uses `hidden md:flex md:w-1/2`; below the md breakpoint the right panel disappears and the intake tab disappears with it. Same as today's behavior for SHSAI / Calculator.
+- **Smartsheet form definition** untouched. `aa5f07c589b64ae993f5f75e20f71d5f` is unchanged.
+
+### Test ID surface
+
+**Removed** (modal-only): `dialog-intake-review`, `text-intake-modal-title`, `button-intake-cancel` (already gone), `button-open-intake-review`.
+
+**Preserved (now in tab instead of modal)**: `iframe-intake-smartsheet`, `checkbox-smartsheet-success-confirmed`, `label-smartsheet-success-confirmed`, `container-intake-confirm-attestation`, `link-intake-open-new-tab`, `button-intake-confirm`, `loading-intake-preview`, `error-intake-preview`, `warnings-intake-preview`.
+
+**New**: `tab-intake`, `panel-intake-tab`, `intake-tab-empty-state`, `banner-intake-recorded`, `text-intake-recorded`.
+
+### Risk surface
+
+- Tests / scripts referencing `IntakeFormReviewModal`, `dialog-intake-review`, `button-open-intake-review`, or `intakeModalOpen` will fail. (Recommend a quick grep before next deploy.)
+- The new tab calls `/intake-form/preview` whenever `payload` changes (same as the modal did when open). Because the tab's `forceMount` keeps it alive across tab switches, the preview refetches even when the tab isn't visible — bandwidth is identical to the modal era (modal also polled while open). If this becomes a perf concern, add a `tab === 'intake'` gate to the preview useEffect.
+- `pendingIntakeAutoFireRef` correctness depends on `handleRightPanelViewChange` being the ONLY caller for tab changes from the user. Direct `setRightPanelView(...)` calls inside other components or future code would bypass the cancellation. (Currently zero such direct callers exist outside this file.)
+
+**No git commits. No schema changes. No backend changes. No Smartsheet form definition changes.**

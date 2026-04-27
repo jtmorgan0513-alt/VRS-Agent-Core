@@ -214,6 +214,24 @@ Implementation: a single `<IntakeFormFieldset proc_id_category={...} value={...}
 
 **Smartsheet completion verification (replace honor-system).** Smartsheet form settings let owner set a thank-you redirect URL. Point it at `/api/intake-forms/confirm-redirect?submissionId=<id>&token=<hmac>`. Replaces the "Did Smartsheet confirm?" honor button with a real callback. Requires Todd Pennington to flip one setting on the form.
 
+> **ON HOLD 2026-04-27 (Tyler) — formerly Option D in session work.**
+> Auto-close / auto-confirm work was paused this session as part of the
+> modal -> tab migration: the IntakeFormReviewModal was retired and the
+> form now lives as the third tab in the agent right-side panel
+> (Service Order History / Calculator / Intake Form). With no modal to
+> auto-close, the immediate driver for the redirect-URL callback is
+> gone — the agent stays on the Intake Form tab after submitting and
+> sees a server-driven green "Intake recorded for SO XXXXX at HH:MM"
+> banner above the iframe. The redirect-URL idea is still viable as a
+> future replacement for the honor-system attestation checkbox (lets
+> us drop the "I submitted Smartsheet" button entirely and trust the
+> server callback), but it now requires Todd Pennington's go-ahead
+> AND a separate UX decision about whether to keep manual attestation
+> as a belt-and-suspenders gate. See COMMITS.md (entries dated
+> 2026-04-27) for the full reasoning and the cancellation of the
+> interim Option B onLoad probe instrumentation that lived in the
+> deleted intake-form-review-modal.tsx.
+
 ## Phase 3 — Original proposal path (deferred, separate plan)
 
 When Tyler has the Smartsheet API token from Todd:

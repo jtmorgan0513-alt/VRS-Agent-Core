@@ -3456,9 +3456,11 @@ export async function registerRoutes(
   // ==========================================================================
   // INTAKE FORM ROUTES — preview pre-filled URL + record submission
   // ==========================================================================
-  // These back the IntakeFormReviewModal in the agent dashboard. The
-  // server-side allow-list (server/services/smartsheet.ts ALLOWED_COLUMN_LABELS)
-  // is the security boundary — bogus payload keys are silently dropped.
+  // These back the IntakeFormTab (third tab in the agent right-side panel,
+  // formerly the IntakeFormReviewModal popup — migrated 2026-04-27, see
+  // COMMITS.md). The server-side allow-list (server/services/smartsheet.ts
+  // ALLOWED_COLUMN_LABELS) is the security boundary — bogus payload keys
+  // are silently dropped.
 
   const intakeFormPayloadSchema = z.object({
     payload: z.record(z.string(), z.union([z.string(), z.number()])).default({}),
