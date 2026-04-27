@@ -709,3 +709,23 @@ racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.
 - No test-id collisions, no shape changes, no API changes.
 
 **No git commits. No schema changes. No Smartsheet form definition changes. No backend changes. No auto-close behavior added yet.**
+
+---
+
+## Layout 2026-04-27 — agent ticket resolution page: 50/50 column split
+
+**Scope authorized by Tyler this session.** The right panel (Service Order History / Calculator tabs) was set to 40% width and the embedded Sears Repair/Replace Calculator sign-in form was visibly cramped. Goal: balanced two-column layout giving both panels equal horizontal space. Strictly additive — no fields, sections, or controls removed; just two width-token swaps.
+
+**Edits — `client/src/pages/agent-dashboard.tsx`:**
+- Line ~1503: `md:w-[60%]` → `md:w-1/2` on the left panel's `ScrollArea` (ticket details). Inline comment added explaining the rationale and confirming responsive/scroll behavior is preserved.
+- Line ~3233: `w-[40%]` → `md:w-1/2` on the right panel's container `div` (test-id `panel-shsai`).
+
+**Constraints honored:**
+- (a) Additive only — no DOM removals, no field/section/control changes. Only two Tailwind width tokens swapped.
+- (b) Internal scroll behavior preserved. Left panel still wraps its content in `<ScrollArea>`. Right panel's tab content (`Tabs > TabsContent` with internal `<ScrollArea>` for SHSAI; `<CalculatorIframe>` flex-1 for Calculator) is unchanged.
+- (c) Responsive behavior preserved. Below the `md` breakpoint: left panel reverts to `w-full`, right panel is `hidden md:flex` so it disappears entirely — same stack/collapse behavior as before. The change only affects `md` and up.
+- (d) **No touch** to the intake form modal, prefill logic, Smartsheet service, or the in-flight `[INTAKE-PROBE]` auto-close work. Single file edited, two lines changed.
+
+**Test ID surface:** unchanged (`panel-shsai`, `tab-shsai`, `tab-calculator`, `button-show-shsai`, `button-hide-shsai`, `button-shsai-refresh` all intact).
+
+**No git commits. No schema changes. No backend changes. No JS logic changes — pure Tailwind width swap.**

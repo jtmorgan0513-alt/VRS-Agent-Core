@@ -1492,7 +1492,12 @@ export default function AgentDashboard() {
                 </div>
               ) : (
                 <div className="flex flex-1 min-h-0">
-                <ScrollArea className={isMyTicketsView && shsaiVisible ? "w-full md:w-[60%] border-r" : "flex-1"}>
+                {/* Tyler 2026-04-27: column split widened from 60/40 to 50/50
+                    so the Sears Repair/Replace Calculator (right panel) has
+                    breathing room. Below md the panel still goes w-full and
+                    the right panel is `hidden`, so mobile/tablet stack is
+                    preserved. Internal ScrollArea retained on both sides. */}
+                <ScrollArea className={isMyTicketsView && shsaiVisible ? "w-full md:w-1/2 border-r" : "flex-1"}>
                   <div className="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
                     <Button
                       variant="ghost"
@@ -3222,7 +3227,7 @@ export default function AgentDashboard() {
                   </div>
                 </ScrollArea>
                 {isMyTicketsView && shsaiVisible && selectedSubmission && selectedSubmission.requestType !== "parts_nla" && (
-                  <div className="hidden md:flex w-[40%] flex-col min-h-0" data-testid="panel-shsai">
+                  <div className="hidden md:flex md:w-1/2 flex-col min-h-0" data-testid="panel-shsai">
                     {/* T2: Tabbed right panel — Service Order History (default) /
                         Calculator. The hide button (button-hide-shsai) and
                         refresh button (button-shsai-refresh) are preserved as
