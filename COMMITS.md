@@ -652,3 +652,34 @@ racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.
 - Both tables present in `information_schema.tables` after push.
 - POST `/api/submissions/77/intake-form/confirm` (SO 99999000005, AHSCLL, pre-claimed by VRS_MASTER, run as TESTADMIN) returned **200** with new `intake_forms.id=1` row containing the full prefilled Smartsheet URL. Previously this would have returned 500 "Failed to record intake form" because the table did not exist.
 - Repeat POST returned **409 ALREADY_RECORDED** — idempotency guard works correctly against the now-existing table.
+
+---
+
+## Auto-close 2026-04-27 — intake form modal: probe build (Option B / interim)
+
+**Scope authorized by Tyler this session.** Goal: remove the manual "I submitted Smartsheet" footer and have the modal auto-close once Smartsheet's post-submit thank-you screen renders. Hard constraints: additive only; no Smartsheet form definition changes; manual confirm path must remain functional during the probe; design for a clean swap to Option D when Todd Pennington enables the post-submit redirect URL.
+
+**Approach (interim):** **Option B — iframe `onLoad` event counter.** Smartsheet does not natively emit `postMessage` on form submit, so the only in-browser cross-origin signal available is the iframe load event. Skip load #1 (initial form render); fire confirm on load #2 (post-submit thank-you navigation).
+
+**Approach (planned permanent — pending Todd):** **Option D — Smartsheet post-submit redirect URL.** Smartsheet form thank-you redirects to a backend endpoint `/api/intake-forms/confirm-redirect?submissionId=<id>&token=<hmac>`. Server inserts the `intake_forms` audit row, then signals the iframe parent (postMessage from same-origin redirect page, or short poll on intake-form status). Bulletproof — eliminates the entire `onLoad` heuristic. Requires Todd to flip one Smartsheet form setting; Tyler is meeting Todd this afternoon.
+
+**Architecture for clean swap:** the modal will expose a single `handleSmartsheetSuccess()` function. In Option B the trigger source is `iframe onLoad >= 2`. In Option D the trigger source becomes a `window.message` listener (or short poll on `/api/submissions/:id/intake-form/status`). Cutover = replacing the trigger wire-up; the success handler stays put.
+
+**Step 1 (this commit) — probe build:**
+- `client/src/components/intake-form-review-modal.tsx` (modified — add `useRef` import; add `loadCountRef`; reset on modal open/close; iframe `onLoad` handler logs `[INTAKE-PROBE]` events with `loadCount`, `timestamp`, `submissionId`, `branch`, `iframeSrc`, `note`).
+- Manual footer (Cancel / "I submitted Smartsheet" / attestation checkbox) **fully retained and unchanged.** Probe logs ONLY — zero behavior change.
+- Walk plan: Tyler opens SO 99999000005 (id=77, AHSCLL — pre-claimed by VRS_MASTER), opens the intake modal, fills + submits the Smartsheet form, observes browser console. Expected pattern: `loadCount: 1` on initial render, `loadCount: 2` after Smartsheet's Submit. Anything else = stop and report rather than ship the cutover.
+
+**Step 2 (post-probe verification) — cutover (NOT in this commit):**
+- Strip `[INTAKE-PROBE]` `console.log`.
+- Wire `onLoad >= 2` to call `handleSmartsheetSuccess()` (latched via `confirmedRef` so it only fires once per modal open; treats 409 ALREADY_RECORDED as success).
+- Remove DialogFooter entirely (Cancel button, "I submitted Smartsheet" button, attestation checkbox + label).
+- Modal still dismissable via Esc / overlay click / dialog X.
+- Audit row in `intake_forms` continues to be written — just no longer gated on a manual click.
+
+**Risks documented to Tyler before proceeding:**
+- Assumes Smartsheet's post-submit thank-you triggers a full iframe navigation. Probe verifies this assumption.
+- If Smartsheet form is ever swapped to a multi-page variant, the "Next page" nav would false-fire auto-close. Current intake form is single-page.
+- Form validation errors do NOT trigger nav (no false-fire there).
+
+**No git commits. No schema changes. No Smartsheet form definition changes. No backend changes.**

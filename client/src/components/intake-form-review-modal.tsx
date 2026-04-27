@@ -7,7 +7,7 @@
 //   POST /api/submissions/:id/intake-form/confirm  -> { intakeForm }
 // =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -63,11 +63,25 @@ export function IntakeFormReviewModal({
   const [error, setError] = useState<string | null>(null);
   const [smartsheetSuccessConfirmed, setSmartsheetSuccessConfirmed] = useState(false);
 
+  // Tyler 2026-04-27 (auto-close probe — Option B / interim):
+  // Counts iframe load events to detect Smartsheet's post-submit thank-you
+  // navigation (load #1 = initial form render, load #2+ = nav after Submit).
+  // PROBE BUILD ONLY — instrumentation logs `[INTAKE-PROBE]` to console; the
+  // existing manual-confirm footer remains the source of truth for now.
+  // After Tyler verifies the 1->2 pattern walking SO 99999000005, we cut
+  // over (Step 2): wire onLoad>=2 to fire handleSmartsheetSuccess() and
+  // remove the footer. Designed so the trigger source is one place to flip
+  // when Todd Pennington enables the Smartsheet post-submit redirect URL
+  // (Option D) — at that point the onLoad detector is replaced by a
+  // window.message listener / poll, but handleSmartsheetSuccess stays put.
+  const loadCountRef = useRef(0);
+
   useEffect(() => {
     if (!open || !submissionId) {
       setPreview(null);
       setError(null);
       setSmartsheetSuccessConfirmed(false);
+      loadCountRef.current = 0;
       return;
     }
     let cancelled = false;
@@ -179,6 +193,27 @@ export function IntakeFormReviewModal({
                 className="flex-1 w-full border-0"
                 sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
                 data-testid="iframe-intake-smartsheet"
+                onLoad={() => {
+                  loadCountRef.current += 1;
+                  // PROBE BUILD ONLY — see comment on loadCountRef above.
+                  // Walk SO 99999000005: load #1 should fire on initial form
+                  // render, load #2 should fire after clicking Submit inside
+                  // the Smartsheet form (the post-submit thank-you nav).
+                  // If the pattern is anything other than 1 -> 2, stop and
+                  // report rather than ship the auto-close cutover.
+                  // eslint-disable-next-line no-console
+                  console.log("[INTAKE-PROBE] iframe load", {
+                    loadCount: loadCountRef.current,
+                    timestamp: new Date().toISOString(),
+                    submissionId,
+                    branch: preview?.branch,
+                    iframeSrc: preview?.url,
+                    note:
+                      loadCountRef.current === 1
+                        ? "initial form render — would be ignored by auto-close"
+                        : "would auto-fire confirm in Step 2 build (manual footer still active in this probe build)",
+                  });
+                }}
               />
             </>
           )}
