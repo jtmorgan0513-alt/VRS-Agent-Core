@@ -635,3 +635,20 @@ Verification: `npx tsx scripts/test-intake-url.ts` all-green; live curl walk
 of SO 99999000001 / 99999000002 / 99999000003 against the preview endpoint
 as TESTADMIN confirms both columns populate correctly with the agent's
 racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.
+
+---
+
+## Schema push 2026-04-27 — created intake_forms table; resolves audit finding C1; explicitly approved by Tyler this session.
+
+**Operation:** `npx drizzle-kit push --force`
+
+**Tables created (both were missing from dev DB; both already declared in `shared/schema.ts`):**
+- `intake_forms` (7 cols, 2 FKs — `submission_id` ON DELETE CASCADE → submissions, `agent_id` → users)
+- `agent_external_credentials` (11 cols, 1 unique constraint on `(user_id, service)`, 1 FK ON DELETE CASCADE → users) — declared by the TD3b calculator-credentials feature; also missing from dev DB drift; Tyler explicitly approved including it in this push since `db:push` has no per-table flag.
+
+**Operations on existing tables:** none. Zero `ALTER`s to users / submissions / technicians / etc. Zero drops, renames, or column changes. Existing row counts unchanged (submissions=8, users=93).
+
+**Verification:**
+- Both tables present in `information_schema.tables` after push.
+- POST `/api/submissions/77/intake-form/confirm` (SO 99999000005, AHSCLL, pre-claimed by VRS_MASTER, run as TESTADMIN) returned **200** with new `intake_forms.id=1` row containing the full prefilled Smartsheet URL. Previously this would have returned 500 "Failed to record intake form" because the table did not exist.
+- Repeat POST returned **409 ALREADY_RECORDED** — idempotency guard works correctly against the now-existing table.
