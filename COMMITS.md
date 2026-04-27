@@ -683,3 +683,29 @@ racId in VRS Tech ID and the field tech's LDAP in IH Tech Ent ID.
 - Form validation errors do NOT trigger nav (no false-fire there).
 
 **No git commits. No schema changes. No Smartsheet form definition changes. No backend changes.**
+
+---
+
+## Auto-close 2026-04-27 — modal footer: Cancel button removed
+
+**Scope authorized by Tyler this session.** Concern: an agent fat-fingering "Cancel" mid-walk would discard in-progress work (Smartsheet form filled inside the iframe but not yet submitted). Single-element removal — surgical, additive-safe, no behavior change to the success path.
+
+**Edit:** `client/src/components/intake-form-review-modal.tsx` — removed the `<Button variant="outline" data-testid="button-intake-cancel">Cancel</Button>` element. Replaced with an inline comment documenting the rationale and the remaining dismissal vectors. The wrapping `<div className="flex items-center gap-2">` is retained (no layout shift).
+
+**Retained — no changes to:**
+- The "I submitted Smartsheet" button (`button-intake-confirm`) and its handler `onConfirm` — the manual confirm path remains the source of truth.
+- The attestation checkbox (`checkbox-smartsheet-success-confirmed`) and its label.
+- The "Open in new tab" link.
+- The probe instrumentation (`[INTAKE-PROBE]` console.logs on iframe `onLoad`) — Tyler's walk verification of the `loadCount: 1 → 2` pattern is still pending.
+- All Stage 2 cutover work (auto-close on `loadCount >= 2`, full footer removal) deferred until probe verifies the assumption.
+
+**Modal dismissal — fallback paths (unchanged, all still functional):**
+- Dialog's built-in close X (top-right of `DialogContent`).
+- Esc key (Radix Dialog default).
+- Overlay click (Radix Dialog default — clicking outside the modal).
+
+**Risk surface:**
+- Test ID `button-intake-cancel` no longer exists in the DOM. If any test or other component references it, those references will need updating. (Quick grep recommended before next deploy.)
+- No test-id collisions, no shape changes, no API changes.
+
+**No git commits. No schema changes. No Smartsheet form definition changes. No backend changes. No auto-close behavior added yet.**

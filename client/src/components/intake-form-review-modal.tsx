@@ -257,14 +257,11 @@ export function IntakeFormReviewModal({
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={confirming}
-                data-testid="button-intake-cancel"
-              >
-                Cancel
-              </Button>
+              {/* Tyler 2026-04-27: Cancel button removed to prevent agents
+                  fat-fingering it and losing in-progress work. Modal can
+                  still be dismissed via the dialog's built-in X / Esc /
+                  overlay-click — those remain functional fallbacks.
+                  Auto-close on loadCount=2 still pending probe verification. */}
               <Button
                 onClick={onConfirm}
                 disabled={confirming || !preview || !smartsheetSuccessConfirmed}
