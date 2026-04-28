@@ -982,3 +982,38 @@ Still NOT reproduced in vitest. The handler is robust against every payload shap
 - COMMITS.md appended only after harness passed (17/17 verified twice).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes.**
+
+
+---
+
+## 2026-04-28 — Tyler clarification: uniform close-out across all reject variants
+
+### Context
+Tyler answered my Reject-scope clarification: "All three reject-shaped actions (reject, reject_and_close, mark_invalid) should keep the ticket open and load intake. Tyler said whatever the outcome — uniform close-out flow. Agent fills the intake form for every outcome, clicks I submitted Smartsheet, screen returns to queue. No special-case branching by reject variant."
+
+### Change
+**File: `client/src/pages/agent-dashboard.tsx` (lines 800-830)**
+
+Extended the `justResolved` predicate from `(approve | reject)` to ALL terminal outcomes: `approve | reject | reject_and_close | invalid`. The matching `keepSelected` and auto-tab-switch behavior now fires uniformly. (The codebase action-type union spells the third reject variant as `"invalid"`, not `"mark_invalid"` — the action label string is "Marked Invalid" but the discriminator value is `"invalid"`. Using the discriminator value here.)
+
+The only exception remains `approve_submission` (Stage 1 mid-flow on 2-stage warranties) — keepSelected stays true so the agent doesn't lose the ticket while issuing the auth code, but no auto-tab-switch fires because the Intake Form tab isn't relevant until after the FINAL Approve / Reject / Close / Invalid decision.
+
+Comment block updated to document the uniform-close-out contract explicitly so future readers don't reintroduce per-variant branching.
+
+### Test results
+```
+Test Files  1 passed (1)
+     Tests  17 passed (17)
+  Duration  1.54s
+```
+
+All 17 tests still pass. Server-side route is unchanged (no test surface affected).
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes.
+- No Smartsheet form definition changes.
+- Frontend additive: predicate extension + comment update only.
+- COMMITS.md appended only after harness re-passed (17/17).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes.**

@@ -796,25 +796,33 @@ export default function AgentDashboard() {
       toast({ title: actionLabel, description: actionDesc });
 
       // Tyler 2026-04-28 (REQUIREMENT CHANGE — overrides prior post-Authorize-
-      // only behavior): after EITHER an Approve OR a Reject the agent stays
-      // on the same ticket with all ticket details visible, the Intake
-      // Form tab auto-selected, and the Smartsheet iframe loaded. The
-      // intake form is filled out next to the resolved ticket info.
-      // Close-out happens ONLY when the agent clicks "I submitted
-      // Smartsheet" (handled in IntakeFormTab.onConfirmed below — that
-      // callback now also fires setSelectedId(null) + flips status back
-      // to online).
+      // only behavior): WHATEVER the outcome, the agent stays on the same
+      // ticket with all ticket details visible, the Intake Form tab auto-
+      // selected, and the Smartsheet iframe loaded. The intake form is
+      // filled out next to the resolved ticket info. Close-out happens
+      // ONLY when the agent clicks "I submitted Smartsheet" (handled in
+      // IntakeFormTab.onConfirmed below — that callback fires
+      // setSelectedId(null) + flips status back to online).
       //
-      // Scope: applies to selectedAction === "approve" or "reject" on
-      // non-NLA tickets. The terminal-close actions ("reject_and_close"
-      // = permanent closure, "invalid" = bogus ticket marker) still
-      // clear selection because no Smartsheet intake is appropriate
-      // for those outcomes. Stage 1 mid-flow ("approve_submission" on
-      // 2-stage warranties) keeps the ticket selected as before but
-      // does NOT auto-switch tabs (the agent is still mid-flow and
-      // hasn't issued the auth code yet).
+      // Scope (Tyler 2026-04-28 follow-up): UNIFORM close-out across
+      // every terminal outcome. All three reject-shaped actions —
+      // "reject", "reject_and_close" (permanent closure), and "invalid"
+      // (bogus ticket marker) — keep the ticket open + auto-switch to
+      // the Intake Form tab, exactly like "approve". No special-case
+      // branching by reject variant. The agent fills out the intake
+      // form for every outcome.
+      //
+      // The only exception is "approve_submission" (Stage 1 mid-flow on
+      // 2-stage warranties): the agent is still mid-flow and hasn't
+      // issued the auth code yet, so they need to stay on the ticket
+      // (keepSelected) but the Intake Form tab is NOT yet relevant —
+      // it becomes relevant only after the final Approve / Reject /
+      // Close / Invalid decision lands.
       const justResolved =
-        (selectedAction === "approve" || selectedAction === "reject") &&
+        (selectedAction === "approve" ||
+          selectedAction === "reject" ||
+          selectedAction === "reject_and_close" ||
+          selectedAction === "invalid") &&
         selectedSubmission?.requestType !== "parts_nla";
       const keepSelected = selectedAction === "approve_submission" || justResolved;
       if (!keepSelected) {
