@@ -29,7 +29,6 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCircle2,
-  ClipboardList,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -102,15 +101,16 @@ export function IntakeFormTab({
     setError(null);
   }, [submissionId]);
 
-  // Load the pre-fill URL whenever intake is applicable and the payload
-  // changes. Identical semantics to the prior modal's preview useEffect —
-  // see modal commit history for the rationale on the dependency list. We
-  // gate on `(required || recorded)` so the recorded state can still show
-  // the iframe (read-only confirmation view) without reloading on payload
-  // edits the agent makes elsewhere.
+  // Tyler 2026-04-28 (requirement change, OVERRIDES the prior 2026-04-27
+  // Q1 = CONDITIONAL + PRE-AUTH GHOST design): the iframe must load
+  // immediately when the agent opens a ticket — not after Authorize, not
+  // after auth code is issued. Pre-auth fields (auth code, etc.) are
+  // simply absent from the prefill payload; everything else (proc id,
+  // tech ids, phone, etc.) is filled in. The earlier
+  // `if (!required && !recorded) return;` early-exit gate has been
+  // removed so the preview POST always fires for any non-NLA ticket.
   useEffect(() => {
     if (!submissionId) return;
-    if (!required && !recorded) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -188,28 +188,13 @@ export function IntakeFormTab({
   );
 
   // -------------------------------------------------------------------------
-  // Pre-auth ghost state — Tyler Q1 pick: tab renders on every non-parts_nla
-  // ticket but is "ghosted" (informational placeholder) until intake becomes
-  // applicable. The TabsTrigger itself is also `disabled` upstream, so most
-  // agents won't reach this branch by clicking — it exists for the case
-  // where the active tab is `intake` and the user navigates to a ticket
-  // where intake doesn't apply yet.
+  // Tyler 2026-04-28 (requirement change, OVERRIDES the prior pre-auth
+  // ghost design): the empty-state placeholder has been REMOVED. The
+  // iframe must always render for any ticket that reaches this tab, even
+  // pre-Authorize. Pre-auth fields (auth code, etc.) are simply absent
+  // from the prefill payload — the form still loads and is usable for
+  // everything else. The recorded-state banner above is unchanged.
   // -------------------------------------------------------------------------
-  if (!required && !recorded) {
-    return (
-      <div
-        className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-6 text-center gap-2"
-        data-testid="intake-tab-empty-state"
-      >
-        <ClipboardList className="w-8 h-8 opacity-30" />
-        <p className="text-sm">Intake form not yet available</p>
-        <p className="text-xs max-w-xs">
-          Authorize the ticket first. Once an auth code is issued, the Smartsheet intake form will load here.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 flex flex-col min-h-0" data-testid="panel-intake-tab">
       {/* Tyler 2026-04-27 (Q3 = PERSIST FROM SERVER): green success banner

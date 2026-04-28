@@ -3342,17 +3342,19 @@ export default function AgentDashboard() {
                           <TabsTrigger value="calculator" data-testid="tab-calculator">
                             Calculator
                           </TabsTrigger>
-                          {/* Tyler 2026-04-27 Q1 = CONDITIONAL + PRE-AUTH GHOST:
-                              the Intake Form tab always renders for predictable
-                              order, but is `disabled` until the per-submission
-                              intake-form-status query reports either required
-                              (post-Authorize, no row yet) or recorded (audit
-                              row exists). Disabled state keeps the tab visible
-                              as a clear visual cue that the step is coming. */}
+                          {/* Tyler 2026-04-28 (requirement change, OVERRIDES
+                              the prior 2026-04-27 Q1 = CONDITIONAL + PRE-AUTH
+                              GHOST design): the Intake Form tab is now ALWAYS
+                              enabled and clickable from the moment a ticket
+                              opens — same enabled state as Service Order
+                              History and Calculator. Pre-auth fields (auth
+                              code, etc.) are simply left blank in the iframe;
+                              everything else is prefilled and usable
+                              immediately. The earlier `disabled` gate on
+                              stage3Required/stage3Recorded has been removed. */}
                           <TabsTrigger
                             value="intake"
                             data-testid="tab-intake"
-                            disabled={!stage3Required && !stage3Recorded}
                           >
                             <ClipboardList className="w-4 h-4 mr-1" />
                             Intake Form

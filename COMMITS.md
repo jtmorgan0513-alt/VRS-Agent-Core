@@ -781,3 +781,53 @@ The interim Option B work (iframe `onLoad` counter logging `[INTAKE-PROBE]` to c
 - `pendingIntakeAutoFireRef` correctness depends on `handleRightPanelViewChange` being the ONLY caller for tab changes from the user. Direct `setRightPanelView(...)` calls inside other components or future code would bypass the cancellation. (Currently zero such direct callers exist outside this file.)
 
 **No git commits. No schema changes. No backend changes. No Smartsheet form definition changes.**
+
+---
+
+## Requirement change 2026-04-28 — intake form tab: ALWAYS-ON (overrides Q1 pre-auth ghost)
+
+**Scope authorized by Tyler this session.** Tyler's new direction OVERRIDES the prior Q1 = CONDITIONAL + PRE-AUTH GHOST decision documented above. The Intake Form tab must be active and clickable from the moment an agent opens a ticket — not after Authorize, not after an auth code is issued. Same enabled state as Service Order History and Calculator. The Smartsheet iframe loads immediately on ticket open with whatever prefill values are available; pre-auth fields (auth code, etc.) are simply absent from the prefill payload but the form still loads and is usable for everything else.
+
+### Files touched
+
+| File | Change |
+|---|---|
+| `client/src/pages/agent-dashboard.tsx` | Removed the `disabled={!stage3Required && !stage3Recorded}` prop from the `<TabsTrigger value="intake">` element (line ~3358 area). Replaced the prior Q1 comment block with a new comment documenting Tyler's 2026-04-28 override. The `stage3Required` / `stage3Recorded` derived values themselves are RETAINED — they still drive the legacy Stage 3 fieldset card (lines 2496/2545/2573) which is unaffected by this change. |
+| `client/src/components/intake-form-tab.tsx` | (a) Removed the `if (!required && !recorded) return;` early-exit gate from the preview-loading useEffect so the POST `/api/submissions/:id/intake-form/preview` call always fires for any non-NLA ticket, regardless of authorize state. (b) Removed the entire empty-state branch that rendered `<intake-tab-empty-state>` with the "Authorize the ticket first" copy; the component now always renders the iframe + footer (or the loading/error states). (c) Dropped the now-unused `ClipboardList` lucide-react import. |
+
+### Server-side — UNCHANGED
+
+- `POST /api/submissions/:id/intake-form/preview` — already had no auth-status gating; just builds the URL from current submission + payload via `buildIntakeFormUrl`. No change required.
+- `POST /api/submissions/:id/intake-form/confirm` — already only blocks on existing intake_forms row. Pre-Authorize confirm is now allowed by the UI; server already accepted it.
+- `GET /api/submissions/:id/intake-form-status` — UNCHANGED. Still returns `required:false, reason:"no_auth_code"` pre-Authorize. The UI no longer uses `required` to gate the iframe; it only uses `recorded` (and the resulting `recordedAt`) to drive the green success banner above the iframe.
+
+### Test ID surface
+
+**Removed**: `intake-tab-empty-state` (the old gated empty state — no longer rendered for any ticket state).
+
+**Preserved**: `tab-intake`, `panel-intake-tab`, `iframe-intake-smartsheet`, `checkbox-smartsheet-success-confirmed`, `button-intake-confirm`, `loading-intake-preview`, `error-intake-preview`, `warnings-intake-preview`, `banner-intake-recorded`, `text-intake-recorded`, `link-intake-open-new-tab`.
+
+### Verification
+
+E2E test against ticket 80 (SO 99999000007, ticket_status=pending, stage1=approved, stage2=pending, no auth_code, request_type=authorization) confirmed:
+- `tab-intake` rendered with `disabled=null` and `aria-disabled=null` pre-Authorize (active Radix tab trigger).
+- Clicking the tab immediately rendered `iframe-intake-smartsheet` with src beginning `https://app.smartsheet.com/b/form/aa5f07c589b64ae993f5f75e20f71d5f?...` (prefill params present).
+- `intake-tab-empty-state` was NOT in the DOM (old empty state confirmed gone).
+- `checkbox-smartsheet-success-confirmed` and `button-intake-confirm` rendered alongside the iframe (footer attestation+submit available pre-Authorize).
+- `GET /api/submissions/80/intake-form-status` returned `{required:false, recorded:false, reason:"no_auth_code"}` — the server-side gating is unchanged and still informational; the UI no longer uses it to gate the iframe.
+- Tab-switch round-trip (Intake → SHSAI → Intake) preserved iframe state (no flash of loading or empty state).
+
+### Constraints honored
+
+- **Additive only on the data layer.** No schema changes. No new endpoints. No changes to `intake_forms`, `agent_external_credentials`, or any storage interface.
+- **Smartsheet form definition untouched.** Form id `aa5f07c589b64ae993f5f75e20f71d5f` and prefill column names unchanged.
+- **No regressions to in-flight bug fix work.** The earlier 2026-04-28 fixes in this session — (a) `intake-form-status` accepting `ticketStatus="completed"` in addition to `"approved"` (server/routes.ts line ~3526), and (b) the `selectedSubmissionSnapshotRef` fallback in agent-dashboard.tsx (lines ~617-622) preventing the right panel from unmounting during the post-Authorize submissions refetch window — REMAIN in place. Both still drive correct behavior in the post-Authorize path even though the new always-on tab no longer depends on the `required` flag.
+- **No git commits. No schema changes. No backend changes. No Smartsheet form definition changes.**
+
+### Risk surface
+
+- The preview POST now fires on every ticket open (previously only fired when intake was `required` or `recorded`). Bandwidth impact: one additional POST per ticket open for tickets that aren't yet at the post-Authorize stage. The endpoint is fast (single submission lookup + URL build) and the response is small (~1KB). Monitor server load if many agents open many fresh tickets in rapid succession; if it becomes a concern, consider response caching keyed on `(submissionId, payload-hash)`.
+- Pre-Authorize `confirm` POSTs are now possible from the UI. The server allows them (no auth-status gating in the confirm handler). If product later wants to BLOCK pre-Authorize confirms, that gate would need to be added server-side, NOT client-side (client-side gates would need to be re-added too). For now, by Tyler's 2026-04-28 directive, this is intentional.
+- The `stage3Required` / `stage3Recorded` derived values in agent-dashboard.tsx still gate the legacy Stage 3 fieldset card (lines 2496/2545/2573). That card is now redundant with the always-on Intake Form tab. Not removed in this change (additive-only constraint), but a future cleanup should consider deleting the fieldset card entirely. Flagged for Tyler's review.
+
+**No git commits. No schema changes. No backend changes. No Smartsheet form definition changes.**
