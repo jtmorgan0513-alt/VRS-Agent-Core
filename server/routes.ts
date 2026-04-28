@@ -3509,7 +3509,21 @@ export async function registerRoutes(
         if (sub.requestType === "parts_nla") {
           return res.status(200).json({ required: false, recorded: false, reason: "nla" });
         }
-        if (sub.ticketStatus !== "approved") {
+        // Tyler 2026-04-28 (intake-tab disappearance bug):
+        // The Authorize handler at server/routes.ts:1363 writes
+        // ticketStatus = "completed" — NOT "approved". The "approved"
+        // value is in the schema enum (shared/schema.ts:113) but no
+        // code path actually writes it. Verified via SQL: zero rows
+        // have ticket_status='approved'. The pre-tab modal flow worked
+        // because the modal called /intake-form/preview directly and
+        // never consulted this endpoint. The new IntakeFormTab DOES
+        // consult it, which exposed the mismatch — every post-Authorize
+        // ticket was reporting reason="not_approved", keeping the tab
+        // permanently in its pre-auth ghost empty state.
+        // Fix is additive: keep the "approved" branch for forward-compat
+        // with any future code path that writes it; add "completed" as
+        // the actually-written post-Authorize value.
+        if (sub.ticketStatus !== "approved" && sub.ticketStatus !== "completed") {
           return res.status(200).json({ required: false, recorded: false, reason: "not_approved" });
         }
         if (!sub.authCode) {

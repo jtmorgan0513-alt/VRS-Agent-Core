@@ -591,14 +591,62 @@ export default function AgentDashboard() {
 
   const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
 
+  // Tyler 2026-04-28 (intake-tab disappearance bug, Fix B):
+  // Post-Authorize transition guard. The My Tickets list is filtered server-
+  // side to ticketStatus="pending" (queryParams line 486). Once Authorize
+  // flips the row to "completed", the next list refetch (triggered by the
+  // processMutation onSuccess invalidation) drops the ticket from the
+  // submissions array. selectedSubmission becomes null even though
+  // selectedId is still set (we deliberately keepSelected post-Authorize so
+  // the agent can see Stage 3). That null collapses the outer gate at
+  // line 3252 and unmounts the entire 3-tab right panel, including the
+  // Intake Form tab the auto-fire is trying to switch to.
+  //
+  // The snapshot keeps a copy of the last-known selectedSubmission alive
+  // for the right-panel mount gate ONLY. List-level UI keeps reading
+  // `selectedSubmission` directly so the ticket correctly disappears from
+  // the My Tickets list and reappears in Completed. The snapshot is
+  // cleared only when selectedId becomes null (genuine deselection) — not
+  // on every selectedId change — so that a re-selection of a different
+  // ticket where submissions hasn't refetched yet doesn't briefly null
+  // the gate, and the post-Authorize "selectedId stays, selectedSubmission
+  // goes null" window is preserved.
+  const selectedSubmissionSnapshotRef = useRef<typeof selectedSubmission>(null);
+  useEffect(() => {
+    if (selectedSubmission) selectedSubmissionSnapshotRef.current = selectedSubmission;
+  }, [selectedSubmission]);
+  const effectiveSelectedSubmission =
+    selectedSubmission ?? selectedSubmissionSnapshotRef.current;
+
   // Reset intake form working values when switching submissions so we don't
   // leak data between tickets. Also clears the pending auto-fire flag so a
   // fresh ticket arms cleanly for the post-Authorize tab-switch trigger
   // (Tyler Q2 = re-selecting re-arms the auto-select).
+  //
+  // IMPORTANT: do NOT clear selectedSubmissionSnapshotRef here. This effect
+  // and the snapshot-population effect above both run on the same commit
+  // when selectedId AND selectedSubmission both change (e.g. selecting a
+  // ticket from the queue). React fires effects in declaration order, so
+  // clearing the snapshot here would always wipe the value the previous
+  // effect just wrote, defeating Fix B entirely. Instead, the snapshot is
+  // cleared only on explicit deselection below.
   useEffect(() => {
     setIntakeValues({});
     pendingIntakeAutoFireRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  // Clear the snapshot only when the agent fully deselects (selectedId
+  // becomes null). This path is hit by the post-action `setSelectedId(null)`
+  // in processMutation onSuccess (for non-keepSelected actions like reject /
+  // approve_submission on stage 1) and by manual back-to-queue navigation.
+  // For keepSelected paths (justAuthorized, approve_submission), selectedId
+  // stays set and the snapshot continues to fall back during the brief
+  // selectedSubmission=null window from the My Tickets list refetch.
+  useEffect(() => {
+    if (!selectedId) {
+      selectedSubmissionSnapshotRef.current = null;
+    }
   }, [selectedId]);
 
   const submissionHistoryQuery = useQuery<{
@@ -3249,7 +3297,15 @@ export default function AgentDashboard() {
                     )}
                   </div>
                 </ScrollArea>
-                {isMyTicketsView && shsaiVisible && selectedSubmission && selectedSubmission.requestType !== "parts_nla" && (
+                {/* Tyler 2026-04-28 (intake-tab disappearance bug, Fix B):
+                    Use effectiveSelectedSubmission (snapshot fallback) so the
+                    right panel stays mounted across the post-Authorize list
+                    refetch, when the My Tickets pending filter briefly drops
+                    the ticket and selectedSubmission goes null. Without this,
+                    the entire 3-tab right panel unmounts and the auto-fire
+                    timer's setRightPanelView("intake") lands on a destroyed
+                    Tabs container. */}
+                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && effectiveSelectedSubmission.requestType !== "parts_nla" && (
                   <div className="hidden md:flex md:w-1/2 flex-col min-h-0" data-testid="panel-shsai">
                     {/* T2: Tabbed right panel — Service Order History (default) /
                         Calculator. The hide button (button-hide-shsai) and
@@ -3466,7 +3522,14 @@ export default function AgentDashboard() {
                       >
                         <IntakeFormTab
                           submissionId={selectedId}
-                          serviceOrder={selectedSubmission?.serviceOrder ?? null}
+                          // Tyler 2026-04-28 (intake-tab disappearance bug,
+                          // Fix B): prefer the snapshot fallback so the
+                          // service order persists across the post-Authorize
+                          // moment when selectedSubmission is briefly null.
+                          // Without this the iframe would re-render with
+                          // serviceOrder=null mid-Authorize and fail to
+                          // build the prefill URL.
+                          serviceOrder={effectiveSelectedSubmission?.serviceOrder ?? null}
                           payload={intakeValues}
                           intakeStatus={intakeFormStatusQuery.data}
                           onPreviewLoaded={(derivedDefaults) => {
