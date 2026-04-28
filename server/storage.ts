@@ -127,6 +127,12 @@ export interface IStorage {
 
   // Technician methods
   getOrCreateTechUser(ldapId: string, name: string, phone: string): Promise<User>;
+  /**
+   * Lookup-only counterpart to getOrCreateTechUser — returns the users row
+   * whose racId matches the given ldap, or undefined. Used by the Tier 2
+   * identity-mismatch logger in POST /api/submissions (2026-04-28 hotfix).
+   */
+  getTechUserByLdapId(ldapId: string): Promise<User | undefined>;
 
   getTechnicianByLdapId(ldapId: string): Promise<Technician | undefined>;
   getTechnicians(activeOnly?: boolean): Promise<Technician[]>;
@@ -783,6 +789,11 @@ export class DatabaseStorage implements IStorage {
       racId: ldapId,
       isActive: true,
     }).returning();
+    return result[0];
+  }
+
+  async getTechUserByLdapId(ldapId: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.racId, ldapId));
     return result[0];
   }
 

@@ -40,6 +40,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Camera, Send, Lock, Video, X, Sparkles, Loader2, AlertTriangle, Square, Mic, MicOff, Trash2, Info, Plus, CheckCircle2 } from "lucide-react";
 import HelpTooltip from "@/components/help-tooltip";
+import {
+  parseAndValidateDraft,
+  stampDraftIdentity,
+  type DraftEnvelope,
+} from "@/lib/draft-identity";
 
 const APPLIANCE_TYPES = [
   { value: "refrigeration", label: "Refrigerator" },
@@ -714,37 +719,96 @@ export default function TechSubmitPage() {
   const DRAFT_KEY = `vrs_tech_submit_draft_v1_${user?.id ?? "anon"}`;
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  // Tier 1 hotfix (2026-04-28): a draft that passes identity validation
+  // is held here pending the user's explicit Resume / Start-fresh choice
+  // in the AlertDialog below. We no longer auto-hydrate.
+  const [pendingDraft, setPendingDraft] = useState<DraftEnvelope | null>(null);
   const draftHydratedRef = useRef(false);
+  // Gates the autosave effect: must remain false until either the load
+  // path determined "no draft / discarded / mismatched" OR the user has
+  // explicitly resolved a pending draft via the dialog. This prevents an
+  // accidental in-flight form change from persisting before the user has
+  // decided what to do with the prior draft.
+  const draftDecisionMadeRef = useRef(false);
+
+  function applyDraftToForm(draft: DraftEnvelope) {
+    if (draft.formValues && typeof draft.formValues === "object") {
+      form.reset({ ...form.getValues(), ...(draft.formValues as Record<string, unknown>) });
+    }
+    if (Array.isArray(draft.estimatePhotoUrls)) setEstimatePhotoUrls(draft.estimatePhotoUrls as string[]);
+    if (Array.isArray(draft.issuePhotoUrls)) setIssuePhotoUrls(draft.issuePhotoUrls as string[]);
+    if (typeof draft.videoUrl === "string") setVideoUrl(draft.videoUrl);
+    if (typeof draft.voiceNoteUrl === "string") setVoiceNoteUrl(draft.voiceNoteUrl);
+    if (Array.isArray(draft.partNumbers) && (draft.partNumbers as unknown[]).length) {
+      setPartNumbers(draft.partNumbers as string[]);
+    }
+    if (Array.isArray(draft.availableParts) && (draft.availableParts as unknown[]).length) {
+      setAvailableParts(draft.availableParts as string[]);
+    }
+    if (typeof draft.aiUsed === "boolean") setAiUsed(draft.aiUsed);
+    if (typeof draft.originalBeforeAi === "string") setOriginalBeforeAi(draft.originalBeforeAi);
+    if (typeof draft.aiEdited === "boolean") setAiEdited(draft.aiEdited);
+    setDraftRestored(true);
+    setDraftSavedAt((draft.savedAt as string) || null);
+  }
+
+  function resumePendingDraft() {
+    if (!pendingDraft) return;
+    applyDraftToForm(pendingDraft);
+    setPendingDraft(null);
+    draftDecisionMadeRef.current = true;
+    toast({
+      title: "Draft restored",
+      description: "We brought back your in-progress submission so you don't have to start over.",
+    });
+  }
+
+  function startFreshFromPrompt() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setPendingDraft(null);
+    draftDecisionMadeRef.current = true;
+    toast({
+      title: "Starting fresh",
+      description: "Your previous draft was discarded.",
+    });
+  }
 
   useEffect(() => {
     if (!user?.id || draftHydratedRef.current) return;
     draftHydratedRef.current = true;
+    const currentLdap = (user as any).ldapId ?? user.racId ?? null;
+    let raw: string | null = null;
     try {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      if (!raw) return;
-      const draft = JSON.parse(raw);
-      if (draft.formValues) form.reset({ ...form.getValues(), ...draft.formValues });
-      if (Array.isArray(draft.estimatePhotoUrls)) setEstimatePhotoUrls(draft.estimatePhotoUrls);
-      if (Array.isArray(draft.issuePhotoUrls)) setIssuePhotoUrls(draft.issuePhotoUrls);
-      if (typeof draft.videoUrl === "string") setVideoUrl(draft.videoUrl);
-      if (typeof draft.voiceNoteUrl === "string") setVoiceNoteUrl(draft.voiceNoteUrl);
-      if (Array.isArray(draft.partNumbers) && draft.partNumbers.length) setPartNumbers(draft.partNumbers);
-      if (Array.isArray(draft.availableParts) && draft.availableParts.length) setAvailableParts(draft.availableParts);
-      if (typeof draft.aiUsed === "boolean") setAiUsed(draft.aiUsed);
-      if (typeof draft.originalBeforeAi === "string") setOriginalBeforeAi(draft.originalBeforeAi);
-      if (typeof draft.aiEdited === "boolean") setAiEdited(draft.aiEdited);
-      setDraftRestored(true);
-      setDraftSavedAt(draft.savedAt || null);
-      toast({
-        title: "Draft restored",
-        description: "We brought back your in-progress submission so you don't have to start over.",
-      });
-    } catch {}
+      raw = localStorage.getItem(DRAFT_KEY);
+    } catch {
+      draftDecisionMadeRef.current = true;
+      return;
+    }
+    const result = parseAndValidateDraft(raw, { id: user.id, ldapId: currentLdap });
+    if (!result.ok) {
+      // Anything other than a clean identity match is treated as not-mine:
+      // missing identity (legacy draft from before this hotfix), id mismatch
+      // (cross-user inheritance), ldap mismatch, parse error, or simply no
+      // draft. In every non-`no_draft` case we evict the localStorage key so
+      // it can never contaminate a future session.
+      if (result.reason !== "no_draft") {
+        // eslint-disable-next-line no-console
+        console.warn(`[draft] discarded — ${result.reason}`, {
+          currentUserId: user.id,
+          currentLdap,
+        });
+        try { localStorage.removeItem(DRAFT_KEY); } catch {}
+      }
+      draftDecisionMadeRef.current = true;
+      return;
+    }
+    // Valid match — gate hydration behind the user's explicit choice.
+    setPendingDraft(result.draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user?.id || !draftHydratedRef.current) return;
+    if (!user?.id || !draftHydratedRef.current || !draftDecisionMadeRef.current) return;
     const handle = setTimeout(() => {
       const formValues = form.getValues();
       const hasContent = Boolean(
@@ -762,7 +826,8 @@ export default function TechSubmitPage() {
         try { localStorage.removeItem(DRAFT_KEY); } catch {}
         return;
       }
-      const draft = {
+      const currentLdap = (user as any).ldapId ?? user.racId ?? null;
+      const draft = stampDraftIdentity({
         formValues,
         estimatePhotoUrls,
         issuePhotoUrls,
@@ -774,7 +839,7 @@ export default function TechSubmitPage() {
         originalBeforeAi,
         aiEdited,
         savedAt: new Date().toISOString(),
-      };
+      }, { id: user.id, ldapId: currentLdap });
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
         setDraftSavedAt(draft.savedAt);
@@ -835,6 +900,40 @@ export default function TechSubmitPage() {
 
   return (
     <div className="min-h-screen pb-20">
+      {/* Tier 1 hotfix (2026-04-28): blocking Resume / Start-fresh dialog
+          replaces the prior auto-hydrate-then-show-banner pattern. Tech
+          must affirmatively choose so a stale or unexpected draft cannot
+          silently pre-populate the form. */}
+      <AlertDialog open={!!pendingDraft}>
+        <AlertDialogContent data-testid="dialog-draft-resume">
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="text-draft-prompt-title">
+              Resume your in-progress draft?
+            </AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-draft-prompt-detail">
+              We saved your last submission as a draft
+              {pendingDraft?.savedAt
+                ? ` on ${formatDraftSavedAt(pendingDraft.savedAt as string)}`
+                : ""}.
+              Continue where you left off, or start a fresh ticket?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={startFreshFromPrompt}
+              data-testid="button-draft-prompt-fresh"
+            >
+              Start fresh
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={resumePendingDraft}
+              data-testid="button-draft-prompt-resume"
+            >
+              Resume draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="bg-primary text-primary-foreground p-4">
         <div className="max-w-lg mx-auto">
           <h1 className="text-lg font-bold" data-testid="text-submit-title">VRS Submission</h1>

@@ -502,6 +502,31 @@ export async function registerRoutes(
         return res.status(404).json({ error: "User not found" });
       }
 
+      // Tier 2 (2026-04-28 hotfix): identity-mismatch detection.
+      // Logs only — no behavior change. If the JWT-bound user.id disagrees
+      // with the users row resolved by JWT-bound ldapId, the request is
+      // being made under a session that has been inherited across two
+      // different techs somehow (mechanism still under investigation;
+      // district-pool theory was ruled out by Tyler 2026-04-28). Tier 1
+      // client-side defenses block the actual cross-user submission; this
+      // log surfaces the underlying mechanism in prod logs.
+      if (authReq.user?.ldapId) {
+        try {
+          const userByLdap = await storage.getTechUserByLdapId(authReq.user.ldapId);
+          if (userByLdap && userByLdap.id !== authReq.user.id) {
+            console.warn(
+              `[identity-mismatch] POST /api/submissions: JWT id=${authReq.user.id} != users.id=${userByLdap.id} ` +
+              `for ldapId=${authReq.user.ldapId}. Submission body SO=${parsed.data.serviceOrder}`,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            "[identity-mismatch] check failed:",
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
+
       if (parsed.data.requestType === "parts_nla") {
         if (!parsed.data.partNumbers) {
           return res.status(400).json({ error: "Part numbers are required for NLA Parts requests" });
