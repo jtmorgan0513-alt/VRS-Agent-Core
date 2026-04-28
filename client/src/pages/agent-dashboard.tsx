@@ -589,34 +589,53 @@ export default function AgentDashboard() {
     return submissionsData?.submissions || [];
   }, [submissionsData]);
 
-  const selectedSubmission = submissions.find((s) => s.id === selectedId) || null;
+  const selectedSubmissionFromQuery = submissions.find((s) => s.id === selectedId) || null;
 
-  // Tyler 2026-04-28 (intake-tab disappearance bug, Fix B):
-  // Post-Authorize transition guard. The My Tickets list is filtered server-
-  // side to ticketStatus="pending" (queryParams line 486). Once Authorize
-  // flips the row to "completed", the next list refetch (triggered by the
-  // processMutation onSuccess invalidation) drops the ticket from the
-  // submissions array. selectedSubmission becomes null even though
-  // selectedId is still set (we deliberately keepSelected post-Authorize so
-  // the agent can see Stage 3). That null collapses the outer gate at
-  // line 3252 and unmounts the entire 3-tab right panel, including the
-  // Intake Form tab the auto-fire is trying to switch to.
+  // Tyler 2026-04-28 (intake-tab disappearance bug, Fix B — extended for
+  // requirement A "ticket review screen must NOT clear after Approve/Reject"):
+  // Post-action transition guard. The My Tickets list is filtered server-
+  // side to ticketStatus="pending" (queryParams line 486). Once Approve
+  // flips the row to "completed" (or Reject flips it to "rejected" + nulls
+  // assignedTo), the next list refetch (triggered by the processMutation
+  // onSuccess invalidation) drops the ticket from the submissions array.
+  // selectedSubmissionFromQuery becomes null even though selectedId is
+  // still set (we deliberately keepSelected per requirement A so the agent
+  // can finish the Smartsheet intake form). That null would collapse BOTH
+  // the left-side detail pane (gate at ~line 1578) AND the right-side 3-
+  // tab panel — leaving an empty review screen and violating Tyler's
+  // explicit "stay on the same ticket" requirement.
   //
-  // The snapshot keeps a copy of the last-known selectedSubmission alive
-  // for the right-panel mount gate ONLY. List-level UI keeps reading
-  // `selectedSubmission` directly so the ticket correctly disappears from
-  // the My Tickets list and reappears in Completed. The snapshot is
-  // cleared only when selectedId becomes null (genuine deselection) — not
-  // on every selectedId change — so that a re-selection of a different
-  // ticket where submissions hasn't refetched yet doesn't briefly null
-  // the gate, and the post-Authorize "selectedId stays, selectedSubmission
-  // goes null" window is preserved.
-  const selectedSubmissionSnapshotRef = useRef<typeof selectedSubmission>(null);
+  // The snapshot keeps a copy of the last-known query row alive. The
+  // PUBLIC `selectedSubmission` const below is the snapshot-falling-back
+  // value: every `selectedSubmission.foo` read in the JSX (127+ sites)
+  // automatically picks up the snapshot when the My Tickets refetch
+  // evicts the row, so the entire review screen survives the eviction.
+  // (List-level UI iterates the `submissions` array directly, not
+  // `selectedSubmission`, so the row still correctly disappears from the
+  // My Tickets list and reappears in Completed.)
+  //
+  // The snapshot is cleared only when selectedId becomes null (genuine
+  // deselection — fired by the IntakeFormTab.onConfirmed callback when
+  // the agent clicks "I submitted Smartsheet"). That keeps a re-selection
+  // of a different ticket from briefly nulling the gate while submissions
+  // hasn't refetched yet.
+  //
+  // The snapshot is ALSO refreshed inside processMutation.onSuccess from
+  // the fresh `{ submission: updated }` server response so action buttons
+  // and status badges reflect the post-action state instead of the pre-
+  // action snapshot (otherwise an Approved ticket would still show the
+  // Approve/Reject button stripe in the detail pane).
+  const selectedSubmissionSnapshotRef = useRef<typeof selectedSubmissionFromQuery>(null);
   useEffect(() => {
-    if (selectedSubmission) selectedSubmissionSnapshotRef.current = selectedSubmission;
-  }, [selectedSubmission]);
-  const effectiveSelectedSubmission =
-    selectedSubmission ?? selectedSubmissionSnapshotRef.current;
+    if (selectedSubmissionFromQuery) {
+      selectedSubmissionSnapshotRef.current = selectedSubmissionFromQuery;
+    }
+  }, [selectedSubmissionFromQuery]);
+  const selectedSubmission =
+    selectedSubmissionFromQuery ?? selectedSubmissionSnapshotRef.current;
+  // Backward-compatible alias retained so any callsite still using the old
+  // name continues to work; both reference the same snapshot-fallback value.
+  const effectiveSelectedSubmission = selectedSubmission;
 
   // Reset intake form working values when switching submissions so we don't
   // leak data between tickets. Also clears the pending auto-fire flag so a
@@ -757,34 +776,60 @@ export default function AgentDashboard() {
       const res = await apiRequest("PATCH", `/api/submissions/${submissionId}/process`, body);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // Tyler 2026-04-28 (Part A — keep-ticket-open): refresh the snapshot
+      // ref from the fresh server response. Without this, the post-action
+      // detail pane (which now persists past the My Tickets refetch
+      // eviction via the snapshot fallback) would still show the pre-
+      // action `ticketStatus="pending"`, causing the action button stripe
+      // to remain visible on a just-approved/rejected ticket. The /process
+      // endpoint returns `{ submission: updated }` — capturing it here
+      // makes the snapshot reflect ticketStatus="completed" / "rejected"
+      // immediately so action buttons and stage badges flip correctly
+      // while the agent is still mid-intake-form on the right panel.
+      if (data?.submission) {
+        selectedSubmissionSnapshotRef.current = data.submission;
+      }
+
       const actionLabel = selectedAction === "approve_submission" ? "Submission Approved" : selectedAction === "approve" ? "Approved" : selectedAction === "reject" ? "Rejected" : selectedAction === "reject_and_close" ? "Rejected & Closed" : "Marked Invalid";
       const actionDesc = selectedAction === "approve_submission" ? "Technician has been notified. Enter the authorization code to complete this ticket." : selectedAction === "reject_and_close" ? "Technician has been notified. This service order is permanently closed." : "Technician has been notified.";
       toast({ title: actionLabel, description: actionDesc });
 
-      // Stage 3 hand-off: a successful "approve" on a non-NLA ticket means
-      // Stage 3 (Smartsheet Intake) is now required. Tyler 2026-04-26 (D3):
-      // auto-open the intake modal directly so the agent doesn't have to
-      // hunt for the Stage 3 card. The Stage 3 fieldset card still renders
-      // underneath as a fallback re-open path if the agent dismisses the
-      // modal (D2). Stage 1 mid-flow ("approve_submission" on 2-stage
-      // warranties) keeps the ticket selected as before. Everything else
-      // clears selection.
-      const justAuthorized = selectedAction === "approve" && selectedSubmission?.requestType !== "parts_nla";
-      const keepSelected = selectedAction === "approve_submission" || justAuthorized;
+      // Tyler 2026-04-28 (REQUIREMENT CHANGE — overrides prior post-Authorize-
+      // only behavior): after EITHER an Approve OR a Reject the agent stays
+      // on the same ticket with all ticket details visible, the Intake
+      // Form tab auto-selected, and the Smartsheet iframe loaded. The
+      // intake form is filled out next to the resolved ticket info.
+      // Close-out happens ONLY when the agent clicks "I submitted
+      // Smartsheet" (handled in IntakeFormTab.onConfirmed below — that
+      // callback now also fires setSelectedId(null) + flips status back
+      // to online).
+      //
+      // Scope: applies to selectedAction === "approve" or "reject" on
+      // non-NLA tickets. The terminal-close actions ("reject_and_close"
+      // = permanent closure, "invalid" = bogus ticket marker) still
+      // clear selection because no Smartsheet intake is appropriate
+      // for those outcomes. Stage 1 mid-flow ("approve_submission" on
+      // 2-stage warranties) keeps the ticket selected as before but
+      // does NOT auto-switch tabs (the agent is still mid-flow and
+      // hasn't issued the auth code yet).
+      const justResolved =
+        (selectedAction === "approve" || selectedAction === "reject") &&
+        selectedSubmission?.requestType !== "parts_nla";
+      const keepSelected = selectedAction === "approve_submission" || justResolved;
       if (!keepSelected) {
         setSelectedId(null);
         setLocalAgentStatus("online");
-      } else if (justAuthorized) {
+      } else if (justResolved) {
         setLocalAgentStatus("online");
         // Tyler 2026-04-27 (modal -> tab migration): auto-select the new
         // Intake Form tab in the right panel instead of opening the
-        // retired modal popup. The 350ms delay is preserved so the
-        // per-submission intake-form-status query has time to flip
-        // required=true (otherwise the tab would render its pre-auth
-        // ghost empty state). We also force-show the right panel in
-        // case the agent had it hidden — without that, the tab switch
-        // would be silently invisible.
+        // retired modal popup. The 350ms delay lets the per-submission
+        // intake-form-status query refetch (the iframe itself loads
+        // immediately because the tab is always-on per the 2026-04-28
+        // change). We also force-show the right panel in case the
+        // agent had it hidden — without that, the tab switch would be
+        // silently invisible.
         // Q2 (AUTO-SELECT ONCE THEN RESPECT USER) is enforced via
         // `pendingIntakeAutoFireRef`: the flag is set true here and
         // cleared either when the timer fires or when the agent picks
@@ -3568,6 +3613,14 @@ export default function AgentDashboard() {
                               predicate: (q) =>
                                 (q.queryKey[0] as string).startsWith("/api/submissions"),
                             });
+                            // Tyler 2026-04-28 (post-Approve/Reject keep-
+                            // ticket-open requirement): the close-out moved
+                            // here from processMutation.onSuccess. Now the
+                            // ticket review screen ONLY clears when the
+                            // agent confirms the Smartsheet submission —
+                            // returning them to the queue / next ticket.
+                            setSelectedId(null);
+                            setLocalAgentStatus("online");
                           }}
                         />
                       </TabsContent>

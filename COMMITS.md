@@ -895,3 +895,90 @@ Either way, the structured logs above are now the diagnostic. The next time Tyle
 - COMMITS.md appended only after the harness passed (3/3 verified in two consecutive runs).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes.**
+
+
+---
+
+## 2026-04-28 — Tyler "Two things" (A: keep-ticket-open after Approve/Reject + B: fixture broadening for Failed-to-record bug)
+
+### Context
+Tyler sent two requirements simultaneously:
+- **A.** "The ticket review screen must NOT clear after Approve or Reject. After either outcome, the agent stays on the same ticket with all ticket details visible, the Intake Form tab active, and the Smartsheet iframe loaded. The intake form is filled out next to the submitted ticket info. ONLY when the user clicks I submitted Smartsheet does the screen close out and return the user to the queue / next ticket."
+- **B.** "Do NOT ask Tyler to click anything. Broaden the test fixtures yourself to reproduce in code... vary technician_ldap_id, vary previewBody.url shapes, vary the JSONB payload key set... If still no repro, change the structured log to fire on EVERY confirm attempt (not just failures) and dump the full payload."
+
+### Part A — keep-ticket-open after Approve/Reject
+
+**File: `client/src/pages/agent-dashboard.tsx`**
+
+1. **`processMutation.onSuccess` (lines 777-840):**
+   - Renamed `justAuthorized` → `justResolved`.
+   - Extended the `keepSelected` predicate so EITHER `selectedAction === "approve"` OR `selectedAction === "reject"` (on non-NLA tickets) preserves `selectedId` and triggers the auto-tab-switch to Intake Form.
+   - Scope is intentionally limited: `reject_and_close` (permanent closure) and `invalid` (bogus ticket marker) still clear selection because no Smartsheet intake is appropriate. `approve_submission` (Stage 1 mid-flow on 2-stage warranties) still uses keepSelected but does NOT auto-switch tabs (agent is still mid-flow and hasn't issued the auth code yet).
+   - Captures the fresh `{ submission: updated }` server response into `selectedSubmissionSnapshotRef.current` so the post-action snapshot reflects `ticketStatus="completed"` / `"rejected"` instead of the pre-action `"pending"`. This hides the action button stripe immediately after the action; otherwise the persisted detail pane would still show Approve/Reject buttons on a just-resolved ticket.
+
+2. **Snapshot architecture (lines 595-641):**
+   - Renamed line 592 `selectedSubmission` → `selectedSubmissionFromQuery` (the raw query lookup).
+   - Made `selectedSubmission` an alias for `selectedSubmissionFromQuery ?? selectedSubmissionSnapshotRef.current` — i.e. the snapshot-falling-back value is now the PUBLIC name, so all 127+ JSX read sites (`selectedSubmission.foo`) automatically pick up the snapshot fallback when the My Tickets refetch (filtered to `ticketStatus="pending"`) evicts the just-resolved row.
+   - Result: BOTH the left-side detail pane gate (line 1578) AND the right-side 3-tab panel survive the eviction, satisfying Tyler's "stay on the same ticket" requirement end-to-end.
+   - `effectiveSelectedSubmission` retained as a backward-compat alias.
+   - List-level UI iterates the `submissions` array directly (not `selectedSubmission`), so the row still correctly disappears from My Tickets and reappears in Completed — the snapshot fallback is scoped to the detail pane only.
+
+3. **`IntakeFormTab.onConfirmed` callback (lines 3596-3614):**
+   - Added `setSelectedId(null)` and `setLocalAgentStatus("online")` so the close-out fires HERE (when the agent confirms Smartsheet submission) instead of in `processMutation.onSuccess`.
+   - The screen now ONLY clears when the agent clicks "I submitted Smartsheet", returning them to the queue / next ticket. This is the exact UX Tyler specified.
+
+**Architect-review fix included:** the architect flagged that `effectiveSelectedSubmission` existed but only the right-panel mount gate used it — the left-side detail pane still gated on the raw `selectedSubmission`, so the screen would have STILL gone blank post-action. The rename described above closes that gap with zero-touch on the 127 JSX call sites.
+
+### Part B — diagnostics + fixture broadening for "Failed to record intake form"
+
+**File: `server/routes.ts` (lines 3625-3641)**
+
+Added an `op=entry` log line that fires on EVERY confirm attempt (not just failures) and dumps the full `req.body` JSON (capped at 4000 chars to bound log volume) plus the user-agent string. This is the byte-for-byte payload-replay capability Tyler asked for — any future production red-toast can be reproduced in vitest by copy-pasting the entry-log body into a new test fixture. Auth tokens live in the Authorization header (not the body) so this does NOT leak credentials. The intake_forms.payload column already stores this same data as the permanent audit trail.
+
+Privacy note (architect flagged): payload values can include free-text technician comments. If retention/access policy on the workflow logs becomes a concern, gate this log behind an env flag (e.g. `INTAKE_DEBUG_LOG=full`) and default to redacted (keys + size + body hash). Not gated yet because Tyler's instruction was explicit: "dump the full payload."
+
+**File: `tests/intake-confirm.test.ts` (3 → 17 tests)**
+
+Original 3 core regression tests retained. Added 14 new edge-case fixture tests probing every plausible failure-mode branch in the handler. None reproduced a 500 with "Failed to record intake form":
+
+- **E1** Bogus `technician_ldap_id` (no row in technicians table) — degrades gracefully via the wrapped ih-unit-lookup branch; 200 with blank `IH%20Unit%20Number=` in the URL. Mutation/restore via `setTech()` on submission 79.
+- **E2** Malformed `smartsheetUrlSubmitted` (not a URL) — 400 zod-parse, never 500.
+- **E3** Numeric payload values (`z.union([z.string(), z.number()])` accepts both) — 200; numeric value round-trips through JSONB.
+- **E4** Payload keys NOT on `ALLOWED_COLUMN_LABELS` — 200; bogus keys are silently dropped from the URL but stored verbatim in the JSONB audit blob.
+- **E5** Missing `smartsheetUrlSubmitted` — 200; falls back to server-built URL.
+- **E6** Non-numeric submission ID — 400 parse-id, never 500.
+- **E7** Non-existent submission ID — 404 ownership, never 500.
+- **E8** Disallowed payload value type (object) — 400 zod-parse, never 500.
+- **E9** Unicode + emoji + accented characters in payload values — 200; UTF-8 round-trips intact.
+- **E10** Very large payload value (10KB string) — 200; Postgres JSONB has no practical max for this size.
+- **E11** Empty body `{}` — 200; payload defaults to `{}`, server-built URL is used.
+- **E12** Concurrent duplicate confirms (Promise.all) — exactly one 200 + one 409 (or both 200 if the race-window is wider than the existing-check); never 500. The schema has no unique constraint backing the existing-check, so the test asserts only the no-500 invariant rather than the exact split.
+- **E13** Payload keys with dots/slashes/brackets in their names — 200; non-allow-list keys stored verbatim in JSONB.
+- **E14** TOCTOU race coverage (architect-recommended): submission ID for a non-existent row — 404 short-circuits the FK race window via the ownership check. Documents the contract; any future refactor that drops the ownership check would flip this assertion to 500 and surface the regression.
+
+`beforeAll` snapshots the `technician_ldap_id` for both seed tickets (79 SPHW, 80 AHS) so any fixture mutation done by E1 can be reverted in `afterAll` — the dev DB looks exactly the way the seed left it after the suite runs.
+
+### Test results
+
+```
+Test Files  1 passed (1)
+     Tests  17 passed (17)
+  Duration  1.59s
+```
+
+Two consecutive clean runs. Every test asserts the no-500 invariant explicitly. The new entry log was verified firing in the workflow log: `[intake-confirm reqId=intake-confirm:... op=entry] body={"payload":{...},"smartsheetUrlSubmitted":"..."} ua=...`
+
+### Current bug status
+
+Still NOT reproduced in vitest. The handler is robust against every payload shape and edge case I can enumerate. If the bug fires again in production, the new entry log will show the exact request body that triggered it, and a new fixture replaying that body byte-for-byte can be added to the suite in minutes.
+
+### Tyler's hard rules — observed
+
+- No version-control commits.
+- No schema changes (no DDL, no new columns, no new tables).
+- No Smartsheet form definition changes.
+- Server data layer additive only (the entry log is pure side-effect; the test fixture broadening adds NO permanent rows beyond the intake_forms cleanup the suite owns; the E1 fixture mutation on technicians_ldap_id is reverted in afterAll).
+- Frontend changes additive: extended a predicate, renamed a query-result variable, added a snapshot refresh in mutation onSuccess, added two state-clearing calls in IntakeFormTab.onConfirmed. No deletions, no behavioral changes outside the documented requirement.
+- COMMITS.md appended only after harness passed (17/17 verified twice).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes.**

@@ -3622,6 +3622,20 @@ export async function registerRoutes(
       const authReq = req as AuthenticatedRequest;
       const reqId = `intake-confirm:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
       const tag = (op: string) => `[intake-confirm reqId=${reqId} userId=${authReq.user?.id ?? "?"} subId=${req.params.id} op=${op}]`;
+      // Tyler 2026-04-28 (Part B — fixture broadening): dump the FULL
+      // request body on EVERY confirm attempt (not just failures) so any
+      // future production failure can be reproduced byte-for-byte by the
+      // vitest+supertest harness. Auth tokens are in the Authorization
+      // header (not the body) so this does NOT leak credentials. The
+      // intake_forms.payload column already stores this same data as the
+      // permanent audit trail — logging it adds no new sensitive surface.
+      try {
+        console.log(
+          `${tag("entry")} body=${JSON.stringify(req.body).slice(0, 4000)} ua=${(req.headers["user-agent"] ?? "").toString().slice(0, 80)}`
+        );
+      } catch (logErr) {
+        console.warn(`${tag("entry")} body=<unserializable> err=${(logErr as Error)?.message}`);
+      }
       try {
         const id = parseInt(req.params.id as string);
         if (isNaN(id)) {
