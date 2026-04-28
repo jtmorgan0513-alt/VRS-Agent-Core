@@ -831,3 +831,67 @@ E2E test against ticket 80 (SO 99999000007, ticket_status=pending, stage1=approv
 - The `stage3Required` / `stage3Recorded` derived values in agent-dashboard.tsx still gate the legacy Stage 3 fieldset card (lines 2496/2545/2573). That card is now redundant with the always-on Intake Form tab. Not removed in this change (additive-only constraint), but a future cleanup should consider deleting the fieldset card entirely. Flagged for Tyler's review.
 
 **No git commits. No schema changes. No backend changes. No Smartsheet form definition changes.**
+
+
+## 2026-04-28 — Intake form CONFIRM endpoint diagnostics + vitest+supertest regression harness
+
+Tyler reported that after the always-on Intake Form tab shipped, clicking "I submitted Smartsheet" inside the iframe surfaced a red toast in the bottom-right:
+
+> **Could not record intake** — Failed to record intake form
+
+The toast description ("Failed to record intake form") is the verbatim `error` string returned by `POST /api/submissions/:id/intake-form/confirm` from its 500-level catch branch. Tyler had previously verified Fix A (`intake-form-status` route accepting both `approved` and `completed`) and Fix B (`selectedSubmissionSnapshotRef` panel-unmount fallback in agent-dashboard.tsx) and explicitly noted those did NOT solve this failure — the POST itself was 500-ing on the server.
+
+The original handler at `server/routes.ts:3603-3676` had a single catch-all that emitted only `"Intake form confirm error: <stack>"` with no breadcrumb of WHICH step (parse → ownership → existing-check → ih-unit lookup → racId lookup → URL builder → DB insert) actually blew up. Without that breadcrumb every production failure looked identical and was un-fixable.
+
+### Files touched (additive only — zero schema changes, zero Smartsheet form changes, zero modifications to the preview endpoint)
+
+| File | Change |
+|------|--------|
+| `server/routes.ts` (3606-3733, was 3603-3676) | Replaced the single try/catch with a per-step structured-log instrumentation. Every branch now emits `[intake-confirm reqId=<id> userId=<id> subId=<id> op=<step>] status=<state> ...` so a grep of the workflow log instantly tells us where the failure landed. The `op` codes are: `parse-id`, `zod-parse`, `ownership`, `existing-check`, `ih-unit-lookup`, `racid-lookup`, `build-url`, `db-insert`, `ok`, `unhandled`. The 500 response now also returns a `code` discriminator (`BUILD_URL_ERROR` / `DB_INSERT_ERROR` / `UNHANDLED`) so the toast can eventually surface a more specific cause without leaking server internals. |
+| `server/routes.ts` (ih-unit-lookup branch) | Wrapped the previously-unguarded `getTechnicianByLdapId` call in its own try/catch. A flake on this lookup used to bubble up to the catch-all 500 with no breadcrumb; now it logs `op=ih-unit-lookup status=warn` and degrades gracefully (the `IH Unit Number` field becomes blank in the recorded URL but the `intake_forms` row still saves). |
+| `server/routes.ts` (db-insert branch) | Wrapped `storage.createIntakeForm` in its own try/catch. Emits the full pg error: `code=<sqlstate> detail=<detail> constraint=<name> msg=<message>`. This is the most likely root-cause vector for the production failure (FK violation, JSONB type mismatch, etc) and was previously invisible. |
+| `tests/intake-confirm.test.ts` (new, 195 lines) | vitest+supertest harness with three tests: (1) SO 99999000006 SPHW post-Authorize confirm succeeds, (2) SO 99999000007 AHS PRE-Authorize confirm succeeds (proves the always-on tab requirement — confirm works without auth_code), (3) duplicate confirm returns 409 ALREADY_RECORDED, NOT a 500 with "Failed to record intake form" (locks in the bug class against regression). All three exercise the LIVE running dev server on `localhost:5000` so the same Express stack, same DB connection, and same seeded test fixtures (SO 99999000006/99999000007) are hit as the live UI. |
+| `vitest.config.ts` (new, 24 lines) | Vitest configuration: forks pool, 30s timeout, `@shared` alias for shared/schema imports. |
+| `package.json` (auto) | Added `vitest`, `supertest`, `@types/supertest` as dev deps via the package management tool. |
+
+### Run the harness
+
+```
+npx vitest run tests/intake-confirm.test.ts
+```
+
+### Verified PASSING (2026-04-28 04:35 UTC)
+
+```
+ RUN  v4.1.5 /home/runner/workspace
+ ✓ tests/intake-confirm.test.ts (3 tests) 217ms
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Duration  1.32s
+```
+
+Sample structured log emitted during a successful confirm (visible in workflow log under "Start application"):
+
+```
+[intake-confirm reqId=intake-confirm:1777350912362:u146nl userId=86 subId=79 op=ok] status=success intakeFormId=7 branch=SPHW
+[intake-confirm reqId=intake-confirm:1777350912470:7qv5uz userId=86 subId=79 op=existing-check] status=duplicate existingId=9 agentId=86
+```
+
+### Why the harness alone does not "fix" Tyler's reported failure
+
+The harness exercises the endpoint with the same payload shape the live UI sends (`previewBody.derivedDefaults` as `payload`, `previewBody.url` as `smartsheetUrlSubmitted`) and CANNOT reproduce the 500 against the seeded fixtures. That means one of two things is true:
+
+1. Tyler's production failure is hitting an edge case the seeded fixtures do not cover (a real ticket with `technician_ldap_id` pointing at a missing technicians row, a real submission row whose `procId` triggers a code path my fixtures avoid, a JSONB payload key with a value type the schema rejects, an upstream Snowflake-sourced character that breaks `encodeURIComponent`, etc).
+2. Fix A + Fix B already silently fixed the underlying cause and Tyler's most recent test was against a stale browser/session.
+
+Either way, the structured logs above are now the diagnostic. The next time Tyler clicks "I submitted Smartsheet" and sees the red toast, the workflow log will contain a single line of the form `[intake-confirm reqId=... op=<step>] status=fail err=<reason>` pointing at the exact failing step. That line is what we will fix.
+
+### Hard-rule compliance
+
+- No commits to version control.
+- No schema changes (intake_forms unchanged; no new columns; no new constraints).
+- No Smartsheet form definition changes.
+- Server data layer additive only (the new try/catch wrappers preserve every existing success path; the new tests do not mutate any seeded fixture beyond the intake_forms cleanup they own).
+- COMMITS.md appended only after the harness passed (3/3 verified in two consecutive runs).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes.**

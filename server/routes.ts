@@ -3605,19 +3605,45 @@ export async function registerRoutes(
     authenticateToken,
     requireRole("vrs_agent", "admin"),
     async (req, res) => {
+      // Tyler 2026-04-28 (Tyler reproduced "Could not record intake / Failed
+      // to record intake form" red toast in production after the always-on
+      // tab change shipped). The original handler only had a single
+      // catch-all that emitted "Intake form confirm error: <stack>" with no
+      // breadcrumb of WHICH step (parse, ownership, existing-check, ih-unit
+      // lookup, racId lookup, smartsheet builder, DB insert) blew up. The
+      // 500 response body says "Failed to record intake form" verbatim so
+      // we never knew what to fix.
+      //
+      // Below we tag every step with `op=...` so a grep of the workflow
+      // log instantly tells us where the failure landed. The log lines are
+      // also intentionally consumable by the vitest+supertest harness in
+      // tests/intake-confirm.test.ts so a regression at any step shows up
+      // as a precise assertion failure rather than a generic 500.
+      const authReq = req as AuthenticatedRequest;
+      const reqId = `intake-confirm:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const tag = (op: string) => `[intake-confirm reqId=${reqId} userId=${authReq.user?.id ?? "?"} subId=${req.params.id} op=${op}]`;
       try {
-        const authReq = req as AuthenticatedRequest;
         const id = parseInt(req.params.id as string);
-        if (isNaN(id)) return res.status(400).json({ error: "Invalid submission ID" });
+        if (isNaN(id)) {
+          console.warn(`${tag("parse-id")} status=fail reason=NaN raw=${JSON.stringify(req.params.id)}`);
+          return res.status(400).json({ error: "Invalid submission ID" });
+        }
 
         const parsed = intakeFormPayloadSchema.safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: parsed.error.errors[0].message });
+        if (!parsed.success) {
+          console.warn(`${tag("zod-parse")} status=fail err=${parsed.error.errors[0].message} bodyKeys=${JSON.stringify(Object.keys(req.body ?? {}))}`);
+          return res.status(400).json({ error: parsed.error.errors[0].message });
+        }
 
         const owned = await loadOwnedSubmission(authReq, id);
-        if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
+        if (!owned.ok) {
+          console.warn(`${tag("ownership")} status=fail httpStatus=${owned.status} err=${owned.error}`);
+          return res.status(owned.status).json({ error: owned.error });
+        }
 
         const existing = await storage.getIntakeFormBySubmission(id);
         if (existing) {
+          console.warn(`${tag("existing-check")} status=duplicate existingId=${existing.id} agentId=${existing.agentId}`);
           return res.status(409).json({
             error: "Intake form already recorded for this submission",
             code: "ALREADY_RECORDED",
@@ -3630,8 +3656,16 @@ export async function registerRoutes(
         // resolved from the technicians table via LDAP id.
         let ihUnitNumber: string | null = null;
         if (owned.submission.technicianLdapId) {
-          const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
-          ihUnitNumber = (tech as any)?.techUnNo ?? null;
+          try {
+            const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
+            ihUnitNumber = (tech as any)?.techUnNo ?? null;
+          } catch (lookupErr) {
+            // Tyler 2026-04-28: was previously unguarded — a flake here
+            // would land in the catch-all 500 with no breadcrumb. Now we
+            // log and degrade gracefully (the field becomes blank in the
+            // recorded URL but the row still saves).
+            console.warn(`${tag("ih-unit-lookup")} status=warn err=${(lookupErr as Error)?.message} ldapId=${owned.submission.technicianLdapId}`);
+          }
         }
 
         // Tyler 2026-04-26 (post-audit): mirror the preview route so the
@@ -3643,15 +3677,21 @@ export async function registerRoutes(
           const agent = await storage.getUser(authReq.user!.id);
           authUserRacId = agent?.racId ?? null;
         } catch (lookupErr) {
-          console.warn("Intake confirm agent racId lookup failed; falling back to technicianLdapId:", lookupErr);
+          console.warn(`${tag("racid-lookup")} status=warn err=${(lookupErr as Error)?.message}`);
         }
 
-        const { buildIntakeFormUrl } = await import("./services/smartsheet");
-        const built = buildIntakeFormUrl({
-          submission: { ...owned.submission, ihUnitNumber },
-          payload: parsed.data.payload,
-          authUserRacId,
-        });
+        let built;
+        try {
+          const { buildIntakeFormUrl } = await import("./services/smartsheet");
+          built = buildIntakeFormUrl({
+            submission: { ...owned.submission, ihUnitNumber },
+            payload: parsed.data.payload,
+            authUserRacId,
+          });
+        } catch (buildErr) {
+          console.error(`${tag("build-url")} status=fail err=${(buildErr as Error)?.message} stack=${(buildErr as Error)?.stack}`);
+          return res.status(500).json({ error: "Failed to record intake form", code: "BUILD_URL_ERROR" });
+        }
 
         // Branch is informational only — folded into the payload blob so we
         // can audit which branch the agent saw without adding a column.
@@ -3660,17 +3700,32 @@ export async function registerRoutes(
           __branch: built.branch,
         };
 
-        const created = await storage.createIntakeForm({
-          submissionId: id,
-          agentId: authReq.user!.id,
-          payload: payloadWithBranch as Record<string, string | number>,
-          smartsheetUrlSubmitted: parsed.data.smartsheetUrlSubmitted ?? built.url,
-        } as any);
+        let created;
+        try {
+          created = await storage.createIntakeForm({
+            submissionId: id,
+            agentId: authReq.user!.id,
+            payload: payloadWithBranch as Record<string, string | number>,
+            smartsheetUrlSubmitted: parsed.data.smartsheetUrlSubmitted ?? built.url,
+          } as any);
+        } catch (insertErr) {
+          // Tyler 2026-04-28: most likely candidate for the production
+          // failure. Emit the full pg error code/detail so we can tell FK
+          // violation (23503) from check (23514) from anything else.
+          const e = insertErr as any;
+          console.error(`${tag("db-insert")} status=fail code=${e?.code} detail=${e?.detail} constraint=${e?.constraint} msg=${e?.message}`);
+          return res.status(500).json({ error: "Failed to record intake form", code: "DB_INSERT_ERROR" });
+        }
 
+        console.log(`${tag("ok")} status=success intakeFormId=${created.id} branch=${built.branch}`);
         return res.status(200).json({ intakeForm: created });
       } catch (error) {
-        console.error("Intake form confirm error:", error);
-        return res.status(500).json({ error: "Failed to record intake form" });
+        // Last-resort catch — any branch above that throws despite its own
+        // try/catch (or a bug we missed) lands here. Log enough context to
+        // diagnose without leaking sensitive payload data.
+        const e = error as any;
+        console.error(`${tag("unhandled")} status=fail name=${e?.name} msg=${e?.message} code=${e?.code} stack=${e?.stack}`);
+        return res.status(500).json({ error: "Failed to record intake form", code: "UNHANDLED" });
       }
     }
   );
