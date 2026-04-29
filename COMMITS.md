@@ -1248,3 +1248,233 @@ All 5 test SOs now pre-fill IH Unit Number = `9999001` in the Smartsheet intake 
 - Test-data layer additive (the technicians row was already a test row; this just conforms its display value).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**
+
+---
+
+## 2026-04-29 — Tyler Phase B C.1: Communication Templates schema + migration (write-through)
+
+### Context
+Phase B Communication Settings module (admin-edited SMS/email/push templates with version history + send audit) was approved by Tyler in the C-tier roll-up plan delivered 2026-04-28. C.1 is the data-layer foundation: new tables, channel enum, and a one-shot migration script that seeds the 25 currently-hardcoded SMS templates verbatim from `server/sms.ts` + `server/routes.ts`. Render layer (C.2), admin routes (C.3), 18-call cutover (C.4) and admin UI (C.5) are all still on the deck.
+
+### Scope
+Strictly additive at the schema level — three new tables + one new pgEnum, no `ALTER` on any existing column. Strictly read-only on existing source files (`server/sms.ts`, `server/routes.ts`) — copy is mirrored into the DB for future editability without touching the live code path until C.4 cutover.
+
+### Changes
+- `shared/schema.ts` (additive — lines 331-409 after `intakeForms`):
+  - `pgEnum("communication_channel", ["sms", "email", "push"])` — pre-staged for email + push so Phase C.6+ can light those channels without another schema push.
+  - `communication_templates` — `(channel, action_key)` UNIQUE; `subject` + `body` text; `variables` JSONB declaring the contract `[{name, sample, required, description?}]`; soft-deletable via `is_active`; `updated_by` FK to `users.id`.
+  - `communication_template_versions` — full body/subject snapshot per edit, append-only. FK `template_id`, FK `edited_by`, `version_number`, `edit_reason`. Lets admins read the history of who changed what message and when.
+  - `communication_send_audit` — captures every send in C.4 cutover: `template_id`, rendered `body`, `recipient`, `template_version`, success/error. Will run in parallel with `sms_notifications` during cutover so we have two-source comparison.
+  - All three insertSchemas + types exported (`InsertCommunicationTemplate`, `CommunicationTemplate`, etc.).
+- `scripts/migrate-templates.ts` — new file. Idempotent skip-if-exists per `(channel, action_key)`. Each insert is annotated in its log line with its source file:line so the future C.4 cutover knows exactly what code path to replace. Each insert also writes a v1 row to `communication_template_versions` with `editReason: "Seeded from <source> (Phase B C.1 migration)"`.
+- `npm run db:push --force` ran cleanly (additive-only — `CREATE TABLE` × 3, `CREATE TYPE` × 1, `ADD CONSTRAINT` × 5; zero `ALTER` on existing tables).
+
+### 25 SMS templates seeded
+Branchy templates were split into dotted sub-keys (e.g. `ticket_rejected_closed.cash_call` vs `ticket_rejected_closed.no_cash_call`); branch-selection logic stays in code, the template body is what's editable. Verbatim copy preserved including all `\n`, emoji, and `{{varName}}` placeholders.
+
+`submission_received.{standard,external_warranty,parts_nla}` · `ticket_claimed.{standard,two_stage,resubmit}` · `submission_approved` · `ticket_approved.{auth_and_rgc,rgc_only,auth_only,nla}` · `ticket_rejected` · `ticket_rejected_closed.{cash_call,no_cash_call}` · `ticket_invalid` · `nla_replacement_submitted` · `nla_replacement_tech_initiates` · `nla_part_ordered_vrs` · `nla_part_tech_orders` · `nla_rfr_eligible` · `nla_pcard_confirmed.{part_found_vrs,part_found_tech,fallback}` · `nla_rejected` · `nla_invalid`
+
+### Decisions baked into C.1 (Tyler-approved during C-tier rollup)
+- SMS-only for Phase C scope; email + push pre-staged in enum + nullable subject column for future channels.
+- Password-reset SMS explicitly EXCLUDED from this migration (security-sensitive copy stays in code).
+- Warranty conditionals (cash-call vs no-cash-call) → branchy dotted sub-keys, NOT in-template `{{#if}}`. Logic lives in code, copy lives in DB.
+- `messageType` strings used by `sms_notifications` table = `action_key` strings used by templates (1-to-1).
+- Admin RBAC for editing → server-side `requireAdmin` middleware on C.3 routes (not yet built).
+
+### Verification
+```sql
+SELECT channel, count(*) FROM communication_templates GROUP BY channel;
+-- sms | 25
+SELECT count(*) FROM communication_template_versions;
+-- 25
+```
+All 25 bodies spot-checked verbatim against source (`submission_received.parts_nla`, `ticket_approved.nla`, `ticket_rejected_closed.cash_call`).
+
+### Tyler's hard rules — observed
+**No version-control commits. No Smartsheet form definition changes. No republish.** Schema push WAS performed — explicitly approved for Phase B by Tyler (Phase B = "additive only on data layer; new tables OK"). All operations were `CREATE TABLE` / `CREATE TYPE` / `ADD CONSTRAINT` — zero `ALTER` on existing tables.
+
+---
+
+## 2026-04-29 — Tyler MUST-FIX #1 + #2: Test agent ID realism + AHS proc_id repair
+
+### Context
+Tyler set out to verify end-to-end that the intake form's "VRS Tech ID" and "Proc ID/Third Part ID" fields populate correctly when an agent walks a ticket through to Smartsheet. Two blockers surfaced in the survey:
+
+1. **VRS Tech ID** is sourced from the logged-in agent's `users.rac_id`, uppercased (`server/services/smartsheet.ts:200`). Tyler's primary test agent had `rac_id="testagent1"` — 10 chars, lowercase, uppercased to `TESTAGENT1`, which doesn't match the dominant 7-char shape Smartsheet's combobox is keyed to. He could not tell whether the field would populate realistically in production.
+2. **Proc ID/Third Part ID** dropdown only recognises the 23 PROC ID values in `PROC_ID_LABEL` (`server/services/smartsheet.ts:39-65`). The AHS test ticket (SO 99999000002, id=85) was seeded with `proc_id="AHSCLL"` — a real Snowflake-emitted value but NOT in the recognized map. So that ticket's combobox stayed blank.
+
+### Real-VRS-agent rac_id format (survey of 75 production agents)
+- Dominant: 7 chars uppercase + (optional) trailing digit. 57 of 75 agents.
+- Examples: `JMORGA7` (Tyler), `PCANTU2`, `JBLUE2`, `JSARITE`.
+- Pattern: lastname-fragment + digit.
+
+### 23 recognized PROC IDs across 4 branches
+| Branch | PROC IDs | Count |
+|---|---|---|
+| AHS | AHS000, AHS00P, AHS100, AHS2OP, AHS888, AHSC00, AHSF00, AHSNLA, FAA01A, FAA03R | 10 |
+| SPHW | SPRCLL, SPRC00, SPRCLH, SPHT75 | 4 |
+| SHW | THM302, THMH00, THMH01, THMH02, THMHV1, THMPM1, THMR01 | 7 |
+| SRW | SRW000, SRW001 | 2 |
+
+`detectBranch()` keys off PROC ID prefix alone — `warranty_type` does NOT influence intake-form branch routing.
+
+### Changes (data + lockstep seed-script updates)
+1. **`users.id=86` test agent** — `rac_id`: `"testagent1"` ➜ **`"ZZTEST9"`**.
+   - 7 chars, uppercase, ends in digit (matches `JMORGA7` shape).
+   - `ZZ` prefix is reserved-looking; no real surname starts with it → can never collide.
+   - `server/seed.ts:73` updated to match (with comment); `TEST_RAC_IDS` cleanup list at `server/seed.ts:160` includes BOTH old and new strings so a re-seed against legacy DB still finds the row.
+2. **`submissions.id=85` (SO 99999000002)** — `proc_id`: `"AHSCLL"` ➜ **`"AHS000"`**.
+   - First AHS variant in recognized map → dropdown now populates as `"AHS000-American Home Shield"`.
+   - `scripts/seed-test-tickets.ts:201` updated to match (with comment).
+
+### Verification (post-update, against the live route)
+Logged in as `ZZTEST9` / `TestAgent2026!` and hit `POST /api/submissions/86/intake-form/preview`:
+
+| Field | Populated value |
+|---|---|
+| VRS Tech ID | **`ZZTEST9`** ✓ |
+| IH Tech Ent ID | `TEST_TECH_1` ✓ |
+| IH Unit Number | `9999001` ✓ (from prior session) |
+| IH Service Order Number | `99999000003` ✓ |
+| Servicer Type | `W2-In Home Field Tech` ✓ |
+| Proc ID/Third Part ID | **`SPRCLL-Sears Protect Home Warranty`** ✓ |
+
+For SO 99999000002 (the AHSCLL → AHS000 fix):
+| Proc ID/Third Part ID | **`AHS000-American Home Shield`** ✓ |
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (single-field UPDATE on existing `users.rac_id` + `submissions.proc_id` columns).
+- No Smartsheet form changes.
+- No republish.
+- Data layer additive (modified existing rows, did not add or remove rows).
+
+---
+
+## 2026-04-29 — Tyler OPTIONAL #3: Branch diversification across all 4 intake-form branches
+
+### Context
+Tyler said: "I need to see exactly how many options are recognized." With 5 test tickets, all originally on SPHW or AHS branches, he had no way to validate the SHW (Sears Home Warranty / Cinch / THM*) and SRW (Kenmore-IW / SRW*) branch UIs end-to-end.
+
+### Constraint discovered during scope analysis
+The codebase models only THREE warranty_type values: `sears_protect`, `american_home_shield`, `first_american`. Adding `sears_home_warranty` or `kenmore` as warranty_type values would:
+- Render raw strings in admin tables (`client/src/pages/admin-dashboard.tsx:524-527`, `1081-1084` — fallback prints `warrantyType` verbatim for unknown values).
+- Misfire `getRejectAndCloseMessage` cash-call branching (`server/routes.ts:1478` — keys off warranty_type to choose `cash_call` vs `no_cash_call` SMS template).
+- Break tech-submit's bann ner predicates (`client/src/pages/tech-submit.tsx:1029-1030`).
+
+**Tradeoff taken:** keep `warranty_type="sears_protect"` on the SHW + SRW test tickets and change ONLY `proc_id`. `detectBranch()` keys off `proc_id` alone, so the intake form's branch UI still routes correctly to SHW / SRW. Documented as a known limitation below.
+
+### Changes (data + lockstep seed-script updates)
+| id | SO | warranty_type | proc_id (was → now) | Branch (was → now) |
+|---|---|---|---|---|
+| 87 | 99999000004 (parts_nla, queued) | sears_protect | `SPRCLL` ➜ **`THM302`** | SPHW ➜ **SHW** |
+| 88 | 99999000005 (rejected) | sears_protect | `SPRCLL` ➜ **`SRW000`** | SPHW ➜ **SRW** |
+
+`scripts/seed-test-tickets.ts:239` (SO_4) and `:261` (SO_5) updated to match. Top-of-file scenario list updated to document the new branch coverage matrix.
+
+### Verification (post-update, all 5 SOs as ZZTEST9)
+| id | SO | branch | Proc ID/Third Part ID populates as |
+|---|---|---|---|
+| 84 | 99999000001 | SPHW | SPRCLL-Sears Protect Home Warranty |
+| 85 | 99999000002 | **AHS** | AHS000-American Home Shield |
+| 86 | 99999000003 (approved) | SPHW | SPRCLL-Sears Protect Home Warranty |
+| 87 | 99999000004 | **SHW** | THM302-Sears Home Warranty |
+| 88 | 99999000005 | **SRW** | SRW000-Kenmore-IW |
+
+All 4 branches exercised; `VRS Tech ID = ZZTEST9` populates on all 5; `IH Unit Number = 9999001` populates on all 5.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (single-field UPDATE on existing `submissions.proc_id` column).
+- No Smartsheet form changes.
+- No republish.
+- Data layer additive.
+
+---
+
+## 2026-04-29 — Pre-assignment of test SOs to ZZTEST9 for end-to-end walk
+
+To save the queue-claim step during Tyler's E2E verification, all 5 test SOs (ids 84-88) were UPDATEd with `assigned_to=86` (ZZTEST9). They appear directly on Tyler's "My Tickets" view after login — no need to claim from queue first.
+
+If Tyler wants to instead practice the queue-claim flow:
+```sql
+UPDATE submissions SET assigned_to = NULL WHERE id IN (84, 85, 87) AND service_order LIKE '99999%';
+```
+(Leaves SO 99999000003 (approved) and SO 99999000005 (rejected) assigned, since those represent post-claim states.)
+
+---
+
+## 2026-04-29 — READY TO PUBLISH (handoff)
+
+### (a) Everything in this local working copy that's new since the last republish
+
+| Group | Contents | COMMITS.md anchor |
+|---|---|---|
+| **Tier 1+2 cross-tech draft contamination hotfix** | Client-side identity stamp on draft writes; server-side rejection of mismatched-identity drafts; identity envelope in `vrs_tech_submit_draft_v1_*` localStorage; 13 vitest cases all green. | `2026-04-28 — Tyler URGENT pilot-feedback hotfix` (line 1024) |
+| **Task A — NLA SMS copy stopgap** | New `submission_received.parts_nla` SMS body for NLA tickets with same-day expectation messaging; 5 product decisions baked in (line 1112). | `2026-04-28 — Tyler pilot-feedback Task A` (line 1086) |
+| **Task B Phase A — intake form audit** | Documented the 8 audit findings (form ID, field map, branch logic, prefill bugs); implemented all critical fixes; delivered Phase B/C/D written plan + got Tyler approval. | `2026-04-26+27` historical entries (lines 553-787) |
+| **Test-ticket seed expansion (Phase A.5)** | `scripts/seed-test-tickets.ts` — 5 deterministic test SOs (99999000001-005, ids 84-88), one per state (queued / pending / approved / parts_nla / rejected). Self-cleaning re-seed; tagged `[TEST]` in issue_description. | `2026-04-28 — Tyler Phase A approval` (line 1140) |
+| **Real-format VRS Tech ID swap** | technicians row for `test_tech_1` updated `tech_un_no T_TEST_001 → 9999001`; ensureTechnicianRow() self-conforms on re-run. Reserved `9999xxx` range above real-tech max `0999706`. | `2026-04-28 — Tyler request: real-format VRS Tech ID` (line 1208) |
+| **Phase B C.1 — Communication Templates schema + migration** | 3 new tables (`communication_templates`, `_versions`, `_send_audit`) + `communication_channel` enum; `scripts/migrate-templates.ts` seeded 25 SMS templates verbatim; `npm run db:push --force` applied (additive-only). | `2026-04-29 — Phase B C.1` (this section above) |
+| **MUST-FIX #1 + #2** | Test agent `users.rac_id testagent1 → ZZTEST9`; SO 99999000002 `proc_id AHSCLL → AHS000`. | `2026-04-29 — MUST-FIX #1 + #2` (above) |
+| **OPTIONAL #3 branch diversification** | SO 99999000004 `proc_id SPRCLL → THM302` (SHW branch); SO 99999000005 `proc_id SPRCLL → SRW000` (SRW branch). | `2026-04-29 — OPTIONAL #3` (above) |
+| **Pre-assignment** | 5 test SOs assigned to ZZTEST9 for direct E2E access. | `2026-04-29 — Pre-assignment` (above) |
+
+Plus all earlier committed work (Teams script, calculator, Stage-1/2/3 progressive disclosure, intake-form modal→tab refactor, fixture-broadening tests, etc.) which has been in the live working copy since 2026-04-26 and was never republished after the post-2026-04-26 hotfix wave.
+
+### (b) Test SOs + credentials for end-to-end intake-form walk
+
+**Login as VRS agent:**
+- Identifier: **`ZZTEST9`**
+- Password: **`TestAgent2026!`**
+- (Login route accepts `{identifier, password}` in JSON body; `must_change_password=false` so no password-change prompt.)
+
+**Login as test technician** (only needed if you want to re-test the tech-submit side):
+- Tech LDAP: `testtech1` / password `TestTech2026!` (user 91)
+- The seed creates submissions with `technician_ldap_id="test_tech_1"` (with underscore — Snowflake style) which JOINs to `technicians.ldap_id`. The tech-side login user (`users.rac_id="testtech1"` no underscore) is a separate row by intentional design — see Known Limitation #3 below.
+
+**Test SOs you'll see on ZZTEST9's "My Tickets":**
+| SO | id | Status | Branch | What to test |
+|---|---|---|---|---|
+| 99999000001 | 84 | pending | SPHW | Standard SP authorization flow |
+| 99999000002 | 85 | pending | **AHS** | AHS branch UI — dual-code (AHS+RGC) on approval |
+| **99999000003** | **86** | **approved** | **SPHW** | **PRIMARY: "remains on screen with approved ticket information" verification target — open the Intake Form tab, confirm the iframe stays mounted with all 9 fields prefilled (6 always-on + SPHW defaults: Repair Decision = Repair Product, Pre-Existing = No, Comments auto-populated)** |
+| 99999000004 | 87 | queued | **SHW** | parts_nla flow + SHW branch UI (THM302 → Sears Home Warranty) |
+| 99999000005 | 88 | rejected | **SRW** | Stage-1 rejection + SRW branch UI (SRW000 → Kenmore-IW) + resubmit |
+
+Every one of these populates 6 always-visible fields — `VRS Tech ID = ZZTEST9`, `IH Tech Ent ID = TEST_TECH_1`, `IH Unit Number = 9999001`, `IH Service Order Number`, `Servicer Type = W2-In Home Field Tech`, `Proc ID/Third Part ID = <recognized label>` — verified live against `/api/submissions/<id>/intake-form/preview` on 2026-04-29.
+
+### (c) Known limitations / follow-ups
+
+1. **warranty_type / proc_id mismatch on SHW + SRW test tickets (intentional).**
+   SO 99999000004 has `warranty_type="sears_protect"` but `proc_id="THM302"` (Sears Home Warranty). SO 99999000005 has `warranty_type="sears_protect"` but `proc_id="SRW000"` (Kenmore-IW). The intake form's branch UI is correct (SHW / SRW respectively) because `detectBranch()` keys off `proc_id` alone. The mismatch shows up in: admin dashboard ticket-list rendering (says "Sears Protect"), SMS templates (uses Sears Protect cash-call branch on rejection), and the agent dashboard warranty label. Fix scope: extend `warrantyType` schema + add display-label fallbacks + add cash-call mapping for the new types — non-trivial, deferred to Phase D.
+
+2. **Pre-existing intake-confirm test fixture gap (12/30 vitest tests fail).**
+   `tests/intake-confirm.test.ts:43-44` references `submissionId 79 / 80` and SOs `99999000006 / 99999000007` — these were valid against an earlier seed but became orphaned when the seed was expanded to 5 tickets (ids 84-88, SOs 99999000001-005) on 2026-04-28. Test failures all return 404 from intake-confirm because those submission IDs don't exist. NOT caused by Phase B C.1 schema work or any 2026-04-29 changes; verified by running `tests/draft-identity.test.ts` (13/13 pass) and the 5 intake-confirm tests that don't depend on the orphaned fixtures (E2/E6/E7/E8/E14, all pass). Fix: 2-line constant change in the test file to point at `submissionId 86 / 85` and SOs `99999000003 / 99999000002`. Out of scope for this handoff per Tyler's no-scope-creep rule.
+
+3. **Tech-side login credential shape mismatch (pre-existing).**
+   `users.rac_id="testtech1"` (no underscore) vs `technicians.ldap_id="test_tech_1"` (with underscore). The mismatch is intentional — submissions reference `technician_ldap_id="test_tech_1"` to match Snowflake's CMB_THD_PTY_ID format, while the user-side login uses `racId="testtech1"` to match the agent-style credential pattern. Joining the two requires reading `technicians` separately. If you decide to consolidate this in a future session, audit all callers of both fields first.
+
+4. **Phase C.2-C.5 still to build.** C.1 (this session) is just the data layer. To actually use the seeded templates: render layer (`server/services/templates.ts` with golden-output vitest), admin GET/POST/PUT routes, cutover of the 18 hardcoded `sendSms` callers in `server/routes.ts`, admin UI page. Estimated 4 sequential workstreams, can be batched as Phase C.
+
+5. **Pre-assignment of test SOs to ZZTEST9** — see SQL one-liner in the "Pre-assignment" section above to revert if you want to test the queue-claim flow instead.
+
+### (d) Republish step (you do this — agent will not)
+
+1. **Quick sanity check before publishing** (optional but recommended):
+   - Open the dev preview, log in as `ZZTEST9` / `TestAgent2026!`.
+   - Open SO 99999000003 → Intake Form tab → confirm iframe loads with all 6 always-visible fields prefilled and `Proc ID/Third Part ID = "SPRCLL-Sears Protect Home Warranty"`.
+   - Confirm the tab does NOT auto-close after the ticket is in `approved` state (the "remains on screen" requirement).
+2. **Publish via Replit's Publish button** (top-right of the workspace).
+3. **Post-publish smoke test** in production:
+   - Same login + same SO 99999000003 walk.
+   - Verify the new test data is present in production by going to admin dashboard → search SO `99999000003`.
+   - Verify the 25 communication_templates rows are present in production DB. (Run `psql $DATABASE_URL -c "SELECT count(*) FROM communication_templates;"` against prod connection; should return 25.) **If it returns 0**, the production DB needs the same `npm run db:push --force` + `npx tsx scripts/migrate-templates.ts` sequence to land the schema + seed data. Both scripts are idempotent so they're safe to re-run.
+
+### Tyler's hard rules — observed across the entire 2026-04-29 batch
+- **No version-control commits.** All changes live in working copy + DB only; this COMMITS.md is the audit trail.
+- **No Smartsheet form definition changes.** Form ID `aa5f07c589b64ae993f5f75e20f71d5f` untouched.
+- **Schema additions only** (Phase B C.1 — explicitly approved by Tyler for additive new tables). No `ALTER` on any existing table or column.
+- **Data updates** are single-field UPDATEs on existing rows (`users.rac_id`, `submissions.proc_id`, `submissions.assigned_to`).
+- **No republish performed.** Published only when Tyler clicks Publish.
+

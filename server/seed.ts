@@ -61,7 +61,13 @@ const SEED_USERS = [
     name: "Test Agent",
     role: "vrs_agent",
     phone: "5550002222",
-    racId: "testagent1",
+    // Tyler 2026-04-29 — was "testagent1" (10 chars, lowercase, obviously fake).
+    // Changed to ZZTEST9 so the intake form's "VRS Tech ID" field populates with a
+    // value matching the real-agent shape (7 chars, uppercase, ends in digit — same
+    // shape as JMORGA7 / PCANTU2). ZZ prefix is reserved-looking; no real surname
+    // starts with it, so it can't ever collide. Single-field DB UPDATE applied in
+    // lockstep on 2026-04-29; see COMMITS.md "Test agent ID realism" section.
+    racId: "ZZTEST9",
     specializations: ["cooking", "dishwasher", "microwave", "laundry", "refrigeration", "hvac", "generalist"],
   },
   {
@@ -146,7 +152,9 @@ export async function seedDatabase() {
   await cleanupTestSubmissions();
 }
 
-const TEST_RAC_IDS = ["testagent1", "TESTADMIN", "testtech1", "tmorri1", "sysadmin"];
+// Tyler 2026-04-29 — testagent1 renamed to ZZTEST9 (see SEED_USERS above).
+// Both kept here so historical pre-rename rows are still recognised by cleanup.
+const TEST_RAC_IDS = ["ZZTEST9", "testagent1", "TESTADMIN", "testtech1", "tmorri1", "sysadmin"];
 
 async function resetAllPasswords() {
   const RESET_FLAG_RAC = "__pw_reset_v2_done__";

@@ -8,6 +8,13 @@
  * easily identified and removed (see cleanup SQL in COMMITS.md).
  *
  * Tickets:
+ * Branch coverage (Tyler 2026-04-29 — diversified so all 4 intake-form branches
+ * are exercised by the test seed):
+ *   - SPHW: SO 99999000001, SO 99999000003 (proc_id SPRCLL)
+ *   - AHS:  SO 99999000002 (proc_id AHS000)
+ *   - SHW:  SO 99999000004 (proc_id THM302 — warrantyType still sears_protect; see ticket comment)
+ *   - SRW:  SO 99999000005 (proc_id SRW000 — warrantyType still sears_protect; see ticket comment)
+ *
  *   1. SO 99999000001 — Sears Protect authorization, queued (claimable from queue).
  *      Walk Stage 1 -> Stage 2 -> Stage 3 (intake auto-opens after authorize+send).
  *   2. SO 99999000002 — AHS authorization, queued (claimable from queue).
@@ -189,11 +196,17 @@ async function main() {
       so: SO_2,
       warrantyType: "american_home_shield",
       ticketStatus: "queued",
-      procId: "AHSCLL",
+      // Tyler 2026-04-29 — was "AHSCLL", which is a real Snowflake-emitted proc_id
+      // BUT is not in PROC_ID_LABEL (server/services/smartsheet.ts:39-65), so the
+      // intake form's "Proc ID/Third Part ID" combobox stayed blank for this
+      // ticket. Swapped to "AHS000" — first AHS variant in the recognized map —
+      // so the dropdown now populates as "AHS000-American Home Shield" and the
+      // AHS-branch downstream renders end-to-end.
+      procId: "AHS000",
       clientNm: "American Home Shield",
       authCode: null,
       estimateAmount: "525.00",
-      scenario: "AHS Authorization (dual-code AHS+RGC, intake auto-open)",
+      scenario: "AHS Authorization (AHS branch UI, dual-code AHS+RGC on approval)",
     },
     techUser.id,
   );
@@ -218,11 +231,20 @@ async function main() {
       warrantyType: "sears_protect",
       requestType: "parts_nla",
       ticketStatus: "queued",
-      procId: "SPRCLL",
-      clientNm: "Sears Protect",
+      // Tyler 2026-04-29 — was "SPRCLL" (SPHW branch). Swapped to "THM302" so
+      // the intake form's branch detector (detectBranch in smartsheet.ts:67-76)
+      // routes to SHW. warrantyType deliberately left at "sears_protect" — the
+      // codebase does not yet model "sears_home_warranty" as a warrantyType
+      // value, and changing it would render raw strings in admin tables and
+      // misfire the cash-call SMS branch logic. detectBranch is keyed off
+      // proc_id ALONE so the SHW intake-form UI still renders correctly; the
+      // SMS/admin labels will say "Sears Protect" for this test ticket. See
+      // COMMITS.md "Known limitations" for the rationale.
+      procId: "THM302",
+      clientNm: "Sears Home Warranty",
       authCode: null,
       estimateAmount: "0.00",
-      scenario: "Pending NLA (parts_nla queued, exercise Task A same-day SMS copy)",
+      scenario: "Pending NLA + SHW intake-form branch (THM302 → Sears Home Warranty)",
     },
     techUser.id,
   );
@@ -234,11 +256,17 @@ async function main() {
       ticketStatus: "rejected",
       stage1Status: "rejected",
       stage1RejectionReason: "Photos missing — please retake compressor closeup and model plate.",
-      procId: "SPRCLL",
-      clientNm: "Sears Protect",
+      // Tyler 2026-04-29 — was "SPRCLL" (SPHW branch). Swapped to "SRW000" so
+      // the intake form's branch detector routes to SRW (Kenmore-IW). Same
+      // warrantyType caveat as SO_4 above: "kenmore" is not a modeled
+      // warrantyType value, so we leave it at "sears_protect" and accept the
+      // SMS/admin label mismatch as a known limitation in exchange for SRW
+      // branch UI coverage. See COMMITS.md for full rationale.
+      procId: "SRW000",
+      clientNm: "Kenmore-IW",
       authCode: null,
       estimateAmount: "475.00",
-      scenario: "Rejected/resubmittable (Stage-1 rejected, drives resubmit + intake reopen)",
+      scenario: "Rejected/resubmittable + SRW intake-form branch (SRW000 → Kenmore-IW)",
     },
     techUser.id,
   );
