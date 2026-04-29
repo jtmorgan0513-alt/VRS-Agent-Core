@@ -1576,3 +1576,73 @@ The technician picks Request Type before entering Service Order (warranty auto-r
 - No republish.
 - Two surgical edits in one file, both reversible in <30 lines.
 
+
+---
+
+## 2026-04-29 — Tyler request: warranty × request-type matrix (gray-out + matrix-driven gate)
+
+### Tyler's directive
+> "Let's make this card option disappear completely instead of just highlighting that it's not available. Let's gray it out so it can't be selected, and only American Home Shield and First American can be selected. When Infestation is selected, it should still be available for [Parts]. Sears Protect, Sears PA, and Sears Home Warranty are only available under [Parts] NLA. They are not available for Infestation, and the No Model tag is handled through TechHub directly. Under Authorization, all three warranty providers are available... When it's Part is No Longer Available, it's: Sears Protect, Sears PA, Sears Home Warranty"
+
+### The matrix (single source of truth)
+```ts
+const REQUEST_TYPE_WARRANTY_MATRIX: Record<RequestTypeValue, WarrantyValue[]> = {
+  authorization:               ["sears_protect", "american_home_shield", "first_american"],
+  infestation_non_accessible:                   ["american_home_shield", "first_american"],
+  parts_nla:                   ["sears_protect"],
+};
+```
+
+| Request Type | Sears Protect / Sears PA / Cinch | American Home Shield | First American |
+|---|---|---|---|
+| Authorization | ✓ selectable | ✓ selectable | ✓ selectable |
+| Infestation / No Model Tag / Non-Accessible | grayed (handled in TechHub) | ✓ selectable | ✓ selectable |
+| Parts NLA | ✓ selectable | grayed (handled in TechHub) | grayed (handled in TechHub) |
+
+Tyler's words for the grayed cells: *"the No Model tag is handled through TechHub directly"* and the existing parts_nla pattern for the AHS/FA NLA → TechHub routing.
+
+### What changed in `client/src/pages/tech-submit.tsx`
+
+**1. Added matrix const (after WARRANTY_PROVIDERS, ~line 67).** Tiny declarative table + `WarrantyValue` / `RequestTypeValue` string-union types so the matrix is type-checked end-to-end.
+
+**2. Removed both wrong-warranty destructive banners.**
+- `banner-nla-wrong-warranty` (was lines 1028-1045) — the red banner that fired when parts_nla + AHS/FA. Gone — replaced by AHS/FA cards graying out under parts_nla.
+- `banner-infestation-wrong-warranty` (was lines 1058-1080, added earlier today) — the red banner that fired when infestation + sears_protect. Gone — replaced by Sears Protect card graying out under Infestation.
+- The `nla-info-banner` (the blue informational one explaining what NLA is for) is **kept** — it's documentation, not enforcement.
+
+**3. Removed the `watchedRequestType !== "parts_nla"` gate** that hid the entire warranty section for NLA submissions. The warranty section now ALWAYS renders so the tech can see which providers are valid for their chosen request type at all times.
+
+**4. Per-card availability inside the warranty card map.** Computes `allowedForRequest = REQUEST_TYPE_WARRANTY_MATRIX[requestType].includes(provider.value)`. Layered visual treatment:
+- `opacity-50` + `cursor-not-allowed` when not allowed for current request type.
+- New `Handled in TechHub` badge (`data-testid={`badge-techhub-${provider.value}`}`) on the right side of the grayed card.
+- Native browser tooltip via `title` attribute: *"Not available for this request type — handled through TechHub directly"*.
+- `aria-disabled` already wired.
+- `onClick` no-ops when not clickable (existing `isClickable` gate now factors in `allowedForRequest`).
+
+**5. Auto-snap useEffect** when the tech changes request type. If the current warranty selection becomes incompatible AND the warranty isn't locked from SO auto-detect, snap it to the first allowed value. If it IS locked (SO derived) and incompatible, leave it locked and show an inline conflict error instead.
+
+**6. Inline conflict banner** (`data-testid="text-warranty-request-conflict"`) under the warranty section — only fires when a locked SO-derived warranty is invalid for the chosen request type. Tells the tech to switch the request type or use TechHub.
+
+**7. Hard gate in `onSubmit` (~line 677).** Even if any UI state slips through, the submit handler validates `allowedWarranties.includes(data.warrantyType)` and toasts + returns early. Mirrors the existing `parts_nla` part-number requirement gate right above it.
+
+### What was NOT changed (intentional)
+- **`tech-resubmit.tsx`** — same `requestType` enum, same Select with the option. Still untouched (Tyler's earlier "technician submission form" scope. If you want the matrix mirrored there too, it's a parallel ~50-line lift; I'd factor the matrix out into `client/src/lib/warranty-matrix.ts` for reuse rather than duplicating the const).
+- **Server-side enforcement (zod refine)** — UI-only gate only, matching the existing `parts_nla` pattern (which also only enforces in the UI). 5-line `z.refine` in `server/routes.ts` line 476's submission schema if you want hard server-side block — call it out.
+- **Schema** — `requestType` and `warrantyType` enums unchanged. Pure UX layer.
+- **`requestType` label** — kept as `"Infestation / No Model Tag or Infestation / Non-Accessible (FA & AHS Only)"` from earlier today. The `(FA & AHS Only)` suffix is still useful upfront context even with gray-out cards.
+
+### Verification
+- HMR should pick up immediately on workflow restart.
+- Manual walk: log in as test tech → `/tech/submit` → pick each of the three request types in turn → observe:
+  - **Authorization**: all three warranty cards selectable, none grayed.
+  - **Infestation / No Model Tag / Non-Accessible**: Sears Protect card has `Handled in TechHub` badge + opacity-50 + not clickable; AHS + FA selectable.
+  - **Parts NLA**: AHS + FA cards have `Handled in TechHub` badges + opacity-50 + not clickable; Sears Protect selectable. Blue `nla-info-banner` still appears at top.
+- Edge case: enter an SO that auto-detects to Sears Protect, then pick Infestation → red `text-warranty-request-conflict` block appears under the warranty section; submit attempt blocked by toast.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (request type + warranty type enums both untouched).
+- No Smartsheet form changes.
+- No republish.
+- Single file edited (`client/src/pages/tech-submit.tsx`) with the changes scoped to: 1 new const + 2 useEffects + 1 onSubmit gate + 2 banner removals + 1 warranty card section restructure. Reversible in <80 lines if you want to roll back.
+

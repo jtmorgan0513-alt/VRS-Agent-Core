@@ -62,6 +62,24 @@ const WARRANTY_PROVIDERS = [
   { value: "first_american", label: "First American", available: true },
 ];
 
+// Tyler 2026-04-29 (warranty × request-type matrix): which warranty providers
+// are routable through VRS for each request type. Authorization is open to
+// all three; Infestation / No Model Tag / Non-Accessible is AHS + First
+// American only (Sears Protect family is handled through TechHub directly
+// for those scenarios); Parts NLA is the inverse — only the Sears Protect
+// family routes through VRS, AHS + FA NLA cases go through TechHub. Drives
+// the gray-out behavior on the warranty cards plus the onSubmit gate. UI
+// enforcement only — server-side validation deliberately omitted to match
+// the existing parts_nla precedent (additive 5-line z.refine in routes.ts
+// if Tyler later wants hard server enforcement).
+type WarrantyValue = "sears_protect" | "american_home_shield" | "first_american";
+type RequestTypeValue = "authorization" | "infestation_non_accessible" | "parts_nla";
+const REQUEST_TYPE_WARRANTY_MATRIX: Record<RequestTypeValue, WarrantyValue[]> = {
+  authorization: ["sears_protect", "american_home_shield", "first_american"],
+  infestation_non_accessible: ["american_home_shield", "first_american"],
+  parts_nla: ["sears_protect"],
+};
+
 const submissionFormSchema = z.object({
   serviceOrder: z.string().regex(/^\d{4}-\d{8}$/, "Service order must be in format DDDD-SSSSSSSS (e.g., 8175-12345678)"),
   phone: z.string().min(7, "Valid phone number is required"),
@@ -599,6 +617,29 @@ export default function TechSubmitPage() {
     }
   }, [derivedWarranty?.warrantyType, derivedWarranty?.warrantyProvider]);
 
+  // Tyler 2026-04-29 (warranty × request-type matrix): when the tech changes
+  // request type, snap the warranty selection to the first allowed value if
+  // the current selection becomes incompatible — but ONLY when the warranty
+  // isn't locked by SO auto-detection. If it IS locked and the locked value
+  // is incompatible, the conflict is surfaced as an inline error under the
+  // warranty section and onSubmit blocks. This avoids stomping the
+  // server-derived truth.
+  const watchedRequestTypeForMatrix = form.watch("requestType");
+  const watchedWarrantyForMatrix = form.watch("warrantyType");
+  useEffect(() => {
+    if (derivedWarranty) return;
+    const allowed = REQUEST_TYPE_WARRANTY_MATRIX[watchedRequestTypeForMatrix as RequestTypeValue] ?? [];
+    if (allowed.length === 0) return;
+    if (!allowed.includes(watchedWarrantyForMatrix as WarrantyValue)) {
+      const firstAllowed = allowed[0];
+      const provider = WARRANTY_PROVIDERS.find(p => p.value === firstAllowed);
+      form.setValue("warrantyType", firstAllowed as any, { shouldDirty: false });
+      if (provider) {
+        form.setValue("warrantyProvider", provider.label, { shouldDirty: false });
+      }
+    }
+  }, [watchedRequestTypeForMatrix, derivedWarranty?.warrantyType]);
+
   const mutation = useMutation({
     mutationFn: async (data: SubmissionFormData & { originalDescription?: string; aiEnhanced?: boolean }) => {
       const res = await apiRequest("POST", "/api/submissions", data);
@@ -634,6 +675,21 @@ export default function TechSubmitPage() {
   const [pendingData, setPendingData] = useState<SubmissionFormData | null>(null);
 
   function onSubmit(data: SubmissionFormData) {
+    // Tyler 2026-04-29 (warranty × request-type matrix): hard gate. The UI
+    // grays out incompatible warranty cards, but if the SO auto-detected a
+    // warranty that doesn't match the chosen request type — or any state
+    // change slipped through — block submission with a clear toast pointing
+    // the tech at the fix.
+    const allowedWarranties = REQUEST_TYPE_WARRANTY_MATRIX[data.requestType as RequestTypeValue] ?? [];
+    if (allowedWarranties.length > 0 && !allowedWarranties.includes(data.warrantyType as WarrantyValue)) {
+      const requestLabel = formatRequestTypeLabel(data.requestType);
+      toast({
+        title: "Warranty / Request Type Mismatch",
+        description: `${requestLabel} is not available for the current warranty provider. Switch the request type or handle this case through TechHub directly.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (data.requestType === "parts_nla") {
       const nlaParts = partNumbers.filter(p => p.trim() !== "");
       const otherParts = availableParts.filter(p => p.trim() !== "");
@@ -1017,9 +1073,7 @@ export default function TechSubmitPage() {
               )}
             />
 
-            {watchedRequestType === "parts_nla" &&
-              watchedValues.warrantyType !== "american_home_shield" &&
-              watchedValues.warrantyType !== "first_american" && (
+            {watchedRequestType === "parts_nla" && (
               <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3" data-testid="nla-info-banner">
                 <div className="flex items-start gap-2">
                   <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
@@ -1033,48 +1087,14 @@ export default function TechSubmitPage() {
               </div>
             )}
 
-            {watchedRequestType === "parts_nla" &&
-              (watchedValues.warrantyType === "american_home_shield" ||
-                watchedValues.warrantyType === "first_american") && (
-              <div
-                className="rounded-md border border-destructive bg-destructive/10 p-3"
-                data-testid="banner-nla-wrong-warranty"
-              >
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                  <div className="text-sm">
-                    <p className="font-medium text-destructive">Use TechHub for AHS / First American NLA</p>
-                    <p className="text-destructive/90 mt-0.5">
-                      Handle AHS or First American NLA situations through TechHub — VRS does not route these to agents. Switch the request type to "Authorization" if this is a coverage approval question instead.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tyler 2026-04-29: Infestation / No Model Tag / Non-Accessible is
-                an AHS + First American only request type. If the warranty
-                auto-resolves (or is manually set) to Sears Protect, surface a
-                destructive banner pointing the tech back to Authorization.
-                Mirrors the parts_nla wrong-warranty banner above. UI-side gate
-                only — same approach the parts_nla path uses today. */}
-            {watchedRequestType === "infestation_non_accessible" &&
-              watchedValues.warrantyType === "sears_protect" && (
-              <div
-                className="rounded-md border border-destructive bg-destructive/10 p-3"
-                data-testid="banner-infestation-wrong-warranty"
-              >
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                  <div className="text-sm">
-                    <p className="font-medium text-destructive">Infestation / Non-Accessible is for AHS & First American only</p>
-                    <p className="text-destructive/90 mt-0.5">
-                      For Sears Protect, Sears PA, or Sears Home Warranty (Cinch) calls, switch the request type to "Authorization" and document the infestation, missing model tag, or access limitation in the issue description.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Tyler 2026-04-29 (warranty × request-type matrix): the previous
+                pair of destructive wrong-warranty banners (banner-nla-wrong-
+                warranty + banner-infestation-wrong-warranty) was removed in
+                favor of graying out the incompatible warranty cards directly
+                in the warranty section below. Visual consistency: the tech
+                sees the disallowed providers grayed with a "Handled in
+                TechHub" badge, instead of choosing them and getting a red
+                banner after. */}
 
             <Card>
               <CardContent className="p-4 space-y-4">
@@ -1185,79 +1205,115 @@ export default function TechSubmitPage() {
                   )}
                 />
 
-                {watchedRequestType !== "parts_nla" && (
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-sm font-medium">Warranty Provider</label>
-                      <HelpTooltip content="The warranty provider is auto-detected from the service order's customer record. When auto-detected, the selection is locked. If detection cannot identify the provider, you can select it manually." />
-                    </div>
-                    {derivedWarranty ? (
-                      <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1" data-testid="text-warranty-locked-note">
-                        <Lock className="w-3 h-3" />
-                        Auto-detected from service order — locked.
-                      </p>
-                    ) : warrantyLookup.isFetching ? (
-                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-lookup-loading">
-                        Looking up warranty provider from service order…
-                      </p>
-                    ) : isValidSo ? (
-                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
-                        Could not auto-detect — please select the warranty provider.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
-                        Will be auto-detected from the service order once entered.
-                      </p>
-                    )}
-                    <div className="mt-2 space-y-2">
-                      {WARRANTY_PROVIDERS.map((provider) => {
-                        const isSelected = form.watch("warrantyType") === provider.value;
-                        const isLocked = !!derivedWarranty;
-                        const isClickable = provider.available && !isLocked;
-                        return (
-                          <div
-                            key={provider.value}
-                            className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
-                              isClickable
-                                ? "cursor-pointer hover-elevate"
-                                : "cursor-not-allowed"
-                            } ${
-                              isLocked && !isSelected ? "opacity-50" : ""
-                            } ${
-                              !provider.available ? "opacity-60" : ""
-                            } ${
-                              isSelected ? "border-primary bg-primary/5" : ""
-                            }`}
-                            onClick={() => {
-                              if (isClickable) {
-                                form.setValue("warrantyType", provider.value as any);
-                                form.setValue("warrantyProvider", provider.label);
-                              }
-                            }}
-                            data-testid={`provider-${provider.value}`}
-                            aria-disabled={!isClickable}
-                          >
-                            <span className="text-sm">{provider.label}</span>
-                            <div className="flex items-center gap-1">
-                              {isLocked && isSelected && (
-                                <Badge variant="secondary" className="text-xs" data-testid={`badge-locked-${provider.value}`}>
-                                  <Lock className="w-3 h-3 mr-1" />
-                                  Auto-detected
-                                </Badge>
-                              )}
-                              {!provider.available && (
-                                <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
-                                  <Lock className="w-3 h-3 mr-1" />
-                                  Coming Soon
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                {/* Tyler 2026-04-29 (warranty × request-type matrix): the
+                    `watchedRequestType !== "parts_nla"` gate that previously
+                    hid this whole section for NLA submissions has been
+                    removed. The warranty section now ALWAYS renders — for
+                    Parts NLA the AHS + First American cards gray out
+                    (handled-in-TechHub) and Sears Protect is the only
+                    selectable option. Same gray-out logic also restricts
+                    Sears Protect under Infestation / No Model Tag /
+                    Non-Accessible. */}
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-sm font-medium">Warranty Provider</label>
+                    <HelpTooltip content="The warranty provider is auto-detected from the service order's customer record. When auto-detected, the selection is locked. If detection cannot identify the provider, you can select it manually. Some providers may be unavailable depending on the request type." />
                   </div>
-                )}
+                  {derivedWarranty ? (
+                    <p className="mt-1 text-xs text-muted-foreground flex items-center gap-1" data-testid="text-warranty-locked-note">
+                      <Lock className="w-3 h-3" />
+                      Auto-detected from service order — locked.
+                    </p>
+                  ) : warrantyLookup.isFetching ? (
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-lookup-loading">
+                      Looking up warranty provider from service order…
+                    </p>
+                  ) : isValidSo ? (
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
+                      Could not auto-detect — please select the warranty provider.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="text-warranty-autodetect-note">
+                      Will be auto-detected from the service order once entered.
+                    </p>
+                  )}
+                  {/* Tyler 2026-04-29: surface a conflict when the SO-derived
+                      warranty isn't valid for the selected request type.
+                      onSubmit blocks the same way; this is the inline
+                      explanation of why submission is blocked. */}
+                  {derivedWarranty && (() => {
+                    const allowed = REQUEST_TYPE_WARRANTY_MATRIX[watchedRequestType as RequestTypeValue] ?? [];
+                    return allowed.length > 0 && !allowed.includes(derivedWarranty.warrantyType as WarrantyValue);
+                  })() && (
+                    <div
+                      className="mt-2 rounded-md border border-destructive bg-destructive/10 p-2.5"
+                      data-testid="text-warranty-request-conflict"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                        <p className="text-xs text-destructive">
+                          This service order's warranty doesn't match the selected request type. Switch the request type, or handle this case through TechHub directly.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2 space-y-2">
+                    {WARRANTY_PROVIDERS.map((provider) => {
+                      const allowedForRequest = (REQUEST_TYPE_WARRANTY_MATRIX[watchedRequestType as RequestTypeValue] ?? []).includes(provider.value as WarrantyValue);
+                      const isSelected = form.watch("warrantyType") === provider.value;
+                      const isLocked = !!derivedWarranty;
+                      const isClickable = provider.available && allowedForRequest && !isLocked;
+                      return (
+                        <div
+                          key={provider.value}
+                          className={`flex items-center justify-between gap-2 p-3 rounded-md border ${
+                            isClickable
+                              ? "cursor-pointer hover-elevate"
+                              : "cursor-not-allowed"
+                          } ${
+                            isLocked && !isSelected ? "opacity-50" : ""
+                          } ${
+                            !allowedForRequest ? "opacity-50" : ""
+                          } ${
+                            !provider.available ? "opacity-60" : ""
+                          } ${
+                            isSelected ? "border-primary bg-primary/5" : ""
+                          }`}
+                          onClick={() => {
+                            if (isClickable) {
+                              form.setValue("warrantyType", provider.value as any);
+                              form.setValue("warrantyProvider", provider.label);
+                            }
+                          }}
+                          data-testid={`provider-${provider.value}`}
+                          aria-disabled={!isClickable}
+                          title={!allowedForRequest ? "Not available for this request type — handled through TechHub directly" : undefined}
+                        >
+                          <span className="text-sm">{provider.label}</span>
+                          <div className="flex items-center gap-1">
+                            {isLocked && isSelected && (
+                              <Badge variant="secondary" className="text-xs" data-testid={`badge-locked-${provider.value}`}>
+                                <Lock className="w-3 h-3 mr-1" />
+                                Auto-detected
+                              </Badge>
+                            )}
+                            {!allowedForRequest && (
+                              <Badge variant="secondary" className="text-xs" data-testid={`badge-techhub-${provider.value}`}>
+                                Handled in TechHub
+                              </Badge>
+                            )}
+                            {!provider.available && (
+                              <Badge variant="secondary" className="text-xs" data-testid={`badge-coming-soon-${provider.value}`}>
+                                <Lock className="w-3 h-3 mr-1" />
+                                Coming Soon
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
