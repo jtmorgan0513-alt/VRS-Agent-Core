@@ -1133,3 +1133,71 @@ Test Files  2 passed (2)
 - COMMITS.md appended only after harness re-passed (30/30).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**
+
+
+---
+
+## 2026-04-28 — Tyler Phase A approval: test-ticket seed expansion
+
+### Context
+Tyler needs end-to-end test coverage on the intake-form flow before Task B Phase C ships. Existing `scripts/seed-test-tickets.ts` covered 3 of the 5 states he wants (fresh queued × 2 + pre-approved). Added the 2 missing states (pending NLA + rejected/resubmittable) so the full intake flow can be exercised against deterministic SOs that don't touch prod data.
+
+### Scope
+Pure additive on the test-data layer. NO schema change. NO production-row touch. Test SO range `99999000001-99999000005`, all flagged with `[TEST]` in `issue_description` for easy grep + cleanup. Extension of an existing test script — no new scripts created.
+
+### Changes
+
+**File: `scripts/seed-test-tickets.ts`**
+- Added SO_4 = "99999000004" and SO_5 = "99999000005" constants.
+- Extended `TicketSpec` interface with three new optional fields: `requestType?: "authorization" | "parts_nla"`, `ticketStatus` enum widened to include `"rejected"`, `stage1Status?` (full enum), `stage1RejectionReason?`. All optional with defaults that preserve original 3-ticket behavior.
+- `ensureSubmission` now reads `spec.requestType ?? "authorization"`, `spec.stage1Status ?? (isApproved ? "approved" : "pending")`, and writes `spec.stage1RejectionReason ?? null`. Existing 3 ticket specs unchanged in behavior since they don't set these new fields.
+- Header docstring updated to document the 5 ticket scenarios (#4 and #5 added).
+- Two new `ensureSubmission(...)` calls appended in `main()`:
+  - **SO 99999000004** — `requestType: "parts_nla"`, `ticketStatus: "queued"`, refrigeration, Sears Protect. Lets Tyler drive the new Task A NLA SMS copy (same-day turnaround, suppressed claim SMS) end-to-end.
+  - **SO 99999000005** — `ticketStatus: "rejected"`, `stage1Status: "rejected"`, with `stage1RejectionReason: "Photos missing — please retake compressor closeup and model plate."`. Drives the tech resubmit + intake reopen flow against a previously-rejected ticket.
+
+### Re-seed / verification
+
+Pre-existing rows in the dev DB had been walked through to `ticketStatus="completed"` by prior end-to-end testing. Wiped the test SOs (with FK-safe cascade to `sms_notifications` and `intake_forms`) and re-ran the seed to land fresh-state rows. Verification SELECT confirmed:
+
+```
+ id | service_order |  request_type | ticket_status | stage1_status | stage2_status |  auth_code   | ldap
+----+---------------+---------------+---------------+---------------+---------------+--------------+-------------
+ 84 | 99999000001   | authorization | queued        | pending       | pending       | (null)       | test_tech_1
+ 85 | 99999000002   | authorization | queued        | pending       | pending       | (null)       | test_tech_1
+ 86 | 99999000003   | authorization | approved      | approved      | approved      | TEST-AUTH-001| test_tech_1
+ 87 | 99999000004   | parts_nla     | queued        | pending       | pending       | (null)       | test_tech_1
+ 88 | 99999000005   | authorization | rejected      | rejected      | pending       | (null)       | test_tech_1
+```
+
+### Cleanup SQL (run any time to fully purge test rows)
+
+```sql
+BEGIN;
+DELETE FROM sms_notifications
+ WHERE submission_id IN (SELECT id FROM submissions WHERE service_order LIKE '99999000%');
+DELETE FROM intake_forms
+ WHERE submission_id IN (SELECT id FROM submissions WHERE service_order LIKE '99999000%');
+DELETE FROM submissions WHERE service_order LIKE '99999000%';
+-- (technicians + users rows for test_tech_1 / TEST_TECH_1 left in place; reusable across seed runs)
+COMMIT;
+```
+
+To re-seed any time after cleanup: `npx tsx scripts/seed-test-tickets.ts` (idempotent — skips existing rows; if you wipe first the script will create fresh rows in the desired test states).
+
+### Test-tech credentials
+
+- **Tech LDAP** (for `/tech/submit` form): `test_tech_1` (display name `TEST_TECH_1`, district `8175`, tech_un_no `T_TEST_001`, phone `555-0100`).
+- **Tech user-table password** (if the flow asks for one): `disabled-test-account-no-login` — literal string, hashed at seed time. Marked `isActive: true`, `firstLogin: false`, `mustChangePassword: false` so it won't gate on password-rotation prompts.
+- **Agent dashboard login** (for the review side of the flow, unchanged from existing): `testagent1 / TestAgent2026!` — pre-existing account from `server/seed.ts`.
+- **Test SOs**: `99999000001` (fresh SP), `99999000002` (fresh AHS, two-stage), `99999000003` (pre-approved SP), `99999000004` (pending NLA), `99999000005` (rejected/resubmittable).
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (all columns referenced already exist in `submissions`).
+- No Smartsheet form changes.
+- No republish.
+- Additive on data layer (test-only SO range, easy purge query above).
+- COMMITS.md updated only after seed verified via SELECT.
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**

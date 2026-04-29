@@ -15,6 +15,12 @@
  *   3. SO 99999000003 — already-approved Sears Protect (auth_code populated,
  *      no intake_forms row). Lands directly on Stage 3 to verify auto-open
  *      and the "Re-open intake form" fallback button.
+ *   4. SO 99999000004 — pending NLA (parts_nla queued, refrigeration, Sears
+ *      Protect). Exercises the Task A NLA SMS copy (same-day turnaround +
+ *      suppressed claim SMS).
+ *   5. SO 99999000005 — rejected/resubmittable (Stage-1 rejected with a
+ *      sample rejection reason). Drives the tech-resubmit flow + intake
+ *      reopen on a previously-rejected ticket.
  */
 
 import bcryptjs from "bcryptjs";
@@ -32,6 +38,8 @@ const DISTRICT = "8175";
 const SO_1 = "99999000001";
 const SO_2 = "99999000002";
 const SO_3 = "99999000003";
+const SO_4 = "99999000004";
+const SO_5 = "99999000005";
 
 async function ensureTechnicianUser() {
   const existing = await db.select().from(users).where(eq(users.racId, TECH_RAC)).limit(1);
@@ -86,7 +94,10 @@ async function ensureTechnicianRow() {
 interface TicketSpec {
   so: string;
   warrantyType: "sears_protect" | "american_home_shield";
-  ticketStatus: "queued" | "approved";
+  requestType?: "authorization" | "parts_nla";
+  ticketStatus: "queued" | "approved" | "rejected";
+  stage1Status?: "pending" | "approved" | "rejected" | "invalid";
+  stage1RejectionReason?: string;
   procId: string;
   clientNm: string;
   authCode: string | null;
@@ -115,7 +126,7 @@ async function ensureSubmission(spec: TicketSpec, technicianUserId: number) {
       serviceOrder: spec.so,
       districtCode: DISTRICT,
       applianceType: "refrigeration",
-      requestType: "authorization",
+      requestType: spec.requestType ?? "authorization",
       warrantyType: spec.warrantyType,
       issueDescription: `[TEST] ${spec.scenario} — Refrigerator not cooling, compressor running but no cold air. SO ${spec.so}.`,
       estimateAmount: spec.estimateAmount,
@@ -123,8 +134,9 @@ async function ensureSubmission(spec: TicketSpec, technicianUserId: number) {
       procId: spec.procId,
       clientNm: spec.clientNm,
       ticketStatus: spec.ticketStatus,
-      stage1Status: isApproved ? "approved" : "pending",
+      stage1Status: spec.stage1Status ?? (isApproved ? "approved" : "pending"),
       stage2Status: isApproved ? "approved" : "pending",
+      stage1RejectionReason: spec.stage1RejectionReason ?? null,
       submissionApproved: isApproved,
       submissionApprovedAt: isApproved ? sql`now()` : null,
       authCode: spec.authCode,
@@ -179,6 +191,37 @@ async function main() {
       authCode: "TEST-AUTH-001",
       estimateAmount: "612.50",
       scenario: "Pre-approved Sears Protect (Stage 3 landing, no intake_forms row)",
+    },
+    techUser.id,
+  );
+
+  await ensureSubmission(
+    {
+      so: SO_4,
+      warrantyType: "sears_protect",
+      requestType: "parts_nla",
+      ticketStatus: "queued",
+      procId: "SPRCLL",
+      clientNm: "Sears Protect",
+      authCode: null,
+      estimateAmount: "0.00",
+      scenario: "Pending NLA (parts_nla queued, exercise Task A same-day SMS copy)",
+    },
+    techUser.id,
+  );
+
+  await ensureSubmission(
+    {
+      so: SO_5,
+      warrantyType: "sears_protect",
+      ticketStatus: "rejected",
+      stage1Status: "rejected",
+      stage1RejectionReason: "Photos missing — please retake compressor closeup and model plate.",
+      procId: "SPRCLL",
+      clientNm: "Sears Protect",
+      authCode: null,
+      estimateAmount: "475.00",
+      scenario: "Rejected/resubmittable (Stage-1 rejected, drives resubmit + intake reopen)",
     },
     techUser.id,
   );
