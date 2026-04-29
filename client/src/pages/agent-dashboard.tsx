@@ -9,11 +9,14 @@ import { getBusinessElapsedMs } from "@/lib/business-hours";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings, getNotificationPermission } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { IntakeFormFieldset } from "@/components/intake-form-fieldset";
+// Tyler 2026-04-29 — IntakeFormFieldset + intake-form-config imports removed
+// here. The "Branch fields" Collapsible panel inside IntakeFormTab was
+// retired (duplicated the Smartsheet iframe's own data-entry surface). The
+// server-side `detectBranch` in `server/services/smartsheet.ts` still drives
+// the prefill URL — only the client-side fieldset/gating helpers are gone.
 import { IntakeFormTab } from "@/components/intake-form-tab";
 import { CalculatorIframe } from "@/components/calculator-iframe";
 import { CalculatorSettingsDialog } from "@/components/calculator-settings-dialog";
-import { detectBranch as detectIntakeBranch, findMissingRequired as findIntakeMissingRequired } from "@/lib/intake-form-config";
 import type { Submission } from "@shared/schema";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
@@ -2573,25 +2576,18 @@ export default function AgentDashboard() {
                             </p>
                           </div>
                         </CardHeader>
-                        {/* Tyler 2026-04-29 (intake-form layout fix):
-                            "We are supposed to be seeing the Ticket
-                            information on the left even after it has been
-                            approved and sent to the technician, and see the
-                            intake form on the right so that the form stays
-                            on screen until submitted allowing the agent to
-                            start working another ticket."
-                            The IntakeFormFieldset previously rendered here
-                            has moved INTO the IntakeFormTab on the right,
-                            above the iframe (collapsible card). All helpers
-                            move with it: notes auto-paste into Comments,
-                            "X required fields still" gate, branch awareness.
-                            This card now functions purely as a Stage 3
-                            status indicator — no data entry on the left,
-                            so the ticket information cards above stay the
-                            dominant content. The agent reads the ticket on
-                            the left and works the intake form on the right.
-                            CardContent intentionally omitted (header
-                            banner above already carries the message). */}
+                        {/* Tyler 2026-04-29 (intake-form layout fix → simplified
+                            2026-04-29 batch B): the IntakeFormFieldset that
+                            briefly lived inside the right-side IntakeFormTab
+                            has been REMOVED entirely. Rationale: it duplicated
+                            the data-entry surface that the agent already
+                            interacts with inside the Smartsheet iframe — there
+                            is no value in two places to type the same thing.
+                            This Stage 3 card now functions purely as a status
+                            indicator on the left: agent reads the ticket on the
+                            left, works the Smartsheet iframe on the right.
+                            CardContent intentionally omitted (header banner
+                            above already carries the message). */}
                       </Card>
                     )}
 
@@ -3588,13 +3584,15 @@ export default function AgentDashboard() {
                           // serviceOrder=null mid-Authorize and fail to
                           // build the prefill URL.
                           serviceOrder={effectiveSelectedSubmission?.serviceOrder ?? null}
-                          // Tyler 2026-04-29 (intake-form layout fix): procId
-                          // + onPayloadChange wire the IntakeFormFieldset
-                          // (which moved into this tab from the left Stage 3
-                          // card) so it can detect the SHW/SPHW/AHS/SRW
-                          // branch and mutate the working payload in place.
-                          // Same `intakeValues` state, same plumbing — just
-                          // a different parent owning the rendered fieldset.
+                          // Tyler 2026-04-29 (batch B): the IntakeFormFieldset
+                          // that briefly used these props is now removed.
+                          // procId + payload + onPayloadChange remain because
+                          // they still drive the SERVER /preview endpoint —
+                          // the server uses procId for branch detection and
+                          // bakes payload (server-derived defaults from
+                          // /preview's `derivedDefaults` response) into the
+                          // Smartsheet prefill URL. There is no longer any
+                          // agent-facing UI that mutates payload directly.
                           procId={(effectiveSelectedSubmission as any)?.procId ?? null}
                           onPayloadChange={setIntakeValues}
                           payload={intakeValues}

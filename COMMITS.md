@@ -1701,3 +1701,60 @@ Tyler's words for the grayed cells: *"the No Model tag is handled through TechHu
 - No Smartsheet form change.
 - No republish.
 - 1 new file (~140 lines), 2 files edited (~4 small surgical changes each). Reversible by deleting `business-hours.ts` and reverting the 3 imports + 4 callsites.
+
+---
+
+## 2026-04-29 — Tyler request: remove duplicate "Branch fields" panel from intake tab
+
+### Tyler's directive
+> "That's stupid. If it's already on the form and they're filling it out in the iframe, we don't need a secondary place to enter the same information. If they have to interact with the intake form in the iframe, that's all they need to do. We shouldn't have a duplicate of it."
+
+### Context (so this isn't lost)
+The intake form lives in the right-side "Intake Form" tab on the agent ticket page. Until today the tab rendered:
+1. (top) **Branch fields Collapsible panel** — `<IntakeFormFieldset>`, the "(click to collapse)" section that re-rendered SPHW Active Date / SPHW Days Active / Pre-existing condition / Repair-vs-Replacement Decision in our own UI.
+2. (middle) **Smartsheet iframe** — the actual TRANSFORMCO "VRS Unrep Intake Form 2.0".
+3. (bottom) **Attestation checkbox + "I submitted Smartsheet" button**.
+
+Edits in (1) re-fired `POST /api/submissions/:id/intake-form/preview`, which rebuilt a Smartsheet prefill URL with the new value and reloaded the iframe (memoized `iframeKey` on `preview.url`). So the panel was a *proxy* for editing the iframe — but the iframe itself was always editable too. Two doors, same room.
+
+### What changed (3 files)
+**`client/src/components/intake-form-tab.tsx`**
+- Removed the `<Collapsible>` block (was ~32 lines wrapping `<IntakeFormFieldset>`).
+- Removed `useState fieldsetOpen`.
+- Removed imports: `Collapsible / CollapsibleContent / CollapsibleTrigger`, `ChevronDown / ChevronRight`, `IntakeFormFieldset`.
+- File-header `History:` block updated with the rationale + audit-trail trade-off (see "What we lose" below).
+- Prop docstrings on `procId` / `onPayloadChange` / `onPreviewLoaded` updated to reflect that no client UI consumes them anymore — they're pure server-feed plumbing now.
+
+**`client/src/pages/agent-dashboard.tsx`**
+- Removed dead imports: `IntakeFormFieldset`, `detectIntakeBranch`, `findIntakeMissingRequired`. Replaced with a 5-line block comment so a future agent doesn't reinvent the panel.
+- Two stale code comments updated (Stage 3 card on the left + the `<IntakeFormTab>` props block) so they document the new reality.
+- **Did NOT remove** the `procId` / `onPayloadChange` / `payload` / `intakeValues` plumbing — it still drives the SERVER's `derivedDefaults` round-trip (server detects branch from `procId`, bakes prefilled values into the iframe URL via `payload`). Removing those would require a deeper refactor that doesn't change the user-visible behavior. Defer.
+
+**Deleted as orphaned dead code:**
+- `client/src/components/intake-form-fieldset.tsx` (~250 lines)
+- `client/src/lib/intake-form-config.ts` (~270 lines)
+- Verified zero remaining importers via `rg`. The server has its own copy of `detectBranch` in `server/services/smartsheet.ts:62` — that's the one that builds the prefill URL and is completely independent of the deleted client files.
+
+### What we lose (Tyler accepted)
+1. **Our own structured copy of the agent's answers in `intake_forms.payload`.** From now on, that JSON column stores ONLY the server-derived defaults (proc_id, IH unit number, agent racId, ticket metadata) — not whatever the agent typed into the Smartsheet form. The agent's actual answers live exclusively in Smartsheet itself. Tyler's stance: Smartsheet is the source of truth.
+2. **Client-side required-field gate** ("X required fields still"). Was never a hard block on the submit button (the button only required the attestation checkbox + preview loaded), but the visible counter is gone. Smartsheet's own required-field validation still runs inside the iframe.
+3. **Override capability for derived defaults.** If the server's `derivedDefaults` were wrong, the agent used to be able to fix them in our UI before Smartsheet saw them. Now they'd have to fix them inside the Smartsheet form directly. In practice no one has ever reported this happening, but it's now a path of last resort instead of an ergonomic fix.
+
+### What we keep
+- iframe still loads with server-derived prefills (proc_id, IH unit number, agent racId, etc.) baked into the URL. Agent doesn't have to retype those fields.
+- Attestation checkbox + "I submitted Smartsheet" button + `intake-confirm` POST flow unchanged.
+- Green "Intake recorded" success banner unchanged (still keyed on server's `intakeStatus.intakeForm.createdAt`).
+- "Open in new tab" link unchanged.
+- Server endpoints `/intake-form/preview` and `/intake-form/confirm` unchanged — no API surface area touched.
+- All admin-side reporting unchanged.
+
+### How to bring it back if Tyler changes his mind
+The two deleted files exist in git history at the checkpoint immediately before this change. Restore with `git show HEAD~1:client/src/components/intake-form-fieldset.tsx > client/src/components/intake-form-fieldset.tsx` and the same for `intake-form-config.ts`, then re-add the imports + `<Collapsible>` block. Estimated 10 minutes including verification. Documented here so a future agent doesn't have to reverse-engineer the layout from scratch.
+
+### Hard rules — observed
+- Append-only audit (this section).
+- No `package.json` change.
+- No schema change (intake_forms.payload column still exists, just gets thinner content).
+- No Smartsheet form change.
+- No republish.
+- 1 file edited (intake-form-tab.tsx), 1 file edited (agent-dashboard.tsx — imports + 2 comments + 0 functional changes), 2 files deleted, 0 schema changes. Net code reduction ~520 lines.

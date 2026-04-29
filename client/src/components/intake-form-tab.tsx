@@ -3,11 +3,22 @@
 // right-side panel of the agent ticket resolution page (third tab, alongside
 // Service Order History and Calculator).
 // =============================================================================
-// History: this component supersedes the prior IntakeFormReviewModal. The modal
-// popup model was retired 2026-04-27 (Tyler) — the form now lives as a tab so
-// it sits next to SHSAI / Calculator instead of stealing focus. The Option B
-// onLoad probe / auto-close work that lived in the modal is also cancelled —
-// see COMMITS.md and docs/superpowers/plans/2026-04-25-calculator-and-intake-form.md.
+// History:
+//   * 2026-04-27 (Tyler) — retired the IntakeFormReviewModal popup; intake
+//     form now lives as a tab so it sits next to SHSAI / Calculator instead
+//     of stealing focus. The Option B onLoad probe / auto-close work was
+//     also cancelled here.
+//   * 2026-04-29 (Tyler) — REMOVED the "Branch fields" Collapsible panel
+//     (IntakeFormFieldset). It was a duplicate data-entry surface for the
+//     same fields the agent fills inside the Smartsheet iframe below; the
+//     iframe IS the agent's interaction point. The server still derives
+//     defaults (proc_id, IH unit number, agent racId, etc.) and bakes them
+//     into the prefill URL via the same /preview endpoint — those derived
+//     defaults flow through `payload` -> iframe URL automatically without
+//     any agent-facing fieldset. Agent-typed values now live exclusively
+//     in Smartsheet. Our `intake_forms.payload` audit row therefore stores
+//     ONLY server-derived defaults from now on, not agent edits — Tyler
+//     accepted the trade-off ("Smartsheet is the source of truth").
 //
 // Server endpoints used (UNCHANGED from the modal era):
 //   POST /api/submissions/:id/intake-form/preview  -> { url, params, branch, warnings, derivedDefaults? }
@@ -25,21 +36,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   Loader2,
   ExternalLink,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { IntakeFormFieldset } from "@/components/intake-form-fieldset";
 
 export interface IntakeFormTabIntakeStatus {
   required: boolean;
@@ -60,18 +63,19 @@ export interface IntakeFormTabProps {
    *  row is created. Used by parent to clear local working state and
    *  invalidate the per-submission status query. */
   onConfirmed: () => void;
-  /** Emits server-side derived defaults so the parent can seed the Stage 3
-   *  fallback fieldset state (preserves the same plumbing the modal had). */
+  /** Emits server-side derived defaults so the parent can seed the working
+   *  payload. After the 2026-04-29 fieldset removal these flow straight back
+   *  into `payload` -> /preview re-fire -> updated iframe URL, with no
+   *  agent-facing UI in between. */
   onPreviewLoaded?: (derivedDefaults: Record<string, string>) => void;
-  /** Tyler 2026-04-29 (intake-form layout fix): submission's PROC ID, used
-   *  by the embedded IntakeFormFieldset to detect the SHW/SPHW/AHS/SRW
-   *  branch. The fieldset moved here from the left Stage 3 card so the
-   *  left column can stay focused on ticket information. */
+  /** Submission's PROC ID. Forwarded to the SERVER /preview endpoint via
+   *  `payload`-driven re-renders so it can detect the SHW/SPHW/AHS/SRW
+   *  branch and bake the right fields into the prefill URL. No client-side
+   *  consumer remains since the IntakeFormFieldset was removed. */
   procId?: string | null;
-  /** Tyler 2026-04-29: lets the embedded fieldset write back into the
-   *  parent's `intakeValues` state. The parent owns the working payload
-   *  so notes auto-paste, derivedDefaults merge, and prefill URL build
-   *  all keep referencing a single source of truth. */
+  /** Receives server-derived defaults (via `onPreviewLoaded`) so the parent
+   *  can hold them in `intakeValues` and re-feed them as `payload`. There
+   *  is no agent-facing UI that calls this directly anymore. */
   onPayloadChange?: (next: Record<string, string>) => void;
 }
 
@@ -108,12 +112,6 @@ export function IntakeFormTab({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [smartsheetSuccessConfirmed, setSmartsheetSuccessConfirmed] = useState(false);
-  // Tyler 2026-04-29 (intake-form layout fix): the IntakeFormFieldset moved
-  // here from the left-side Stage 3 card. Default expanded so first-time
-  // agents see all branch fields + the "X required" gate immediately;
-  // collapsible so power users can hide it once they trust the prefill and
-  // give the iframe maximum vertical space.
-  const [fieldsetOpen, setFieldsetOpen] = useState(true);
 
   const required = !!intakeStatus?.required;
   const recorded = !!intakeStatus?.recorded;
@@ -253,45 +251,15 @@ export function IntakeFormTab({
         </div>
       )}
 
-      {/* Tyler 2026-04-29 (intake-form layout fix): IntakeFormFieldset moved
-          here from the left-side Stage 3 card so the left column stays focused
-          on ticket information. Wrapped in a Collapsible so power users can
-          hide it after filling once and give the iframe maximum height; default
-          open so first-time agents see all branch fields + the "X required"
-          gate immediately. Only renders when we have a real submissionId AND
-          a procId (otherwise branch detection is meaningless). */}
-      {submissionId && onPayloadChange && (
-        <Collapsible
-          open={fieldsetOpen}
-          onOpenChange={setFieldsetOpen}
-          className="border-b shrink-0"
-          data-testid="collapsible-intake-fieldset"
-        >
-          <CollapsibleTrigger
-            className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium hover-elevate text-left"
-            data-testid="trigger-intake-fieldset"
-          >
-            <span className="flex items-center gap-1.5">
-              {fieldsetOpen ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )}
-              Branch fields {fieldsetOpen ? "(click to collapse)" : "(click to expand)"}
-            </span>
-          </CollapsibleTrigger>
-          <CollapsibleContent
-            className="max-h-[40vh] overflow-y-auto px-3 pb-3"
-            data-testid="content-intake-fieldset"
-          >
-            <IntakeFormFieldset
-              procId={procId ?? null}
-              values={payload}
-              onChange={onPayloadChange}
-            />
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+      {/* Tyler 2026-04-29 — IntakeFormFieldset (the "Branch fields" Collapsible
+          panel) was REMOVED here. It duplicated the data-entry surface that
+          the agent already interacts with inside the Smartsheet iframe below,
+          and offered no value beyond what the iframe itself provides. The
+          server's `derivedDefaults` (proc_id, IH unit number, agent racId,
+          etc.) still flow into the iframe URL via the /preview endpoint —
+          they just no longer have an editable UI surface above the iframe.
+          See the file-header HISTORY comment + COMMITS.md for the full
+          rationale (audit-payload trade-off accepted). */}
 
       <div className="flex-1 min-h-0 flex flex-col">
         {loading && !preview && (
