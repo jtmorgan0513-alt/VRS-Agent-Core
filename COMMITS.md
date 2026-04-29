@@ -1893,3 +1893,107 @@ Architect review surfaced one ship-blocker against the safety contract and two l
 3. **Explicit error UI state (UX polish, fixed).** Admin Communications page now distinguishes load failure from empty state. Previously a 500 from `GET /api/admin/communication-templates` showed "No templates have been seeded yet" which would mislead an admin during an outage. Now shows "Could not load templates" with the error message + a Retry button (`data-testid="status-load-error"`, `data-testid="button-retry-load"`).
 
 Net additional changes: 3 files (`server/sms.ts`, `server/storage.ts`, `client/src/pages/admin-communications.tsx`), ~30 LOC. Hard rules still observed (no schema, no package, no Smartsheet, no republish).
+
+---
+
+## 2026-04-29 — Tyler request: "Intake Form Complete" column on admin Ticket Overview + confirm-endpoint gate
+
+### Tyler's directive
+> "Under Ticket Overview, we should add one more column called 'Intake Form Complete' that appears once the agent submits their intake form through the validation check button at the bottom. The intake form should not be selectable as 'Submitted' until the ticket has been approved or fully processed, so the agent must take action on the ticket before they can mark the intake form as complete."
+
+Two distinct asks: a new column on the admin tickets table, and a verification (turned into a hardening) that the intake-form completion can only happen after the ticket is processed.
+
+### What shipped (3 changes, 3 files)
+
+**T1 — Surface intake-form completion on the submissions list (`server/storage.ts` ~line 445)**
+- `getSubmissionsWithTechnician` now LEFT JOINs `intake_forms` on `submission_id` and surfaces `intakeFormCompletedAt: Date | null` (= `intake_forms.agent_confirmed_at`) on each row.
+- Return type updated to include the new field.
+- One-query fetch, no N+1 across tickets. LEFT JOIN means tickets without an intake_forms row simply get null.
+- Powers the existing `/api/submissions` endpoint that the admin Ticket Overview already consumes — no new endpoint needed.
+
+**T2 — Defense-in-depth gate on the confirm endpoint (`server/routes.ts` ~3775)**
+- Added a `ticketStatus !== "approved" && ticketStatus !== "completed"` check after the duplicate check in `POST /api/submissions/:id/intake-form/confirm`. Returns `409 {error, code: "NOT_APPROVED"}` with a clear message.
+- Why this matters: the UI's `IntakeFormTab` already hides the "I submitted Smartsheet" button until `intake-form-status` reports `required: true` (which itself requires approved/completed status). But that's a UI-only gate — a buggy or scripted client could POST directly to `/intake-form/confirm` and create an orphan intake_forms row for a still-queued ticket. Now the server enforces the same rule, matching what the user described as the intended behavior.
+- Verified live: `curl -X POST .../intake-form/confirm` against an in-flight ticket (id=91) returns `HTTP 409 {"error":"This ticket has not been processed yet — finish reviewing it before recording the intake form.","code":"NOT_APPROVED"}` and no intake_forms row is created.
+
+**T3 — Render the column in admin Ticket Overview (`client/src/pages/admin-dashboard.tsx`)**
+- New `<TableHead>Intake Form Complete</TableHead>` between Warranty and Last Updated (~line 1045).
+- Matching `<TableCell>` per row (~line 1119) renders one of four states:
+  - **Green check + relative time** when `ticket.intakeFormCompletedAt` is present (e.g. "23m ago" with a `CheckCircle2` icon, emerald color).
+  - **Italic "N/A"** muted when `ticket.requestType === "parts_nla"` (Smartsheet intake form is for warranty tickets, not NLA — mirrors the `/intake-form-status` `reason: "nla"` branch).
+  - **Amber "Awaiting agent"** with a Clock icon when ticket is approved/completed but no intake_forms row yet — this is the actionable state for an admin reviewing the queue.
+  - **Muted "—"** for in-flight tickets (queued/pending/rejected/invalid) — intake form is not yet applicable.
+- `data-testid="intake-form-complete-{ticketId}"` on each cell for testability.
+- Imports added: `CheckCircle2` from `lucide-react`. `Clock` was already imported. The relative-time helper `getTimeInStatus` was already defined locally in the file.
+
+### Smoketest verification (all green)
+- `GET /api/submissions` returns 12 submissions; every row includes the new `intakeFormCompletedAt` field.
+- 1 ticket has a recorded completion (id=90, status=completed, intake=2026-04-29T16:14:36Z) → green check renders.
+- 5 are approved/completed without intake → amber "Awaiting agent" renders.
+- 6 are in-flight → muted "—" renders.
+- 2 are NLA → italic "N/A" renders.
+- `POST /api/submissions/91/intake-form/confirm` (id 91 is in-flight) → 409 NOT_APPROVED, intake_forms row count unchanged.
+- End-to-end Playwright test (login → admin → Ticket Overview → verify all 4 column states + 409 gate via API) passed.
+
+### Hard rules — observed
+- Append-only audit (this section).
+- No `package.json` change. No new packages installed.
+- No schema change — `intake_forms.agent_confirmed_at` and the FK to `submissions` already existed.
+- No Smartsheet form change.
+- No republish.
+- 3 files edited, 0 new files, 0 deletions, 0 schema changes. Net change ~50 LOC.
+
+### Friction-reduction notes (for the "make sure technicians don't encounter friction" part of the ask)
+The technician submission path itself is unchanged — this work only adds a column to the admin view and tightens a server-side gate that the UI already enforced. Agents and technicians see the exact same flow they did yesterday. The only behavior change visible outside the admin table:
+- An agent who somehow bypasses the UI (e.g., devtools / Postman / a future script) and tries to record an intake form for an unprocessed ticket now gets a clear 409 with a human-readable message instead of silently succeeding.
+
+### What's deferred (explicit non-goals)
+- **Sortability/filterability on the new column.** The header is plain text — no sort handle, no filter chip. Adding either is straightforward but Tyler didn't ask for it.
+- **Hover tooltip on the green-check state showing the agent who recorded it.** The data is available (`intake_forms.agent_id`) but not currently joined onto the row. Add an extra LEFT JOIN if/when wanted.
+- **Migration of the existing UI ticket-list cards on the agent dashboard.** Agents see their own ticket queue as cards (not a table) — adding intake completion there is a separate, larger UX change Tyler didn't request today.
+
+---
+
+## 2026-04-29 (later) — Architect-review fixes for the Intake Form Complete column
+
+After the initial implementation passed e2e, code review surfaced three real issues. All three fixed and re-verified.
+
+### Architect findings (verbatim severity)
+
+1. **Storage join can inflate rows** (critical). `LEFT JOIN intake_forms ON submission_id` selecting `intakeForms.agentConfirmedAt` would duplicate the parent submission row if the child table ever had >1 row for the same submission — the schema has no UNIQUE on `intake_forms.submission_id`, so this is a real (not theoretical) hazard, especially given finding #2.
+
+2. **Race condition in confirm endpoint** (critical). The handler did `getIntakeFormBySubmission(id)` → 409-if-exists → `createIntakeForm(...)` as three separate DB ops with nothing serializing them. Two simultaneous confirm requests can both pass the duplicate check before either INSERT lands → two rows → architect finding #1 fires. No UNIQUE means no DB-level safety net.
+
+3. **Type contract drift** (medium). The class implementation's return type included `intakeFormCompletedAt`, but the `IStorage` interface declaration at line 87 did not. Runtime worked because TS lets the implementation widen, but callers typed against `IStorage` would have lost the field at compile time.
+
+### Fixes (3 files, 0 schema changes, 0 package changes)
+
+**Fix 1 — `server/storage.ts:524` — replace LEFT JOIN with correlated subquery**
+- Removed `.leftJoin(intakeForms, eq(intakeForms.submissionId, submissions.id))` and the bare `intakeFormCompletedAt: intakeForms.agentConfirmedAt` selection.
+- Replaced with a SQL correlated subquery: `(SELECT MAX(agent_confirmed_at) FROM intake_forms WHERE submission_id = submissions.id)`.
+- Result: exactly one row per submission, regardless of how many intake_forms rows exist. `MAX(agent_confirmed_at)` is the most recent recording — natural choice for "Intake Form Complete" semantics.
+- Verified: `GET /api/submissions` returns 12 rows for 12 unique submission ids (no inflation), `intakeFormCompletedAt` still surfaces correctly.
+
+**Fix 2 — `server/storage.ts:1257` (new method) + `server/routes.ts:3848` (call site) — atomic create with row lock**
+- New storage method `atomicCreateIntakeForm(data)`:
+  - Wraps the entire check + insert in `db.transaction`.
+  - First op inside the tx: `SELECT id, ticket_status FROM submissions WHERE id = $1 FOR UPDATE` → exclusive row lock on the parent submission. Concurrent confirms on the same submission block here.
+  - Re-checks `ticket_status` against the locked row (catches the edge case where an admin un-approves the ticket between pre-flight and lock acquisition).
+  - Re-checks intake_forms existence against the locked row (the authoritative duplicate check).
+  - Inserts.
+  - Returns a discriminated result: `{ok: true, intakeForm}` | `{ok: false, reason: "not_found" | "not_approved" | "duplicate", ...}`.
+- Route handler keeps the pre-flight check + status check (so the common 409 cases still get fast responses without contending on the lock), then delegates the insert to `atomicCreateIntakeForm`. Each tx-result branch maps to the same HTTP status the pre-flight would have returned, with distinct breadcrumb tags (`tx-not-found`, `tx-not-approved`, `tx-duplicate`) so the workflow log lets us distinguish a race-loss from a normal duplicate.
+- Side benefit: `loadOwnedSubmission`'s ticketStatus snapshot can become stale between request entry and INSERT (admin status change, agent reassignment). The in-tx re-check makes this a non-issue.
+- Verified: in-flight ticket (id 91) → 409 NOT_APPROVED. Already-recorded ticket (id 90) → 409 ALREADY_RECORDED with the existing intake_forms row attached.
+
+**Fix 3 — `server/storage.ts:97` — `IStorage` interface signature now includes `intakeFormCompletedAt`**
+- Updated the interface declaration's return type for `getSubmissionsWithTechnician` to match the implementation.
+- One-line fix; no behavior change. Callers that were typed against `IStorage` (any future test mocks, etc.) now see the field at compile time.
+
+### Re-verification
+- E2E test re-run end-to-end (browser flow + API flow): all assertions green including the explicit "no duplicate submission ids in /api/submissions response" assertion that would catch a regression of fix #1.
+- `npx tsc --noEmit` net error count unchanged (57 — same pre-existing errors, none in the touched code).
+- Hard rules still observed: append-only audit, no schema, no package.json, no Smartsheet form, no republish.
+
+### Net change vs the original ship
+- 3 files touched (same files), +~80 LOC (the new `atomicCreateIntakeForm` method + the route's discriminated-result handling). 0 deletions of existing functionality. 0 schema changes. 0 new packages.

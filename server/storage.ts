@@ -91,7 +91,7 @@ export interface IStorage {
     requestType?: string;
     excludeRequestType?: string;
     divisionFilter?: string[];
-  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]>;
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null; intakeFormCompletedAt: Date | null })[]>;
   updateSubmission(
     id: number,
     data: Partial<InsertSubmission>
@@ -191,6 +191,18 @@ export interface IStorage {
   // Smartsheet "VRS Unrep Intake Form 2.0" audit rows
   createIntakeForm(data: InsertIntakeForm): Promise<IntakeForm>;
   getIntakeFormBySubmission(submissionId: number): Promise<IntakeForm | undefined>;
+  // Tyler 2026-04-29 (architect-review fix): atomic create that holds a
+  // SELECT ... FOR UPDATE lock on the parent submissions row across the
+  // existing-check + ticket_status check + INSERT. Closes the race where
+  // two concurrent /intake-form/confirm requests could both pass a naive
+  // duplicate-check and both insert. Returns a discriminated result the
+  // route handler maps to HTTP statuses (200/404/409).
+  atomicCreateIntakeForm(data: InsertIntakeForm): Promise<
+    | { ok: true; intakeForm: IntakeForm }
+    | { ok: false; reason: "not_found" }
+    | { ok: false; reason: "not_approved"; ticketStatus: string }
+    | { ok: false; reason: "duplicate"; existing: IntakeForm }
+  >;
   // NOTE: getMissingIntakeForAgent removed 2026-04-26 (Tyler D2). The
   // intake_forms table is still written as audit trail, but agents are
   // no longer gated on completing it before claiming the next ticket.
@@ -452,7 +464,7 @@ export class DatabaseStorage implements IStorage {
     requestType?: string;
     excludeRequestType?: string;
     divisionFilter?: string[];
-  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null })[]> {
+  }, completedToday?: boolean): Promise<(Submission & { technicianName: string; technicianPhone: string | null; assignedAgentName: string | null; intakeFormCompletedAt: Date | null })[]> {
     const conditions: ReturnType<typeof eq>[] = [];
 
     if (filters?.technicianId !== undefined) {
@@ -518,6 +530,19 @@ export class DatabaseStorage implements IStorage {
         ldapTechName: technicians.name,
         ldapTechPhone: technicians.phone,
         assignedAgentName: assignedAgent.name,
+        // Tyler 2026-04-29 (architect-review fix): surface intake-form
+        // completion onto the row so the admin Ticket Overview table can
+        // show the "Intake Form Complete" column without an N+1 round trip
+        // per ticket. Use a correlated subquery (MAX over agent_confirmed_at)
+        // instead of LEFT JOIN intake_forms so we cannot inflate the
+        // submission row count if multiple intake_forms rows ever exist for
+        // a single submission (the current schema has no UNIQUE on
+        // submission_id). One row per submission, guaranteed.
+        intakeFormCompletedAt: sql<Date | null>`(
+          SELECT MAX(${intakeForms.agentConfirmedAt})
+          FROM ${intakeForms}
+          WHERE ${intakeForms.submissionId} = ${submissions.id}
+        )`,
       })
       .from(submissions)
       .innerJoin(users, eq(submissions.technicianId, users.id))
@@ -532,6 +557,7 @@ export class DatabaseStorage implements IStorage {
       technicianPhone: r.submission.phoneOverride || r.ldapTechPhone || r.technicianPhone,
       assignedAgentName: r.assignedAgentName,
       racId: r.submission.technicianLdapId || "",
+      intakeFormCompletedAt: r.intakeFormCompletedAt,
     }));
   }
 
@@ -1216,6 +1242,57 @@ export class DatabaseStorage implements IStorage {
       .from(intakeForms)
       .where(eq(intakeForms.submissionId, submissionId));
     return result[0];
+  }
+
+  // Tyler 2026-04-29 (architect-review fix): atomic create that holds a
+  // SELECT ... FOR UPDATE row-lock on submissions across the existing-check
+  // + ticket_status check + INSERT. Without a UNIQUE on
+  // intake_forms.submission_id (no schema change today), this transaction
+  // is the *only* thing keeping two simultaneous /intake-form/confirm
+  // requests from inserting two rows for the same submission. The lock is
+  // released when the tx commits/rolls back.
+  async atomicCreateIntakeForm(data: InsertIntakeForm): Promise<
+    | { ok: true; intakeForm: IntakeForm }
+    | { ok: false; reason: "not_found" }
+    | { ok: false; reason: "not_approved"; ticketStatus: string }
+    | { ok: false; reason: "duplicate"; existing: IntakeForm }
+  > {
+    return await db.transaction(async (tx) => {
+      // 1. Lock the parent submissions row. Any concurrent confirm against
+      //    the same submission blocks here until this tx commits.
+      const lockedRows = await tx.execute(
+        sql`SELECT id, ticket_status FROM submissions WHERE id = ${data.submissionId} FOR UPDATE`
+      );
+      const locked = (lockedRows as any).rows?.[0] ?? (lockedRows as any[])[0];
+      if (!locked) {
+        return { ok: false as const, reason: "not_found" as const };
+      }
+      const lockedStatus = (locked as { ticket_status: string }).ticket_status;
+      if (lockedStatus !== "approved" && lockedStatus !== "completed") {
+        return {
+          ok: false as const,
+          reason: "not_approved" as const,
+          ticketStatus: lockedStatus,
+        };
+      }
+      // 2. Authoritative duplicate-check INSIDE the lock. The pre-flight
+      //    check in the route is just for fast 409s; this is the one that
+      //    actually closes the race window.
+      const existingRows = await tx
+        .select()
+        .from(intakeForms)
+        .where(eq(intakeForms.submissionId, data.submissionId));
+      if (existingRows.length > 0) {
+        return {
+          ok: false as const,
+          reason: "duplicate" as const,
+          existing: existingRows[0],
+        };
+      }
+      // 3. Insert.
+      const [row] = await tx.insert(intakeForms).values(data).returning();
+      return { ok: true as const, intakeForm: row };
+    });
   }
 
   // getMissingIntakeForAgent removed 2026-04-26 (Tyler D2). See ADR-013 — the

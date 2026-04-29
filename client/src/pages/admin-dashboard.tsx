@@ -90,6 +90,7 @@ import {
   Shield,
   FileText,
   CheckCircle,
+  CheckCircle2,
   XCircle,
   Clock,
   TrendingUp,
@@ -1039,6 +1040,7 @@ function TicketOverviewSection() {
                     <TableHead>Technician</TableHead>
                     <TableHead>Division</TableHead>
                     <TableHead>Warranty</TableHead>
+                    <TableHead>Intake Form Complete</TableHead>
                     <TableHead className="text-right">Last Updated</TableHead>
                     <TableHead className="text-right">Queue Wait</TableHead>
                     <TableHead className="text-right">Handle Time</TableHead>
@@ -1111,6 +1113,31 @@ function TicketOverviewSection() {
                            ticket.warrantyType === "ahs" ? "AHS" :
                            ticket.warrantyType === "first_american" ? "First American" :
                            ticket.warrantyType || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm" data-testid={`intake-form-complete-${ticket.id}`}>
+                          {/* Tyler 2026-04-29: Intake Form Complete column.
+                              4 states: completed (green check + relative time),
+                              N/A for parts_nla (no Smartsheet form for NLA),
+                              awaiting agent (amber, ticket processed but no
+                              intake_forms row yet), and a muted dash for
+                              everything still in-flight. The intakeFormCompletedAt
+                              field comes from the LEFT JOIN added in
+                              storage.ts:getSubmissionsWithTechnician. */}
+                          {ticket.intakeFormCompletedAt ? (
+                            <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span className="text-xs">{getTimeInStatus(ticket.intakeFormCompletedAt)} ago</span>
+                            </span>
+                          ) : ticket.requestType === "parts_nla" ? (
+                            <span className="text-muted-foreground italic text-xs" title="Not applicable for parts NLA tickets">N/A</span>
+                          ) : (ticket.ticketStatus === "approved" || ticket.ticketStatus === "completed") ? (
+                            <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
+                              <Clock className="w-4 h-4" />
+                              <span className="text-xs">Awaiting agent</span>
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-right whitespace-nowrap text-muted-foreground" data-testid={`last-updated-${ticket.id}`}>
                           {formatDate(ticket.updatedAt || ticket.statusChangedAt || ticket.createdAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}

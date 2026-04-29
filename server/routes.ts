@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { storage } from "./storage";
+import { storage, db } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User, Technician } from "@shared/schema";
@@ -3759,13 +3759,38 @@ export async function registerRoutes(
           return res.status(owned.status).json({ error: owned.error });
         }
 
-        const existing = await storage.getIntakeFormBySubmission(id);
-        if (existing) {
-          console.warn(`${tag("existing-check")} status=duplicate existingId=${existing.id} agentId=${existing.agentId}`);
+        // Tyler 2026-04-29 (defense-in-depth gate + race-window fix per
+        // architect review): the UI's IntakeFormTab already hides the "I
+        // submitted Smartsheet" button until the status endpoint reports
+        // required=true (which itself requires ticket_status in
+        // {approved, completed}). But a buggy or scripted client could POST
+        // here directly. We also have to defend against TWO concurrent
+        // confirm requests both passing the duplicate-check before either
+        // INSERT lands — without a UNIQUE constraint on
+        // intake_forms.submission_id (no schema change allowed today), a
+        // naive check-then-insert would race.
+        //
+        // The pre-flight check below stays outside the transaction so the
+        // 409 fast-path doesn't wait on a row lock — but the AUTHORITATIVE
+        // existing-check happens inside the transaction below, after a
+        // SELECT ... FOR UPDATE on the submissions row serializes any
+        // concurrent confirms.
+        const preExisting = await storage.getIntakeFormBySubmission(id);
+        if (preExisting) {
+          console.warn(`${tag("existing-check")} status=duplicate existingId=${preExisting.id} agentId=${preExisting.agentId}`);
           return res.status(409).json({
             error: "Intake form already recorded for this submission",
             code: "ALREADY_RECORDED",
-            intakeForm: existing,
+            intakeForm: preExisting,
+          });
+        }
+
+        const status = owned.submission.ticketStatus;
+        if (status !== "approved" && status !== "completed") {
+          console.warn(`${tag("not-approved")} status=fail ticketStatus=${status}`);
+          return res.status(409).json({
+            error: "This ticket has not been processed yet — finish reviewing it before recording the intake form.",
+            code: "NOT_APPROVED",
           });
         }
 
@@ -3808,9 +3833,16 @@ export async function registerRoutes(
           __branch: built.branch,
         };
 
-        let created;
+        // Tyler 2026-04-29 (architect-review fix): use the atomic storage
+        // method that holds a SELECT ... FOR UPDATE row lock on submissions
+        // across the existing-check + status re-check + INSERT. Closes the
+        // race window where two simultaneous confirms could both pass the
+        // pre-flight check and both insert. The pre-flight checks above
+        // (preExisting, status) stay so the common case still gets fast
+        // 409s without contending on the row lock.
+        let txResult;
         try {
-          created = await storage.createIntakeForm({
+          txResult = await storage.atomicCreateIntakeForm({
             submissionId: id,
             agentId: authReq.user!.id,
             payload: payloadWithBranch as Record<string, string | number>,
@@ -3825,6 +3857,31 @@ export async function registerRoutes(
           return res.status(500).json({ error: "Failed to record intake form", code: "DB_INSERT_ERROR" });
         }
 
+        if (!txResult.ok) {
+          if (txResult.reason === "not_found") {
+            console.warn(`${tag("tx-not-found")} status=fail`);
+            return res.status(404).json({ error: "Submission not found", code: "NOT_FOUND" });
+          }
+          if (txResult.reason === "not_approved") {
+            // Status changed between pre-flight and lock acquisition (e.g.
+            // an admin un-approved the ticket). Same 409 the pre-flight
+            // returns, just from inside the tx.
+            console.warn(`${tag("tx-not-approved")} status=fail ticketStatus=${txResult.ticketStatus}`);
+            return res.status(409).json({
+              error: "This ticket has not been processed yet — finish reviewing it before recording the intake form.",
+              code: "NOT_APPROVED",
+            });
+          }
+          // duplicate — racing confirm beat us inside the lock
+          console.warn(`${tag("tx-duplicate")} status=duplicate existingId=${txResult.existing.id}`);
+          return res.status(409).json({
+            error: "Intake form already recorded for this submission",
+            code: "ALREADY_RECORDED",
+            intakeForm: txResult.existing,
+          });
+        }
+
+        const created = txResult.intakeForm;
         console.log(`${tag("ok")} status=success intakeFormId=${created.id} branch=${built.branch}`);
         return res.status(200).json({ intakeForm: created });
       } catch (error) {
