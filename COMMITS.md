@@ -1079,3 +1079,57 @@ Test Files  2 passed (2)
 - COMMITS.md appended only after harness re-passed (30/30 verified).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**
+
+
+---
+
+## 2026-04-28 — Tyler pilot-feedback Task A: NLA SMS copy stopgap
+
+### Context
+Pilot techs reported confusion on NLA (Parts Not Available) tickets: they were standing by at the customer's home for hours waiting for a sourcing decision because the existing SMS copy told them turnaround was "1–2 business days" AND a follow-up "claim" SMS told them "DO NOT LEAVE THE SITE." Tyler's correction: real-world NLA sourcing turnaround is **same-day**, and the right behavior is for the tech to reschedule the call for later that day and move on to their next stop — they get texted with the sourcing decision when it lands. This is a stopgap; the real fix is the Communication Settings module (Task B, in progress).
+
+### Scope
+Two server-side files. Copy + one routing condition. NO frontend, NO schema, NO Smartsheet form, NO new endpoints. NLA-only — non-NLA flows are byte-for-byte unchanged.
+
+### Changes
+
+**File: `server/sms.ts` (NLA branch of `buildSubmissionReceivedMessage`, "message 1")**
+
+Stripped the "typical turnaround is 1–2 business days" wait copy. New NLA wait copy:
+
+> "NLA submission received by the VRS parts team. Typical turnaround is same-day. Reschedule this call for later today and move on to your next stop — you'll receive a follow-up text with the sourcing decision."
+
+The full assembled SMS still wraps with `VRS Submission received for SO#${serviceOrder}` on top and `You will receive a follow-up text when the decision is made.` on the bottom (those wrappers are channel-agnostic and weren't in scope). Comment block in code identifies this as a Tyler Task A stopgap and points future readers at the Communication Settings module as the real fix, so it doesn't drift into "permanent" status by accident.
+
+**File: `server/routes.ts` (claim handler in `POST /api/submissions/:id/claim`, "message 2")**
+
+Added `const isNla = submission.requestType === "parts_nla";` and wrapped the entire claim-SMS construction + `sendSms(...)` call in `if (!isNla) { ... }`. For NLA tickets, the claim SMS — which contains "Stand by for confirmation" + "DO NOT LEAVE THE SITE" — is now suppressed entirely. Rationale: the new message 1 already tells the NLA tech to reschedule and move on; sending message 2 minutes later that contradicts that ("stand by, do not leave") was a primary source of the pilot confusion. NLA flows still receive `buildNlaApprovalMessage` later when the parts team has a sourcing decision, so no notification is dropped — only the misleading interim "claim" SMS.
+
+Two-stage AHS / First American claim SMS: untouched.
+Standard non-NLA claim SMS: untouched.
+Resubmission claim SMS (routes.ts:700): out of scope for Task A — that's the resubmit path, not the initial-claim path. Easy to extend if Tyler scopes it later.
+
+### Decisions baked in (Tyler approved all 5)
+1. Message 2 killed entirely for NLA, not patched.
+2. NLA detection uses `submission.requestType === "parts_nla"` (matches every other NLA-branching call site in the codebase).
+3. In-code comment block tags both edits as Task A stopgap pointing at Task B.
+4. Resubmit-claim SMS at routes.ts:700 left alone (out of scope).
+5. No frontend / no schema / no Smartsheet-form changes.
+
+### Test results
+```
+Test Files  2 passed (2)
+     Tests  30 passed (30)
+  Duration  2.59s
+```
+
+13 draft-identity tests + 17 intake-confirm tests, all green. The SMS module has no unit-test surface in the existing suite — `buildSubmissionReceivedMessage` is a pure-string-builder and the claim-handler change is a routing condition, both verifiable by inspection. Workflow restarted clean on :5000 between edits, browser console clean.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes.
+- No Smartsheet form definition changes.
+- No republish (Tyler will handle).
+- COMMITS.md appended only after harness re-passed (30/30).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**
