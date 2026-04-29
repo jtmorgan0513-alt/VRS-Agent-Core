@@ -22,6 +22,7 @@ const TechHistoryPage = lazy(() => import("@/pages/tech-history"));
 const SubmissionDetailPage = lazy(() => import("@/pages/submission-detail"));
 const AgentDashboard = lazy(() => import("@/pages/agent-dashboard"));
 const AdminDashboard = lazy(() => import("@/pages/admin-dashboard"));
+const AdminCommunicationsPage = lazy(() => import("@/pages/admin-communications"));
 const HelpCenterPage = lazy(() => import("@/pages/help-center"));
 const TechResubmitPage = lazy(() => import("@/pages/tech-resubmit"));
 const TechFeedbackPage = lazy(() => import("@/pages/tech-feedback"));
@@ -67,6 +68,16 @@ function AdminRoute() {
   if (user.role === "technician") return <Redirect to="/tech" />;
   if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
   return <Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense>;
+}
+
+function AdminCommunicationsRoute() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Redirect to="/admin/login" />;
+  if (user.mustChangePassword) return <Redirect to="/admin/login" />;
+  if (user.role === "technician") return <Redirect to="/tech" />;
+  if (user.role === "vrs_agent") return <Redirect to="/agent/dashboard" />;
+  return <Suspense fallback={<LoadingScreen />}><AdminCommunicationsPage /></Suspense>;
 }
 
 function LandingRoute() {
@@ -162,6 +173,7 @@ function Router() {
       </Route>
       <Route path="/agent/dashboard" component={AgentRoute} />
       <Route path="/admin/dashboard" component={AdminRoute} />
+      <Route path="/admin/communications" component={AdminCommunicationsRoute} />
       <Route path="/tech/help">
         {() => <TechRoute component={HelpCenterPage} />}
       </Route>

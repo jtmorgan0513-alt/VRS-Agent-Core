@@ -1793,3 +1793,103 @@ The `BuildIntakeFormUrlInput` interface in `server/services/smartsheet.ts` still
 
 ### Backfill / historical data
 Not retroactively fixing the ~handful of intake_forms rows already recorded with the wrong value — Tyler hasn't asked for it and the recorded URL is just an audit artifact (the actual Smartsheet record is what TRANSFORMCO reads from, and that row already exists with whatever value Smartsheet accepted at submission time). If a backfill is later requested, the path is: `UPDATE intake_forms SET prefilled_url = REPLACE(prefilled_url, '<old techUnNo>', '<district_code>')` per row. Documented for posterity.
+
+---
+
+## 2026-04-29 — Tyler request: admin SMS template editor (Communication Templates)
+
+### Tyler's directive
+> "I want an admin menu where I can edit the SMS messages that go out to technicians at each step — initial submission, agent pickup, stage 1 approval, stage 2 approval, Sears Protect approval. Pre-load it with the current copy. I'll edit them from the admin UI in the future after I republish."
+
+Hard rules: append-only audit, no Smartsheet form changes, no republish, no `package.json` change. Schema tables already exist from a prior groundwork session (`communication_templates`, `communication_template_versions`, `communication_template_send_audit`).
+
+### What shipped (5 components, ~1,400 LOC across 7 files)
+
+**T1 — Storage methods (`server/storage.ts`, ~lines 1318–1450)**
+- `getCommunicationTemplate(channel, actionKey)` — single active template lookup.
+- `listCommunicationTemplates(channel?)` — list-all for the admin UI.
+- `upsertDefaultCommunicationTemplate(input)` — idempotent seed helper. Inserts on first run; on repeat runs, refreshes the body **only if** the existing row is still pristine (`isDefault=true && currentVersion=1`). Both flags flip the moment an admin saves an edit, so the seed never clobbers admin work.
+  - Subtlety: when the seed refreshes a pristine row, it also `DELETE FROM communication_template_versions WHERE template_id=...`. Reason: a prior prototyping session left orphan v1 snapshots in the versions table with stale double-brace placeholders; without the wipe, the first real admin edit hit a unique-constraint collision (`(template_id, version)=(N, 1) already exists`).
+- `updateCommunicationTemplate(id, body, editedBy, editReason?)` — atomic transaction: snapshot current row to versions table at `currentVersion`, then bump `currentVersion`, mark `isDefault=false`, set `updatedBy/updatedAt`. The version snapshot is what answers "who changed this and when?" later.
+- `getCommunicationTemplateVersions(templateId)` — full version history, newest first.
+- `IStorage` interface updated to expose all five.
+
+**T2 — Default seed (`server/seed.ts`, ~lines 156–620)**
+- New `seedDefaultCommunicationTemplates()` called from `seedDatabase()`. Seeds **16 templates** (T5 plan said 15; the closed-cash-call rejection is split into `with_cash_call` and `no_cash_call` because the closing line differs):
+  - Submission Received: `submission_received.standard`, `.nla`, `.external_warranty`
+  - Ticket Claimed: `ticket_claimed.standard`, `.two_stage`, `.resubmission`
+  - Stage 1 Approved: `submission_approved.stage1`
+  - Stage 2 Approved: `ticket_approved.with_auth_and_rgc`, `.rgc_only`, `.auth_only`, `nla_approval`
+  - Rejected / Invalid: `ticket_rejected`, `ticket_rejected_closed.with_cash_call`, `ticket_rejected_closed.no_cash_call`, `ticket_invalid`, `nla_invalid`
+- Each template includes the exact current hardcoded copy with `{varName}` placeholders + a `variables` array describing each placeholder for the admin UI's variables panel.
+
+**T3 — Render helper + sender wiring (`server/sms.ts`, `server/routes.ts`)**
+- New `renderTemplate(actionKey, vars)` in `sms.ts`: looks up active SMS template by action key, substitutes `{varName}` → `vars[varName]`, returns `string | null` (null = template missing or render error → caller falls back to hardcoded copy).
+- All 6 existing `build*Message` functions converted to `async`; each first tries `renderTemplate(actionKey, vars)`, falls back to its prior hardcoded string on null. All 6 call sites in `routes.ts` updated to `await`.
+- Five inline-string sender call sites in `routes.ts` (~lines 700, 1270, 1271, 1272, 1362, 1791) replaced with new async builder functions following the same fallback pattern.
+- **Critical safety property:** byte-identical SMS output when DB has the seeded defaults. The hardcoded fallbacks are preserved verbatim, so even if the DB seed didn't run or a row got deleted, technicians still receive exactly the messages they were getting yesterday.
+
+**T4 — Admin routes (`server/routes.ts`, ~lines 2697–2746)**
+- `GET /api/admin/communication-templates` — list all (admin + super_admin).
+- `GET /api/admin/communication-templates/:id/versions` — full version history.
+- `PATCH /api/admin/communication-templates/:id` — body required, editReason optional. Validates with Zod, calls `storage.updateCommunicationTemplate`, returns the new row. Audit fields (`updatedBy`, `updatedAt`) populated from the JWT.
+
+**T5 — Admin UI (`client/src/pages/admin-communications.tsx` NEW, `App.tsx`, `admin-dashboard.tsx`)**
+- New page grouped by 5 event families (Submission Received / Ticket Claimed / Stage 1 / Stage 2 / Rejected & Invalid). Each row: title, channel badge, "Edited by admin · v{N}" badge if `!isDefault`, body preview.
+- `ACTIVE_ACTION_KEYS` whitelist: filters out the 15 legacy orphan rows from the prototyping session that don't correspond to any current sender call site. They stay in the DB (in case Tyler ever wants to revive any), but the admin UI doesn't show them.
+- Click row → modal with body textarea + variables panel (shows each `{varName}` with its sample + description) + optional editReason field + Save / Cancel.
+- `App.tsx`: lazy-loaded route at `/admin/communications` wrapped in `AdminCommunicationsRoute` (admin / super_admin only).
+- `admin-dashboard.tsx`: new sidebar link "Communication Templates" with `MessageSquare` icon (~line 2287) → `navigate("/admin/communications")`.
+
+### Smoketest verification (all green)
+- `POST /api/auth/login` with `TESTADMIN/TestAdmin2026!` (password reset earlier in the session via SQL because the seed account doesn't ship with a known password) → returns admin JWT.
+- `GET /api/admin/communication-templates` → 31 rows (16 active + 15 legacy filtered out in UI).
+- `PATCH /api/admin/communication-templates/4` with new body → 200, returns row with `isDefault=false`, `currentVersion=2`, new body.
+- `GET /api/admin/communication-templates/4/versions` → returns v1 snapshot with the prior body and the supplied editReason.
+- Smoketest edit then reset via SQL to keep the seeded default body intact for the screenshot/handoff.
+
+### Hard rules — observed
+- Append-only audit (this section).
+- No Smartsheet form change (zero touch on `services/smartsheet.ts` or any intake-form code).
+- No `package.json` change. No new packages installed.
+- No schema change. The three tables (`communication_templates`, `communication_template_versions`, `communication_template_send_audit`) and their columns were already in `shared/schema.ts` from a prior groundwork session — this work just populated and consumed them.
+- No republish.
+
+### Hardcoded-fallback safety net (the most important property)
+Every sender code path uses the pattern `const rendered = await renderTemplate(actionKey, vars); const body = rendered ?? hardcodedString;`. This means:
+1. If the DB row exists with valid `{varName}` placeholders, technicians get the rendered DB body.
+2. If the DB row is missing, deleted, or has a render error, technicians get the **exact** verbatim copy from before this change — byte-identical to the hardcoded message they were receiving yesterday.
+3. If an admin edits a template, the change goes live immediately on the next SMS send — no restart, no republish.
+
+Tyler can edit any of the 16 templates from the admin UI today and every SMS that goes out tomorrow will use the edited copy. If something looks wrong, deleting the row in the DB instantly reverts to the hardcoded copy.
+
+### What's deferred (explicit non-goals)
+- **Send audit writes.** The `communication_template_send_audit` table is created and indexed, but no sender currently writes to it. This is a deferred line item — when Tyler asks "did SO#12345 get an SMS yesterday?", we'll need to start populating it. Schema is ready; ~5 lines per sender to add.
+- **Push and email channels.** Schema supports `channel` as `varchar`, but only `sms` rows are seeded today. When push/email rollouts happen, the same admin UI will work — just seed the new `(channel, actionKey)` pairs.
+- **Per-tenant overrides.** Single global default per `(channel, actionKey)`. Multi-tenant overrides (e.g., different copy for different districts or warranty providers) would need a `tenant_id` column or a separate overrides table. Not requested, not built.
+- **Diff view in the admin UI.** Versions endpoint returns the full body of each historical snapshot, but the UI only shows the current body and badge. A "View history" modal with diff highlighting is a reasonable follow-up.
+
+### File-by-file change summary
+- `server/storage.ts` — added 5 storage methods + IStorage interface entries (~135 LOC).
+- `server/seed.ts` — added `seedDefaultCommunicationTemplates()` with 16 templates (~470 LOC).
+- `server/sms.ts` — added `renderTemplate()` + converted 6 `build*Message` functions to async with fallback + added 5 new builders for inline call sites (~280 LOC).
+- `server/routes.ts` — added 3 admin routes + awaited 6 existing builder calls + replaced 5 inline string templates (~120 LOC net change, mostly the new routes).
+- `client/src/pages/admin-communications.tsx` — NEW, the admin editor page (~360 LOC).
+- `client/src/App.tsx` — lazy import + `AdminCommunicationsRoute` wrapper + route registration (~12 LOC).
+- `client/src/pages/admin-dashboard.tsx` — sidebar link addition (~6 LOC).
+
+Net: 7 files touched (1 new, 6 edited), ~1,400 LOC total, 0 deletions, 0 schema changes, 0 package changes.
+
+### Post-review hardening (same date, same task)
+Architect review surfaced one ship-blocker against the safety contract and two lower-severity items. All three addressed in-session:
+
+1. **`renderTemplate` fallback contract (ship-blocker, fixed).** The original `applyVariables` substituted empty strings for missing/null variables, which meant an admin typo like `{servceOrder}` would silently send a half-blank SMS to a technician instead of falling back to the hardcoded copy. Rewrote `applyVariables` to track whether any placeholder went unresolved and return `string | null`; `renderTemplate` now returns null on any unresolved placeholder, which triggers the existing hardcoded fallback in every builder. Verified with two live tests:
+   - DB body `"BROKEN: {servceOrder} should fallback"` + `vars={serviceOrder: "1234"}` → `renderTemplate` returns `null`, builder uses hardcoded copy.
+   - Non-existent `actionKey` → `renderTemplate` returns `null`, builder uses hardcoded copy.
+   Log line on fallback: `[SMS template] render fallback for <actionKey>: unresolved placeholder(s) in body`.
+
+2. **Concurrent edit race (low risk, fixed).** `updateCommunicationTemplate` now does `SELECT ... FOR UPDATE` before computing the next version number, so two simultaneous admin edits on the same row serialize on the row lock instead of racing on the `(template_id, version)` unique constraint and 500'ing the loser. Realistic risk profile is near-zero (single-digit admin headcount, occasional edits) but the fix is a one-line `.for("update")` addition.
+
+3. **Explicit error UI state (UX polish, fixed).** Admin Communications page now distinguishes load failure from empty state. Previously a 500 from `GET /api/admin/communication-templates` showed "No templates have been seeded yet" which would mislead an admin during an outage. Now shows "Could not load templates" with the error message + a Retry button (`data-testid="status-load-error"`, `data-testid="button-retry-load"`).
+
+Net additional changes: 3 files (`server/sms.ts`, `server/storage.ts`, `client/src/pages/admin-communications.tsx`), ~30 LOC. Hard rules still observed (no schema, no package, no Smartsheet, no republish).

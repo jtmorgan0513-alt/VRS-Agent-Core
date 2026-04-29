@@ -36,6 +36,11 @@ import {
   agentExternalCredentials,
   InsertAgentExternalCredential,
   AgentExternalCredential,
+  communicationTemplates,
+  InsertCommunicationTemplate,
+  CommunicationTemplate,
+  communicationTemplateVersions,
+  CommunicationTemplateVersion,
 } from "@shared/schema";
 
 // Initialize database connection
@@ -1302,6 +1307,154 @@ export class DatabaseStorage implements IStorage {
       )
       .returning();
     return result.length > 0;
+  }
+
+  // ==========================================================================
+  // Communication templates (Tyler 2026-04-29 — admin-editable SMS templates).
+  // The schema (communication_templates / _versions / _send_audit) was added
+  // in a prior session; this is the storage layer that wires it up.
+  // ==========================================================================
+
+  async getCommunicationTemplate(
+    channel: "sms" | "email" | "push",
+    actionKey: string
+  ): Promise<CommunicationTemplate | undefined> {
+    const result = await db
+      .select()
+      .from(communicationTemplates)
+      .where(
+        and(
+          eq(communicationTemplates.channel, channel),
+          eq(communicationTemplates.actionKey, actionKey),
+          eq(communicationTemplates.isActive, true)
+        )
+      );
+    return result[0];
+  }
+
+  async listCommunicationTemplates(
+    channel?: "sms" | "email" | "push"
+  ): Promise<CommunicationTemplate[]> {
+    if (channel) {
+      return await db
+        .select()
+        .from(communicationTemplates)
+        .where(eq(communicationTemplates.channel, channel))
+        .orderBy(asc(communicationTemplates.actionKey));
+    }
+    return await db
+      .select()
+      .from(communicationTemplates)
+      .orderBy(asc(communicationTemplates.channel), asc(communicationTemplates.actionKey));
+  }
+
+  // Used by `seedDefaultCommunicationTemplates` to populate templates on boot:
+  //   - If no row exists for (channel, action_key): insert.
+  //   - If a row exists but is still in pristine default state (isDefault=true
+  //     AND currentVersion=1, i.e. never edited by an admin): overwrite the
+  //     body / variables / title to match the latest seed. This lets us repair
+  //     stale rows from earlier prototyping that used a different placeholder
+  //     syntax or variable names without breaking the live SMS pipeline.
+  //   - Otherwise: leave the row untouched. The moment an admin saves an edit,
+  //     `updateCommunicationTemplate` flips isDefault=false and bumps the
+  //     version, so subsequent seeds will never overwrite their work.
+  async upsertDefaultCommunicationTemplate(
+    input: InsertCommunicationTemplate
+  ): Promise<CommunicationTemplate> {
+    const [existing] = await db
+      .select()
+      .from(communicationTemplates)
+      .where(
+        and(
+          eq(communicationTemplates.channel, input.channel),
+          eq(communicationTemplates.actionKey, input.actionKey)
+        )
+      );
+    if (!existing) {
+      const [row] = await db.insert(communicationTemplates).values(input).returning();
+      return row;
+    }
+    if (existing.isDefault && existing.currentVersion === 1) {
+      // Stale orphan version rows from prior prototyping can collide with the
+      // version snapshot the next admin edit will write. Clear them when we
+      // refresh the body so the first real edit produces a clean v1→v2 jump.
+      return await db.transaction(async (tx) => {
+        await tx.delete(communicationTemplateVersions).where(eq(communicationTemplateVersions.templateId, existing.id));
+        const [row] = await tx
+          .update(communicationTemplates)
+          .set({
+            body: input.body,
+            variables: input.variables ?? existing.variables,
+            title: input.title ?? existing.title,
+            subject: input.subject ?? existing.subject,
+            isActive: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(communicationTemplates.id, existing.id))
+          .returning();
+        return row;
+      });
+    }
+    return existing;
+  }
+
+  // Save a new body for a template. Atomically: snapshot the current row to
+  // the versions table, bump currentVersion, mark isDefault=false, set
+  // updatedBy/updatedAt. The version snapshot lets admins answer "who
+  // changed what when, and why?" via the optional editReason field.
+  async updateCommunicationTemplate(
+    id: number,
+    body: string,
+    editedBy: number,
+    editReason?: string | null
+  ): Promise<CommunicationTemplate | undefined> {
+    return await db.transaction(async (tx) => {
+      // SELECT ... FOR UPDATE: take a row-level lock so two concurrent admin
+      // edits serialize on the row instead of racing on the (template_id,
+      // version) unique constraint and 500'ing one editor.
+      const [current] = await tx
+        .select()
+        .from(communicationTemplates)
+        .where(eq(communicationTemplates.id, id))
+        .for("update");
+      if (!current) return undefined;
+
+      // Snapshot the OUTGOING row into the versions table at the version it
+      // was when saved (so the new version number = current.currentVersion + 1).
+      await tx.insert(communicationTemplateVersions).values({
+        templateId: id,
+        version: current.currentVersion,
+        subject: current.subject,
+        title: current.title,
+        body: current.body,
+        variables: current.variables,
+        editedBy,
+        editReason: editReason ?? null,
+      });
+
+      const [updated] = await tx
+        .update(communicationTemplates)
+        .set({
+          body,
+          isDefault: false,
+          currentVersion: current.currentVersion + 1,
+          updatedBy: editedBy,
+          updatedAt: new Date(),
+        })
+        .where(eq(communicationTemplates.id, id))
+        .returning();
+      return updated;
+    });
+  }
+
+  async getCommunicationTemplateVersions(
+    templateId: number
+  ): Promise<CommunicationTemplateVersion[]> {
+    return await db
+      .select()
+      .from(communicationTemplateVersions)
+      .where(eq(communicationTemplateVersions.templateId, templateId))
+      .orderBy(desc(communicationTemplateVersions.version));
   }
 }
 

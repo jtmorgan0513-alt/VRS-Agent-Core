@@ -18,7 +18,23 @@ import { randomUUID } from "crypto";
 import { pipeline } from "stream/promises";
 import { fetchTechniciansFromSnowflake, fetchProcIdForServiceOrder } from "./services/snowflake";
 import { seedDatabase } from "./seed";
-import { sendSms, sendSmsMessage, buildStage1RejectedMessage, buildStage1InvalidMessage, buildAuthCodeMessage, buildNlaApprovalMessage, buildRejectAndCloseMessage, buildSubmissionReceivedMessage } from "./sms";
+import {
+  sendSms,
+  sendSmsMessage,
+  buildStage1RejectedMessage,
+  buildStage1InvalidMessage,
+  buildAuthCodeMessage,
+  buildNlaApprovalMessage,
+  buildRejectAndCloseMessage,
+  buildSubmissionReceivedMessage,
+  // Tyler 2026-04-29 (Communication Templates): inline SMS strings extracted
+  // into named builders so admins can edit them through the new admin page.
+  buildResubmissionClaimMessage,
+  buildStandardClaimMessage,
+  buildTwoStageClaimMessage,
+  buildSubmissionApprovedMessage,
+  buildNlaInvalidMessage,
+} from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
@@ -674,7 +690,7 @@ export async function registerRoutes(
 
       const submissionReceivedPhone = submission.phoneOverride || submission.phone;
       if (submissionReceivedPhone) {
-        const body = buildSubmissionReceivedMessage(
+        const body = await buildSubmissionReceivedMessage(
           submission.serviceOrder,
           submission.warrantyType,
           submission.requestType,
@@ -697,7 +713,7 @@ export async function registerRoutes(
           },
         });
 
-        const resubmitClaimMsg = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your resubmitted ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
+        const resubmitClaimMsg = await buildResubmissionClaimMessage(submission.serviceOrder);
         const resubmitSmsPhone = submission.phoneOverride || submission.phone;
         sendSms(submission.id, resubmitSmsPhone, "ticket_claimed", resubmitClaimMsg).catch(err => {
           console.error("Failed to send resubmission claim SMS:", err);
@@ -1265,12 +1281,9 @@ export async function registerRoutes(
       // intermediate claim notification adds value for the NLA flow.
       // Two-stage and standard claim SMS unchanged.
       if (!isNla) {
-        let claimSmsMessage: string;
-        if (isTwoStage) {
-          claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.`;
-        } else {
-          claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
-        }
+        const claimSmsMessage = isTwoStage
+          ? await buildTwoStageClaimMessage(submission.serviceOrder)
+          : await buildStandardClaimMessage(submission.serviceOrder);
 
         const claimSmsPhone = submission.phoneOverride || submission.phone;
         sendSms(submission.id, claimSmsPhone, "ticket_claimed", claimSmsMessage).catch(err => {
@@ -1359,8 +1372,7 @@ export async function registerRoutes(
         updateData.stage1ReviewedAt = new Date();
         updateData.technicianMessage = technicianMessage || null;
 
-        const baseMsg = `VRS Update for SO#${submission.serviceOrder}: Your submission has been reviewed and APPROVED. You are cleared to leave the site and head to your next call.\n\nIMPORTANT: Reschedule this call for the same day so you can reopen it later and enter the authorization code to finalize the part order.\n\nVRS is now working on obtaining your authorization code and will text it to you as soon as it is available.`;
-        smsMessage = technicianMessage ? `${baseMsg}\n\n${technicianMessage}` : baseMsg;
+        smsMessage = await buildSubmissionApprovedMessage(submission.serviceOrder, technicianMessage);
         smsType = "submission_approved";
 
         const updated = await storage.updateSubmission(id, updateData as any);
@@ -1414,10 +1426,10 @@ export async function registerRoutes(
         updateData.technicianMessage = approvalNotes;
 
         if (submission.requestType === "parts_nla") {
-          smsMessage = buildNlaApprovalMessage(submission.serviceOrder, rgcCode, approvalNotes);
+          smsMessage = await buildNlaApprovalMessage(submission.serviceOrder, rgcCode, approvalNotes ?? undefined);
         } else {
           const authDisplay = authCode || rgcCode || "";
-          smsMessage = buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes);
+          smsMessage = await buildAuthCodeMessage(submission.serviceOrder, authDisplay, rgcCode, approvalNotes ?? undefined);
         }
         smsType = "ticket_approved";
 
@@ -1456,7 +1468,7 @@ export async function registerRoutes(
         }
         const reasonText = rejectionParts.length > 0 ? rejectionParts.join(". ") : "More information needed";
         const fullMessage = technicianMessage ? `${reasonText}\n\nFeedback from VRS — Action required: ${technicianMessage}` : reasonText;
-        smsMessage = buildStage1RejectedMessage(submission.serviceOrder, fullMessage, resubmitLink);
+        smsMessage = await buildStage1RejectedMessage(submission.serviceOrder, fullMessage, resubmitLink);
         smsType = "ticket_rejected";
 
       } else if (action === "reject_and_close") {
@@ -1475,7 +1487,7 @@ export async function registerRoutes(
           ? rejectionReasons.join(", ")
           : "Not covered under warranty";
         const fullMsg = technicianMessage ? `${reasonText}\n\nFeedback from VRS: ${technicianMessage}` : reasonText;
-        smsMessage = buildRejectAndCloseMessage(submission.serviceOrder, fullMsg, submission.warrantyType);
+        smsMessage = await buildRejectAndCloseMessage(submission.serviceOrder, fullMsg, submission.warrantyType);
         smsType = "ticket_rejected_closed";
 
       } else {
@@ -1488,7 +1500,7 @@ export async function registerRoutes(
         updateData.invalidReason = invalidReason;
         updateData.invalidInstructions = invalidInstructions || null;
 
-        smsMessage = buildStage1InvalidMessage(submission.serviceOrder, invalidReason || "", invalidInstructions);
+        smsMessage = await buildStage1InvalidMessage(submission.serviceOrder, invalidReason || "", invalidInstructions);
         smsType = "ticket_invalid";
       }
 
@@ -1788,8 +1800,7 @@ export async function registerRoutes(
         updateData.invalidReason = invalidReason;
         updateData.invalidInstructions = invalidInstructions || null;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: INVALID NLA REQUEST\nReason: ${invalidReason}`;
-        if (invalidInstructions) smsMessage += `\n\nInstructions: ${invalidInstructions}`;
+        smsMessage = await buildNlaInvalidMessage(submission.serviceOrder, invalidReason, invalidInstructions);
         smsType = "nla_invalid";
 
       } else {
@@ -2672,6 +2683,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Admin set specializations error:", error);
       return res.status(500).json({ error: "Failed to set specializations" });
+    }
+  });
+
+  // ==========================================================================
+  // Tyler 2026-04-29 — Admin Communication Templates
+  // Read + edit + version-history routes that back the new admin page. The
+  // SMS render layer (server/sms.ts) reads these rows at send time, falling
+  // back to the hardcoded copy if the row is missing or render errors out.
+  // ==========================================================================
+  app.get("/api/admin/communication-templates", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const channelParam = typeof req.query.channel === "string" ? req.query.channel : undefined;
+      const channel = channelParam === "sms" || channelParam === "email" || channelParam === "push" ? channelParam : undefined;
+      const rows = await storage.listCommunicationTemplates(channel);
+      return res.status(200).json(rows);
+    } catch (error) {
+      console.error("List communication templates error:", error);
+      return res.status(500).json({ error: "Failed to list communication templates" });
+    }
+  });
+
+  app.get("/api/admin/communication-templates/:id/versions", authenticateToken, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid template id" });
+      const versions = await storage.getCommunicationTemplateVersions(id);
+      return res.status(200).json(versions);
+    } catch (error) {
+      console.error("Communication template versions error:", error);
+      return res.status(500).json({ error: "Failed to get template versions" });
+    }
+  });
+
+  app.patch("/api/admin/communication-templates/:id", authenticateToken, requireRole("admin", "super_admin"), async (req: AuthenticatedRequest, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid template id" });
+
+      const { body, editReason } = req.body ?? {};
+      if (typeof body !== "string" || body.trim().length === 0) {
+        return res.status(400).json({ error: "body is required" });
+      }
+      if (body.length > 4000) {
+        return res.status(400).json({ error: "body is too long (max 4000 chars)" });
+      }
+      const reason = typeof editReason === "string" && editReason.trim().length > 0
+        ? editReason.trim().slice(0, 500)
+        : null;
+
+      const editorId = req.user!.id;
+      const updated = await storage.updateCommunicationTemplate(id, body, editorId, reason);
+      if (!updated) return res.status(404).json({ error: "Template not found" });
+      return res.status(200).json(updated);
+    } catch (error) {
+      console.error("Update communication template error:", error);
+      return res.status(500).json({ error: "Failed to update communication template" });
     }
   });
 

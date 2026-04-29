@@ -108,7 +108,80 @@ export async function sendSms(
   return { success: true, twilioSid: twilioSid || undefined };
 }
 
-export function buildStage1RejectedMessage(serviceOrder: string, reason: string, resubmitLink?: string): string {
+// ============================================================================
+// Tyler 2026-04-29 — Communication Templates render layer
+// ============================================================================
+// Renders an admin-editable template from the `communication_templates` table
+// by substituting `{varName}` placeholders. Returns null when the template is
+// missing or a render error occurs — every call site below falls back to the
+// hardcoded copy in that case so the SMS pipeline never silently breaks if
+// the DB row is gone or a variable expansion fails.
+//
+// The hardcoded fallbacks are kept verbatim alongside the render call so that:
+//   1. A grep for the live SMS copy still finds it in this file.
+//   2. The admin UI can show "Restore default" by re-running the seed.
+//   3. If an admin saves an edit that breaks something (missing variable,
+//      typo), the fallback path silently keeps tech notifications flowing
+//      while the issue gets fixed.
+
+// Substitutes {varName} placeholders. Returns null if any placeholder in the
+// template body has no corresponding non-empty value in `vars` — that null
+// signals the caller to fall back to the hardcoded copy rather than send a
+// message with blanks where data should be. This is the safety contract that
+// guarantees admin typos (e.g. {servceOrder} instead of {serviceOrder}) can
+// never produce a half-blank SMS to a technician.
+function applyVariables(body: string, vars: Record<string, string | undefined | null>): string | null {
+  let missing = false;
+  const out = body.replace(/\{(\w+)\}/g, (_match, name) => {
+    const v = vars[name];
+    if (v == null || String(v).length === 0) {
+      missing = true;
+      return "";
+    }
+    return String(v);
+  });
+  return missing ? null : out;
+}
+
+export async function renderTemplate(
+  actionKey: string,
+  vars: Record<string, string | undefined | null>
+): Promise<string | null> {
+  try {
+    const tpl = await storage.getCommunicationTemplate("sms", actionKey);
+    if (!tpl) return null;
+    const rendered = applyVariables(tpl.body, vars);
+    if (rendered === null) {
+      console.warn(`[SMS template] render fallback for ${actionKey}: unresolved placeholder(s) in body`);
+      return null;
+    }
+    return rendered;
+  } catch (err) {
+    console.warn(`[SMS template] render fallback for ${actionKey}:`, (err as Error)?.message);
+    return null;
+  }
+}
+
+// ============================================================================
+// Builders — each one tries the admin-editable template first and falls back
+// to the hardcoded copy. CallSites in routes.ts use `await` on these now.
+// ============================================================================
+
+export async function buildStage1RejectedMessage(
+  serviceOrder: string,
+  reason: string,
+  resubmitLink?: string
+): Promise<string> {
+  const rendered = await renderTemplate("ticket_rejected", {
+    serviceOrder,
+    reason,
+    resubmitLink: resubmitLink ?? "",
+    closingLine: resubmitLink
+      ? `Tap to resubmit with your info saved:\n${resubmitLink}`
+      : "Please contact your supervisor if you have questions.",
+  });
+  if (rendered !== null) return rendered;
+
   let msg = `VRS Update for SO#${serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reason}`;
   if (resubmitLink) {
     msg += `\n\nTap to resubmit with your info saved:\n${resubmitLink}`;
@@ -118,7 +191,19 @@ export function buildStage1RejectedMessage(serviceOrder: string, reason: string,
   return msg;
 }
 
-export function buildStage1InvalidMessage(serviceOrder: string, invalidReason: string, instructions?: string): string {
+export async function buildStage1InvalidMessage(
+  serviceOrder: string,
+  invalidReason: string,
+  instructions?: string
+): Promise<string> {
+  const rendered = await renderTemplate("ticket_invalid", {
+    serviceOrder,
+    invalidReason,
+    instructions: instructions ?? "",
+    instructionsLine: instructions ? `\n\nInstructions: ${instructions}` : "",
+  });
+  if (rendered !== null) return rendered;
+
   let msg = `VRS Update for SO#${serviceOrder}\n\nStatus: NOT APPLICABLE\nReason: ${invalidReason}`;
   if (instructions) {
     msg += `\n\nInstructions: ${instructions}`;
@@ -127,7 +212,11 @@ export function buildStage1InvalidMessage(serviceOrder: string, invalidReason: s
   return msg;
 }
 
-export function buildRejectAndCloseMessage(serviceOrder: string, reason: string, warrantyType?: string): string {
+export async function buildRejectAndCloseMessage(
+  serviceOrder: string,
+  reason: string,
+  warrantyType?: string
+): Promise<string> {
   const wt = (warrantyType || "").toLowerCase();
   const isExternalWarranty = wt === "american_home_shield" || wt === "first_american";
   const isInfestation = /infestation/i.test(reason);
@@ -135,10 +224,39 @@ export function buildRejectAndCloseMessage(serviceOrder: string, reason: string,
   const closing = suppressCashCall
     ? "This repair is not covered under warranty. No further VRS submissions can be made for this service order."
     : "This repair is not covered under warranty. You may offer the customer a cash call estimate for the repair. No further VRS submissions can be made for this service order.";
+
+  // Closing line is baked into the seeded template body (not passed as a
+  // var) so the admin sees and can edit the actual closing copy. The actionKey
+  // routing handles which template variant to pull.
+  const actionKey = suppressCashCall
+    ? "ticket_rejected_closed.no_cash_call"
+    : "ticket_rejected_closed.with_cash_call";
+  const rendered = await renderTemplate(actionKey, {
+    serviceOrder,
+    reason,
+  });
+  if (rendered !== null) return rendered;
+  void closing;
+
   return `VRS Update for SO#${serviceOrder}\n\nStatus: REJECTED — NOT COVERED\nReason: ${reason}\n\n${closing}`;
 }
 
-export function buildNlaApprovalMessage(serviceOrder: string, rgcCode?: string | null, agentMessage?: string): string {
+export async function buildNlaApprovalMessage(
+  serviceOrder: string,
+  rgcCode?: string | null,
+  agentMessage?: string
+): Promise<string> {
+  const rendered = await renderTemplate("nla_approval", {
+    serviceOrder,
+    rgcCode: rgcCode ?? "",
+    rgcLine: rgcCode
+      ? `\nYour RGC/Auth Code: ${rgcCode}\nEnter this code in TechHub to complete the job.`
+      : "",
+    agentMessage: agentMessage ?? "",
+    agentMessageLine: agentMessage ? `\n\n${agentMessage}` : "",
+  });
+  if (rendered !== null) return rendered;
+
   let msg = `VRS Authorization for SO#${serviceOrder}`;
   if (rgcCode) {
     msg += `\nYour RGC/Auth Code: ${rgcCode}\nEnter this code in TechHub to complete the job.`;
@@ -150,10 +268,31 @@ export function buildNlaApprovalMessage(serviceOrder: string, rgcCode?: string |
   return msg;
 }
 
-export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgcCode?: string | null, agentMessage?: string): string {
-  let msg: string;
+export async function buildAuthCodeMessage(
+  serviceOrder: string,
+  authCode: string,
+  rgcCode?: string | null,
+  agentMessage?: string
+): Promise<string> {
   const hasAuth = !!(authCode && authCode.trim());
   const hasRgc = !!(rgcCode && rgcCode.trim());
+
+  const actionKey = hasAuth && hasRgc
+    ? "ticket_approved.with_auth_and_rgc"
+    : hasRgc
+      ? "ticket_approved.rgc_only"
+      : "ticket_approved.auth_only";
+
+  const rendered = await renderTemplate(actionKey, {
+    serviceOrder,
+    authCode,
+    rgcCode: rgcCode ?? "",
+    agentMessage: agentMessage ?? "",
+    agentMessageLine: agentMessage ? `\n\n${agentMessage}` : "",
+  });
+  if (rendered !== null) return rendered;
+
+  let msg: string;
   if (hasAuth && hasRgc) {
     msg = `VRS Authorization for SO#${serviceOrder}\nAuthorization Code: ${authCode}\nRGC Code: ${rgcCode}\nEnter both codes in TechHub to complete the job.`;
   } else if (hasRgc) {
@@ -167,14 +306,23 @@ export function buildAuthCodeMessage(serviceOrder: string, authCode: string, rgc
   return msg;
 }
 
-export function buildSubmissionReceivedMessage(
+export async function buildSubmissionReceivedMessage(
   serviceOrder: string,
   warrantyType?: string,
   requestType?: string
-): string {
+): Promise<string> {
   const wt = (warrantyType || "").toLowerCase();
   const isExternal = wt === "american_home_shield" || wt === "first_american";
   const isNla = requestType === "parts_nla";
+
+  const actionKey = isNla
+    ? "submission_received.nla"
+    : isExternal
+      ? "submission_received.external_warranty"
+      : "submission_received.standard";
+
+  const rendered = await renderTemplate(actionKey, { serviceOrder });
+  if (rendered !== null) return rendered;
 
   let waitCopy: string;
   if (isNla) {
@@ -183,9 +331,6 @@ export function buildSubmissionReceivedMessage(
     // days. The prior "1-2 business days" line was telling techs to expect
     // a multi-day wait, which combined with the claim-SMS "DO NOT LEAVE
     // THE SITE" wording was making them stand by at the home for hours.
-    // New copy directs the tech to reschedule the call for later that day
-    // and move on; the sourcing decision arrives by SMS when ready.
-    // Real fix is the Communication Settings module (Task B).
     waitCopy =
       "NLA submission received by the VRS parts team. Typical turnaround is same-day. Reschedule this call for later today and move on to your next stop — you'll receive a follow-up text with the sourcing decision.";
   } else if (isExternal) {
@@ -197,4 +342,61 @@ export function buildSubmissionReceivedMessage(
   }
 
   return `VRS Submission received for SO#${serviceOrder}\n\n${waitCopy}\n\nYou will receive a follow-up text when the decision is made.`;
+}
+
+// ============================================================================
+// New builders for templates that previously lived as inline strings inside
+// routes.ts call sites. Extracting them lets the admin edit them through the
+// Communication Templates page like every other tech-facing message.
+// ============================================================================
+
+export async function buildResubmissionClaimMessage(serviceOrder: string): Promise<string> {
+  const rendered = await renderTemplate("ticket_claimed.resubmission", { serviceOrder });
+  if (rendered !== null) return rendered;
+  return `VRS Update for SO#${serviceOrder}: An agent is actively working on your resubmitted ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
+}
+
+export async function buildStandardClaimMessage(serviceOrder: string): Promise<string> {
+  const rendered = await renderTemplate("ticket_claimed.standard", { serviceOrder });
+  if (rendered !== null) return rendered;
+  return `VRS Update for SO#${serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
+}
+
+export async function buildTwoStageClaimMessage(serviceOrder: string): Promise<string> {
+  const rendered = await renderTemplate("ticket_claimed.two_stage", { serviceOrder });
+  if (rendered !== null) return rendered;
+  return `VRS Update for SO#${serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.`;
+}
+
+export async function buildSubmissionApprovedMessage(
+  serviceOrder: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  const rendered = await renderTemplate("submission_approved.stage1", {
+    serviceOrder,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageLine: technicianMessage ? `\n\n${technicianMessage}` : "",
+  });
+  if (rendered !== null) return rendered;
+
+  const baseMsg = `VRS Update for SO#${serviceOrder}: Your submission has been reviewed and APPROVED. You are cleared to leave the site and head to your next call.\n\nIMPORTANT: Reschedule this call for the same day so you can reopen it later and enter the authorization code to finalize the part order.\n\nVRS is now working on obtaining your authorization code and will text it to you as soon as it is available.`;
+  return technicianMessage ? `${baseMsg}\n\n${technicianMessage}` : baseMsg;
+}
+
+export async function buildNlaInvalidMessage(
+  serviceOrder: string,
+  invalidReason: string,
+  instructions?: string | null
+): Promise<string> {
+  const rendered = await renderTemplate("nla_invalid", {
+    serviceOrder,
+    invalidReason,
+    instructions: instructions ?? "",
+    instructionsLine: instructions ? `\n\nInstructions: ${instructions}` : "",
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: INVALID NLA REQUEST\nReason: ${invalidReason}`;
+  if (instructions) msg += `\n\nInstructions: ${instructions}`;
+  return msg;
 }

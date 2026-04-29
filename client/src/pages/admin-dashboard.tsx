@@ -2281,6 +2281,15 @@ export default function AdminDashboard() {
                       <span>Agent Queue View</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => navigate("/admin/communications")}
+                      data-testid="nav-communication-templates"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span>Communication Templates</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
