@@ -253,7 +253,7 @@ export default function AdminCommunicationsPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6 max-w-5xl space-y-8">
+      <main className="container mx-auto px-4 py-6 max-w-6xl space-y-8">
         {isLoading && (
           <div className="space-y-4" data-testid="status-loading">
             {[0, 1, 2].map((i) => (
@@ -284,6 +284,60 @@ export default function AdminCommunicationsPage() {
               <p className="text-sm text-muted-foreground" data-testid="text-empty-state">
                 No templates have been seeded yet. Restart the workflow to populate defaults.
               </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Tyler 2026-04-29: top-of-page legend so admins editing a template
+            understand what the curly-brace tokens are, what happens if they
+            break or remove one, and what the most common variables are. The
+            per-template "Available variables" panel inside the editor still
+            shows the exact list for that template — this card is the
+            shared big-picture explanation. */}
+        {!isLoading && !isError && grouped.length > 0 && (
+          <Card data-testid="card-placeholder-legend" className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                How placeholders work
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Anything wrapped in curly braces — like <code className="font-mono px-1 py-0.5 rounded bg-background border">{"{serviceOrder}"}</code> — is a placeholder. When the message is sent, the system replaces it with the real value for that ticket. <strong className="text-foreground">Edit the words around placeholders, and keep every placeholder that was already there exactly as written.</strong>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                <div className="space-y-1.5">
+                  <p className="font-semibold text-foreground">Common values</p>
+                  <ul className="space-y-1.5 text-muted-foreground">
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{serviceOrder}"}</code> — the SO# (e.g. <span className="font-mono">12345678</span>)</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{rgcCode}"}</code> — RGC / authorization code for the day</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{authCode}"}</code> — Sears Protect auth code from the agent</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{partNumber}"}</code> — the located part #</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{reason}"}</code> / <code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{invalidReason}"}</code> — why a ticket was rejected/invalid</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{resubmitLink}"}</code> — one-tap link to fix &amp; resubmit</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{technicianMessage}"}</code> — agent's free-text note (raw)</li>
+                  </ul>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="font-semibold text-foreground">Pre-formatted blocks (auto-prefixed)</p>
+                  <ul className="space-y-1.5 text-muted-foreground">
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{closingLine}"}</code> — final line of a rejected message (resubmit link block, or supervisor fallback)</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{agentMessageLine}"}</code> / <code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{technicianMessageLine}"}</code> — agent note, with leading blank lines added for you</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{technicianMessageBlock}"}</code> — agent note pre-formatted with leading blank lines AND the right prefix word ("Instructions:" or "Feedback from VRS:" — depends on the template)</li>
+                    <li><code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{rgcLine}"}</code> / <code className="font-mono px-1 py-0.5 rounded bg-background border text-foreground">{"{instructionsLine}"}</code> — full RGC/instructions block including newlines</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs space-y-2">
+                <p className="font-semibold text-amber-700 dark:text-amber-400">Heads up — what can go wrong</p>
+                <ul className="space-y-1.5 text-muted-foreground list-disc ml-4">
+                  <li><strong className="text-foreground">Don't misspell a placeholder.</strong> If you write <code className="font-mono">{"{servceOrder}"}</code> instead of <code className="font-mono">{"{serviceOrder}"}</code>, the system can't substitute the real value, so it throws away your whole edit and sends the original built-in message instead.</li>
+                  <li><strong className="text-foreground">Don't delete a placeholder marked </strong><span className="uppercase tracking-wide text-[10px] font-semibold bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">Required</span><strong className="text-foreground"> in the editor.</strong> Deleting <code className="font-mono">{"{serviceOrder}"}</code> doesn't just hide the SO# — it sends the message with that data permanently missing, and the technician won't know which ticket it's about.</li>
+                  <li><strong className="text-foreground">For optional placeholders</strong> (the <em>…Line</em> / <em>…Block</em> ones, marked <span className="uppercase tracking-wide text-[10px] font-semibold border px-1.5 py-0.5 rounded">Optional</span>): on tickets where the agent didn't add a note, the system can't fill them in, so it falls back to the built-in message wording for that ticket only. Your edit will still go out on tickets where the value IS present.</li>
+                  <li>Each template's editor lists the exact placeholders that template accepts — see "Available variables" inside the editor for the authoritative list.</li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -326,12 +380,17 @@ export default function AdminCommunicationsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 pb-4">
-                    <p
-                      className="text-xs text-muted-foreground whitespace-pre-line line-clamp-3 mb-3"
-                      data-testid={`text-body-preview-${tpl.id}`}
+                    {/* Tyler 2026-04-29: show the full body (with newlines)
+                        instead of the truncated single-line preview so admins
+                        can read the entire message without clicking Edit.
+                        Rendered in a muted bordered block so it visually
+                        reads as the actual SMS, not a description. */}
+                    <div
+                      className="rounded-md border bg-muted/40 px-3 py-2 mb-3 text-sm whitespace-pre-line font-mono leading-relaxed"
+                      data-testid={`text-body-full-${tpl.id}`}
                     >
-                      {previewBody(tpl.body)}
-                    </p>
+                      {tpl.body}
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"

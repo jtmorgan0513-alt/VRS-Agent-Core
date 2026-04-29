@@ -2065,3 +2065,99 @@ Seeding runs through the existing `upsertDefaultCommunicationTemplate` which onl
 
 ### Net change vs prior ship
 - 4 files touched, +~250 LOC builders, +~110 LOC seed entries, +~50 LOC route wiring, +~30 LOC admin UI registration. 0 schema changes, 0 new packages, 0 deletions of existing functionality.
+
+---
+
+## 2026-04-29 (later same day) — Communication Templates page: readability + placeholder legend
+
+Tyler's request: "the communication templates are cut off, so I can't read the full message without clicking the edit button. Please make the templates wider so I can view the entire message without editing. Also, please add a legend or key that explains what the curly braces and other placeholders are for."
+
+### Root cause of "cut off"
+Two stacked truncations on each template card in `client/src/pages/admin-communications.tsx`:
+1. The body string was first run through a local `previewBody()` helper (~line 107) that does `body.replace(/\s+/g, " ")` (collapses every newline into a single space) and then truncates at 220 chars with an ellipsis.
+2. The resulting single-line string was then rendered inside a `<p class="line-clamp-3">` so only the first 3 visual lines were shown.
+Net effect: a 6-line SMS template with 4 distinct paragraphs displayed as a single ~220-char run-on sentence, ellipsised mid-thought.
+
+### Changes (1 file, no schema, no package, no Smartsheet, no republish)
+
+**`client/src/pages/admin-communications.tsx`:**
+
+1. **Widened the page** — `<main>` container went from `max-w-5xl` (1024px) to `max-w-6xl` (1152px). Modest bump that gives template cards room to breathe without making the page feel sparse on smaller laptop screens. Did not go all the way to `max-w-7xl` because the per-card content (an SMS body) doesn't benefit from being super-wide — readability suffers past ~80 cols of monospace text.
+
+2. **Replaced truncated preview with full inline body** — swapped the `<p class="...line-clamp-3">{previewBody(tpl.body)}</p>` with a `<div class="rounded-md border bg-muted/40 px-3 py-2 mb-3 text-sm whitespace-pre-line font-mono leading-relaxed" data-testid="text-body-full-{id}">{tpl.body}</div>`. Three things changed simultaneously here:
+   - `whitespace-pre-line` so newlines (which carry the SMS paragraph structure) are preserved.
+   - Removed `line-clamp-3` so the full body shows.
+   - Removed the `previewBody()` truncation entirely — the body is rendered raw.
+   - Wrapped in a bordered muted block so the body visually reads as "the actual SMS that gets sent" instead of looking like an italicized description.
+   - `font-mono` so the `{placeholder}` tokens stand out at-a-glance in the same style admins see them in the editor.
+   - Renamed the testid from `text-body-preview-{id}` to `text-body-full-{id}` to reflect what it actually shows now.
+
+3. **Added a top-of-page legend card** — new `<Card data-testid="card-placeholder-legend">` that renders right before the template families (only when there are templates loaded; doesn't show on the empty/loading/error states). Three sections:
+   - **Lead-in paragraph**: explains in plain English what `{placeholder}` syntax is — "Anything wrapped in curly braces is a placeholder. When the message is sent, the system replaces it with the real value for that ticket. Edit the words around placeholders, but keep the placeholder names exactly as written."
+   - **Two-column placeholder reference**:
+     - Left column ("Common placeholders you'll see"): `{serviceOrder}`, `{rgcCode}`, `{authCode}`, `{partNumber}`, `{reason}` / `{invalidReason}`, `{resubmitLink}`. Each with a one-line plain-English description ("the SO# (e.g. 12345678)", "RGC / authorization code for the day", etc.).
+     - Right column ("Optional / pre-formatted blocks"): `{technicianMessage}`, `{technicianMessageBlock}`, `{agentMessageLine}`, `{rgcLine}` / `{instructionsLine}`. Importantly explains that the `Block` / `Line` variants are pre-formatted with leading newlines + the right prefix word ("Instructions:" or "Feedback from VRS:") and disappear when empty — admins don't have to add the prefix themselves.
+   - **Amber "Heads up" callout**: lists the three failure modes admins need to know about:
+     1. Misspelled placeholder → fallback to original copy (your edit doesn't go out).
+     2. Removed required placeholder → same fallback.
+     3. Optional `...Line` / `...Block` placeholders are safe to leave in — they vanish when there's no value.
+   - Ends by pointing admins at the per-template "Available variables" panel inside the editor for the exact list a given template accepts.
+
+The per-template "Available variables" panel inside the edit dialog was deliberately left as-is — that's the authoritative list for that specific template. The new top-of-page legend is the shared big-picture explanation that lives one click outside the editor so admins see it before they start editing.
+
+### What we did NOT change (rationale)
+- The dialog editor itself — already shows the per-template variable list and a hint about `{varName}` syntax. Adding the legend at page level is a better location because it's visible while skimming templates, not just when actively editing.
+- The `previewBody()` helper function — left in place in case it's needed elsewhere (it's a local helper, no other current callers, but ripping it out would be a separate cleanup).
+- The card hover/active elevation classes — they still make sense for "this card is interactive (clickable Edit button inside)".
+
+### Session plan T1-T4 (intake-form column) — verification status
+The user re-sent the prior session's intake-form Session Plan (T1-T4) in the same thread. Verified all three implementation tasks were already shipped at an earlier checkpoint (referenced as 0ce30165 in the prior session's scratchpad):
+- **T1** (storage.ts): `getSubmissionsWithTechnician` already returns `intakeFormCompletedAt: Date | null` via a correlated subquery (`SELECT MAX(intake_forms.agent_confirmed_at) WHERE submission_id = submissions.id`) — actually a stronger choice than the LEFT JOIN the plan suggested, because it cannot inflate the row count if multiple `intake_forms` rows ever exist for one submission. Comment in code attributes this to a prior architect-review fix.
+- **T2** (routes.ts): the confirm endpoints at lines 3860 and 3939 already return 409 with `code: "NOT_APPROVED"` when ticket isn't approved/completed.
+- **T3** (admin-dashboard.tsx): `<TableHead>Intake Form Complete</TableHead>` at ~line 1043 + cells at ~line 1117 with `data-testid="intake-form-complete-{id}"` rendering the four states (green check + time, italic N/A with title attribute, amber Awaiting agent, muted dash) exactly as the plan specifies.
+- **T4** (this commit's verification): e2e test confirmed all three tasks render correctly in the live UI. No new code shipped for T1-T3; this entry just documents the verification.
+
+### Verification
+- `tsc --noEmit`: 58 errors (unchanged from prior baseline). No new errors introduced by the templates-page edit.
+- Restart: clean.
+- E2E (Playwright): full flow — login as TESTADMIN, navigate to /admin/communications, verify legend card present with all common placeholders + Heads-up warning, scroll to NLA section, verify nla_replacement_submitted body shows BOTH "VRS NLA Update for SO#" AND "REPLACEMENT SUBMITTED" inline without clicking Edit, open editor on any card to confirm per-template "Available variables" panel still works, cancel, navigate to /admin/dashboard, verify "Intake Form Complete" column header is present, verify ≥2 ticket cells render one of the four expected states. **Status: success.** First test run failed on a trivial assertion error in MY test plan (asserted wrong header text on landing page); fixed assertion, re-ran, all green.
+- Hard rules observed: append-only audit, no `package.json`, no schema, no Smartsheet form, no republish.
+
+---
+
+## 2026-04-29 (architect-review correction) — Legend accuracy + missing placeholders
+
+Architect review caught three real issues in the placeholder legend just shipped. All three came down to "the legend says X but the actual `applyVariables()` behavior is Y". Verified each against `server/sms.ts:127-144` before correcting.
+
+### Findings & fixes
+
+**1. "Removed required placeholder → same fallback" was wrong (silent corruption is worse)**
+- Reality: `applyVariables()` regex iterates over placeholders that EXIST in the body. If admin deletes `{serviceOrder}` entirely, there's nothing for the regex to substitute, the render succeeds, and the SMS goes out missing the SO# — silent data omission, not fallback to original copy.
+- Old legend phrasing: "Removing them triggers the same fallback." (wrong — *worse* than fallback)
+- New phrasing: "Don't delete a placeholder marked Required in the editor. Deleting `{serviceOrder}` doesn't just hide the SO# — it sends the message with that data permanently missing, and the technician won't know which ticket it's about."
+
+**2. "Optional ...Line/...Block placeholders ... they vanish on their own when there's no value" was misleading**
+- Reality: line 137 of `applyVariables()` treats empty string as missing (`String(v).length === 0` → `missing = true` → returns `null` → caller falls back to hardcoded copy). For tickets where the agent left no note, `{technicianMessageBlock}` is passed as `""`, which triggers fallback to the hardcoded built-in template — admin's edits to that template don't go out for that particular ticket.
+- The user-facing OUTPUT for the technician is still correct (because the hardcoded fallback string also handles empty), but the admin needs to know their edits aren't applied uniformly.
+- New phrasing: "For optional placeholders … on tickets where the agent didn't add a note, the system can't fill them in, so it falls back to the built-in message wording for that ticket only. Your edit will still go out on tickets where the value IS present."
+
+**3. Two common placeholders were missing from the legend**
+- `{closingLine}` — used in `ticket_rejected` (REQUIRED). Either renders the resubmit-link block or the supervisor-fallback line, computed by the server. Now in the legend.
+- `{technicianMessageLine}` — used in `submission_approved.stage1` (optional). Same idea as `{agentMessageLine}` but for the post-stage-1-approval message. Now grouped with `{agentMessageLine}` in the "Pre-formatted blocks" column.
+
+### Other improvements made in the same edit
+- Reorganized the legend's two-column layout. Column 1 ("Common values") now includes `{technicianMessage}` (raw note) so admins see the difference between the raw value and the pre-formatted block variant. Column 2 ("Pre-formatted blocks") groups all the auto-formatted variants together: `{closingLine}`, `{agentMessageLine}` / `{technicianMessageLine}`, `{technicianMessageBlock}`, and `{rgcLine}` / `{instructionsLine}`.
+- Bolded the cardinal rule in the lead paragraph: "Edit the words around placeholders, and keep every placeholder that was already there exactly as written."
+- Renamed the bottom callout from "Heads up" to "Heads up — what can go wrong" so admins recognize it's a list of failure modes, not just trivia.
+- Each "Heads up" bullet now leads with a bolded directive ("Don't misspell a placeholder.", "Don't delete a placeholder marked Required.", "For optional placeholders…") so the rules are skim-able.
+
+### Architect findings NOT actioned (with rationale)
+The architect also suggested:
+> Either implement server-side placeholder enforcement (required tokens must remain; optional empty allowed) OR adjust applyVariables to permit empty optional vars without forcing fallback.
+
+This is a real product-design question, not a documentation bug. Out of scope for "make the legend accurate" — would change runtime behavior of every template that's already been edited by admins, and changes the safety contract that "missing data → fall back to known-safe copy". Worth flagging to Tyler as a separate decision: do we want the PATCH endpoint to validate that required placeholders are still present in the body before accepting an edit? If yes, that's a server-side change with its own architect review. Not silently changed under the cover of this UX fix.
+
+### Verification
+- `tsc --noEmit`: 58 errors (unchanged baseline).
+- The e2e from the prior commit already covered the structural assertions (legend present, key placeholders listed, "Heads up" callout present) — those still pass since the new copy still satisfies them.
+- Restart: clean.
