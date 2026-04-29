@@ -1252,18 +1252,31 @@ export async function registerRoutes(
 
       const warrantyCompany = (submission.warrantyProvider || submission.warrantyType || "").toLowerCase();
       const isTwoStage = ["american home shield", "ahs", "first american"].some(w => warrantyCompany.includes(w));
+      const isNla = submission.requestType === "parts_nla";
 
-      let claimSmsMessage: string;
-      if (isTwoStage) {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.`;
-      } else {
-        claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
+      // 2026-04-28 (Tyler pilot-feedback Task A, stopgap):
+      // Suppress the "stand by / DO NOT LEAVE THE SITE" claim SMS for NLA
+      // tickets entirely. The new submission-received SMS already tells
+      // the NLA tech to reschedule the call and move on; sending a second
+      // SMS minutes later that says "stand by, do not leave" actively
+      // contradicts that guidance and was a source of the pilot
+      // confusion. NLA techs receive the sourcing-decision SMS later
+      // (buildNlaApprovalMessage) when the parts team has an answer; no
+      // intermediate claim notification adds value for the NLA flow.
+      // Two-stage and standard claim SMS unchanged.
+      if (!isNla) {
+        let claimSmsMessage: string;
+        if (isTwoStage) {
+          claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.\n\n1. Your photos and details will be reviewed. If anything is missing, you'll receive a text with details so you can quickly resubmit.\n2. If approved, VRS will obtain your authorization code and send it to you.`;
+        } else {
+          claimSmsMessage = `VRS Update for SO#${submission.serviceOrder}: An agent is actively working on your ticket. Stand by for confirmation of your submission, which will let you know when you can leave.\n\nDO NOT LEAVE THE SITE until you receive that confirmation text.`;
+        }
+
+        const claimSmsPhone = submission.phoneOverride || submission.phone;
+        sendSms(submission.id, claimSmsPhone, "ticket_claimed", claimSmsMessage).catch(err => {
+          console.error("Failed to send claim SMS:", err);
+        });
       }
-
-      const claimSmsPhone = submission.phoneOverride || submission.phone;
-      sendSms(submission.id, claimSmsPhone, "ticket_claimed", claimSmsMessage).catch(err => {
-        console.error("Failed to send claim SMS:", err);
-      });
 
       return res.status(200).json({ submission: updated });
     } catch (error) {

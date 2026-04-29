@@ -1017,3 +1017,65 @@ All 17 tests still pass. Server-side route is unchanged (no test surface affecte
 - COMMITS.md appended only after harness re-passed (17/17).
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes.**
+
+
+---
+
+## 2026-04-28 — Tyler URGENT pilot-feedback hotfix (Tier 1 + Tier 2: cross-tech draft contamination)
+
+### Context
+Multiple techs blocked from submitting after a prior tech NLA-completed (`part_found_vrs_ordered`) the same SO days earlier. Confirmed victims: David Wiggins on SO 7435-13629175, the bgambre-pattern tech on SO 8206-13641761. Server-side `users` and `technicians` tables verified clean — no `rac_id` duplicates, no LDAP collisions. The contamination vector is on the client: `tech-submit.tsx` was persisting an in-progress draft to `localStorage[vrs_tech_submit_draft_v1_<userId>]` without stamping it with the saving tech's identity, and `auth.tsx` `logout()` wasn't clearing the draft on session teardown. When two techs ended up sharing client storage (mechanism still under investigation; Tyler ruled out the district-pool theory), tech B would auto-hydrate tech A's draft on their next form mount and submit under their own JWT — but using A's photos/text/SO, producing the 409 "already submitted" red toast on the affected service order.
+
+Tyler greenlit Tier 1 (client-side identity stamp + blocking Resume/Start-fresh dialog + cross-key sweep on logout) AND Tier 2 (server-side log-only diagnostic in POST /api/submissions to surface JWT.id vs users.id-by-ldapId mismatches in prod). Tier 3 (server-side rejection on mismatch) explicitly NOT in scope.
+
+### Tier 1 — client-side defenses
+
+**File: `client/src/lib/draft-identity.ts` (new, ~95 lines)**
+- Pure helper module so the validation is unit-testable in isolation, independent of React state.
+- `parseAndValidateDraft(raw, currentUser)` returns `{ ok: true, draft }` or `{ ok: false, reason }` where reason ∈ `no_draft | parse_error | missing_identity | id_mismatch | ldap_mismatch`. Identity match requires both `userId === current.id` AND (when current ldap is non-null) `ldapId === current.ldapId`. Legacy drafts (no identity stamp) are rejected as `missing_identity`.
+- `stampDraftIdentity(body, currentUser)` wraps the persisted body with `identity: { userId, ldapId }`.
+- `clearAllTechSubmitDrafts(storage)` enumerates and removes every `vrs_tech_submit_draft_v1_*` key, returning the count. Used by `logout()` as a belt-and-suspenders sweep so even if a draft slipped past identity validation, it can't survive the next session boundary.
+
+**File: `client/src/pages/tech-submit.tsx`**
+- Save effect now wraps every persisted draft via `stampDraftIdentity({...}, { id: user.id, ldapId: user.racId ?? user.ldapId })`. (Note: `/api/auth/me` returns the LDAP under both `racId` and `ldapId` keys for tech users — using `(user as any).ldapId ?? user.racId` so either source resolves correctly.)
+- Load effect now calls `parseAndValidateDraft` instead of doing inline JSON.parse + auto-hydrate. Anything other than a clean identity match (including pre-hotfix legacy drafts) is treated as not-mine: localStorage key is evicted and a `console.warn` records the reason for browser-log forensics.
+- Auto-hydrate REMOVED. A passing-validation draft is held in new `pendingDraft` state and rendered into a blocking AlertDialog with two buttons: **Resume draft** / **Start fresh**. Until the tech picks one, the autosave effect is gated off via the new `draftDecisionMadeRef` so an in-flight form change can't overwrite the prior draft mid-decision.
+- Existing `draftRestored` banner + "Start fresh" button preserved for the post-resume state — same UX as before once the user has explicitly resumed.
+
+**File: `client/src/lib/auth.tsx`**
+- `logout()` now imports `clearAllTechSubmitDrafts(localStorage)` and runs it before removing the JWT. This is the additional defense layer for the case where the inheritance vector is somehow upstream of `localStorage`-keying-by-user-id (e.g. a service worker pre-caching the page state).
+
+### Tier 2 — server-side diagnostic
+
+**File: `server/storage.ts`**
+- Added `getTechUserByLdapId(ldapId): Promise<User | undefined>` to `IStorage` and `DatabaseStorage`. Lookup-only counterpart to the existing `getOrCreateTechUser` — returns the `users` row whose `racId` matches the given ldap, or undefined. Pure additive method, no schema changes.
+
+**File: `server/routes.ts`**
+- `POST /api/submissions` now performs an identity-mismatch check after `getUser(authReq.user.id)`. If `getTechUserByLdapId(authReq.user.ldapId)` returns a row whose `id` differs from the JWT-bound `id`, a `[identity-mismatch]` warning is logged with both ids, the ldap, and the submission SO. Behavior is unchanged — pure log-only diagnostic. When the bug fires again in prod, this log line tells us exactly whose JWT was used to submit on whose behalf, surfacing the inheritance mechanism we've been missing.
+
+### Tests
+
+**File: `tests/draft-identity.test.ts` (new, 13 unit tests)**
+- Covers every validation reason (no_draft, parse_error, missing_identity for legacy drafts AND non-numeric userId, id_mismatch by name in the Hector→David scenario, ldap_mismatch, ok-on-match).
+- Covers the null-ldap admin/agent edge case (legacy users without an LDAP can't be locked out by the ldap check).
+- Covers `stampDraftIdentity` round-trip with both tech and null-ldap users.
+- Covers `clearAllTechSubmitDrafts` selectivity: only `vrs_tech_submit_draft_v1_*` keys are removed, `vrs_token` and unrelated keys are preserved; correct count returned; zero-draft case handled.
+
+### Test results
+
+```
+Test Files  2 passed (2)
+     Tests  30 passed (30)
+  Duration  2.09s
+```
+
+13 new draft-identity tests + 17 existing intake-confirm tests, all green. No regression in the intake-confirm suite — the new Tier 2 logger does not interfere with normal submission flow (the existing route handler path is unchanged for the matching-identity case, which is every existing test fixture). Workflow restarted clean on :5000 between edits.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (additive storage method only; zero DDL).
+- No Smartsheet form definition changes.
+- No republish (Tyler will handle).
+- COMMITS.md appended only after harness re-passed (30/30 verified).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**

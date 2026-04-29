@@ -178,8 +178,16 @@ export function buildSubmissionReceivedMessage(
 
   let waitCopy: string;
   if (isNla) {
+    // 2026-04-28 (Tyler pilot-feedback Task A, stopgap):
+    // Real-world turnaround for NLA sourcing is SAME DAY, not 1-2 business
+    // days. The prior "1-2 business days" line was telling techs to expect
+    // a multi-day wait, which combined with the claim-SMS "DO NOT LEAVE
+    // THE SITE" wording was making them stand by at the home for hours.
+    // New copy directs the tech to reschedule the call for later that day
+    // and move on; the sourcing decision arrives by SMS when ready.
+    // Real fix is the Communication Settings module (Task B).
     waitCopy =
-      "NLA requests are researched by the VRS parts team. You will be contacted with sourcing details — typical turnaround is 1–2 business days.";
+      "NLA submission received by the VRS parts team. Typical turnaround is same-day. Reschedule this call for later today and move on to your next stop — you'll receive a follow-up text with the sourcing decision.";
   } else if (isExternal) {
     waitCopy =
       "This is an external-warranty request (AHS / First American). Approvals require a provider callback and can take longer than standard Sears Protect tickets. Please remain at the site until you receive the approval/rejection text.";
