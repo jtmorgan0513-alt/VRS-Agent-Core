@@ -1,5 +1,5 @@
 /**
- * Seed 3 test submissions for end-to-end VRS Agent flow verification.
+ * Seed 9 test submissions for end-to-end VRS Agent flow verification.
  *
  * Run manually:  tsx scripts/seed-test-tickets.ts
  *
@@ -28,6 +28,30 @@
  *   5. SO 99999000005 — rejected/resubmittable (Stage-1 rejected with a
  *      sample rejection reason). Drives the tech-resubmit flow + intake
  *      reopen on a previously-rejected ticket.
+ *
+ * 2026-04-29 batch B (Tyler ask: "seed 4 more test tickets") — fills coverage
+ * gaps left by the original 5:
+ *   6. SO 99999000006 — Sears Protect Authorization, HVAC, queued, AGED
+ *      (created_at backdated to yesterday 09:00 ET so it crosses the
+ *      ≥4h business-hours urgency threshold and renders the new red row
+ *      highlight + amber pill aging colors). Use this to sanity-check
+ *      that the business-hours timer pauses overnight — wall clock should
+ *      be ~26 h, business clock should be ~14 h.
+ *   7. SO 99999000007 — Sears Protect Authorization, cooking, queued, fresh
+ *      (0m elapsed). Plain happy-path queue ticket for re-runs after
+ *      claiming/clearing the others.
+ *   8. SO 99999000008 — AHS Authorization, dishwasher, queued, fresh.
+ *      Second AHS-branch ticket so the AHS+RGC dual-code path can be
+ *      exercised twice in a single session without resetting.
+ *   9. SO 99999000009 — Sears Protect Authorization, laundry, COMPLETED
+ *      (auth_code populated, claimed_at + assigned_to=86 set, status
+ *      changed to completed yesterday). Ensures the Completed-status
+ *      filter on admin/agent dashboards has a row and exercises the
+ *      handle-time + total-time timer columns end-to-end.
+ *
+ * All tickets 6-9 are pre-assigned to agent 86 (ZZTEST9) so they appear
+ * directly under "My Tickets" without needing a queue-claim step (matches
+ * the existing pre-assignment pattern documented in COMMITS.md ~line 1395).
  */
 
 import bcryptjs from "bcryptjs";
@@ -119,7 +143,7 @@ interface TicketSpec {
   so: string;
   warrantyType: "sears_protect" | "american_home_shield";
   requestType?: "authorization" | "parts_nla";
-  ticketStatus: "queued" | "approved" | "rejected";
+  ticketStatus: "queued" | "approved" | "rejected" | "completed";
   stage1Status?: "pending" | "approved" | "rejected" | "invalid";
   stage1RejectionReason?: string;
   procId: string;
@@ -127,6 +151,30 @@ interface TicketSpec {
   authCode: string | null;
   estimateAmount: string;
   scenario: string;
+  // Optional 2026-04-29 batch B additions:
+  applianceType?:
+    | "cooking"
+    | "dishwasher"
+    | "microwave"
+    | "laundry"
+    | "refrigeration"
+    | "hvac"
+    | "all_other";
+  // Pre-assign to an agent. Existing tickets 1-5 are post-assigned via the
+  // hand-written UPDATE in COMMITS.md ~line 1395; tickets 6-9 set this at
+  // insert time so a single seed-script run lands them on "My Tickets" for
+  // ZZTEST9 (id=86) without a follow-up SQL step.
+  assignedTo?: number;
+  claimedMinutesAgo?: number;
+  // Backdate created_at by N hours from now (used by the AGED ticket so it
+  // crosses the business-hours urgency threshold).
+  createdHoursAgo?: number;
+  // For completed tickets: how long ago was the status changed (drives the
+  // Total Time column in the dashboards).
+  statusChangedHoursAgo?: number;
+  // Free-form description override; defaults to the original refrigerator
+  // copy so existing tickets are byte-identical.
+  issueDescriptionOverride?: string;
 }
 
 async function ensureSubmission(spec: TicketSpec, technicianUserId: number) {
@@ -140,7 +188,39 @@ async function ensureSubmission(spec: TicketSpec, technicianUserId: number) {
     return existing[0];
   }
 
-  const isApproved = spec.ticketStatus === "approved";
+  const isApprovedLike = spec.ticketStatus === "approved" || spec.ticketStatus === "completed";
+  const isCompleted = spec.ticketStatus === "completed";
+  const appliance = spec.applianceType ?? "refrigeration";
+  // Tailor the placeholder issue copy to the appliance type so the test
+  // tickets read believably in the admin queue. Falls back to the original
+  // refrigerator copy when no override + appliance unset.
+  const defaultCopyByAppliance: Record<string, string> = {
+    refrigeration: "Refrigerator not cooling, compressor running but no cold air.",
+    hvac: "AC unit not turning on, thermostat shows error code E5; condenser fan inoperative.",
+    cooking: "Range top burner clicks but won't ignite; oven heats but cycles off intermittently.",
+    dishwasher: "Dishwasher won't drain; standing water after every cycle, drain pump suspect.",
+    laundry: "Washer drum not spinning during agitation; bearings noisy on spin cycle.",
+    microwave: "Microwave runs but doesn't heat; magnetron likely failed.",
+    all_other: "Customer reports intermittent appliance failure; full diagnostic required.",
+  };
+  const copy = spec.issueDescriptionOverride ?? defaultCopyByAppliance[appliance] ?? defaultCopyByAppliance.refrigeration;
+  const issueDescription = `[TEST] ${spec.scenario} — ${copy} SO ${spec.so}.`;
+
+  // Compute optional backdated timestamps. Drizzle accepts JS Date directly
+  // for timestamp columns. Using ms math (not SQL intervals) so the offsets
+  // are computed against the script's clock, not the DB clock — same
+  // semantics either way for our purposes.
+  const now = Date.now();
+  const createdAt = spec.createdHoursAgo
+    ? new Date(now - spec.createdHoursAgo * 3600 * 1000)
+    : undefined;
+  const claimedAt = spec.claimedMinutesAgo
+    ? new Date(now - spec.claimedMinutesAgo * 60 * 1000)
+    : undefined;
+  const statusChangedAt = spec.statusChangedHoursAgo
+    ? new Date(now - spec.statusChangedHoursAgo * 3600 * 1000)
+    : undefined;
+
   const [created] = await db
     .insert(submissions)
     .values({
@@ -149,25 +229,35 @@ async function ensureSubmission(spec: TicketSpec, technicianUserId: number) {
       phone: TECH_PHONE,
       serviceOrder: spec.so,
       districtCode: DISTRICT,
-      applianceType: "refrigeration",
+      applianceType: appliance,
       requestType: spec.requestType ?? "authorization",
       warrantyType: spec.warrantyType,
-      issueDescription: `[TEST] ${spec.scenario} — Refrigerator not cooling, compressor running but no cold air. SO ${spec.so}.`,
+      issueDescription,
       estimateAmount: spec.estimateAmount,
       technicianLdapId: TECH_LDAP,
       procId: spec.procId,
       clientNm: spec.clientNm,
       ticketStatus: spec.ticketStatus,
-      stage1Status: spec.stage1Status ?? (isApproved ? "approved" : "pending"),
-      stage2Status: isApproved ? "approved" : "pending",
+      stage1Status: spec.stage1Status ?? (isApprovedLike ? "approved" : "pending"),
+      stage2Status: isApprovedLike ? "approved" : "pending",
       stage1RejectionReason: spec.stage1RejectionReason ?? null,
-      submissionApproved: isApproved,
-      submissionApprovedAt: isApproved ? sql`now()` : null,
+      submissionApproved: isApprovedLike,
+      submissionApprovedAt: isApprovedLike ? sql`now()` : null,
       authCode: spec.authCode,
       aiEnhanced: false,
+      ...(spec.assignedTo !== undefined && { assignedTo: spec.assignedTo }),
+      ...(claimedAt && { claimedAt }),
+      ...(createdAt && { createdAt }),
+      ...(statusChangedAt && { statusChangedAt }),
+      // Completed tickets get a reviewedAt + reviewedBy so the admin's
+      // completed filter populates the "Reviewed by" column.
+      ...(isCompleted && {
+        reviewedAt: statusChangedAt ?? new Date(now - 3600 * 1000),
+        reviewedBy: spec.assignedTo ?? null,
+      }),
     })
     .returning();
-  console.log(`[create] submission SO ${spec.so} (id=${created.id}, ${spec.warrantyType}/${spec.ticketStatus})`);
+  console.log(`[create] submission SO ${spec.so} (id=${created.id}, ${spec.warrantyType}/${spec.ticketStatus}, appliance=${appliance})`);
   return created;
 }
 
@@ -267,6 +357,92 @@ async function main() {
       authCode: null,
       estimateAmount: "475.00",
       scenario: "Rejected/resubmittable + SRW intake-form branch (SRW000 → Kenmore-IW)",
+    },
+    techUser.id,
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2026-04-29 batch B (Tyler ask: "seed 4 more test tickets") — coverage
+  // gaps: aged ticket for the new business-hours timer, second AHS ticket,
+  // a fresh laundry/cooking pair, a completed ticket for the Completed
+  // filter. All pre-assigned to ZZTEST9 (id=86).
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const TEST_AGENT_ID = 86; // ZZTEST9 — confirmed via DB lookup 2026-04-29.
+
+  await ensureSubmission(
+    {
+      so: "99999000006",
+      warrantyType: "sears_protect",
+      ticketStatus: "queued",
+      procId: "SPRCLL",
+      clientNm: "Sears Protect",
+      authCode: null,
+      estimateAmount: "850.00",
+      applianceType: "hvac",
+      assignedTo: TEST_AGENT_ID,
+      // Backdate ~26h so wall-clock elapsed ≫ business-hours elapsed. This
+      // ticket is what proves the new business-hours timer pauses overnight:
+      // wall = ~26h, business should cap at the day's open window minus
+      // overnight gap. Triggers ≥4h red urgency highlight on admin dashboard.
+      createdHoursAgo: 26,
+      scenario: "AGED HVAC auth — sanity-check business-hours timer + red row urgency",
+    },
+    techUser.id,
+  );
+
+  await ensureSubmission(
+    {
+      so: "99999000007",
+      warrantyType: "sears_protect",
+      ticketStatus: "queued",
+      procId: "SPRCLL",
+      clientNm: "Sears Protect",
+      authCode: null,
+      estimateAmount: "395.00",
+      applianceType: "cooking",
+      assignedTo: TEST_AGENT_ID,
+      scenario: "Fresh cooking auth — plain happy-path queue ticket",
+    },
+    techUser.id,
+  );
+
+  await ensureSubmission(
+    {
+      so: "99999000008",
+      warrantyType: "american_home_shield",
+      ticketStatus: "queued",
+      // Same proc_id rationale as SO 99999000002 — AHS000 routes the
+      // intake-form branch detector to the AHS UI. See COMMITS.md.
+      procId: "AHS000",
+      clientNm: "American Home Shield",
+      authCode: null,
+      estimateAmount: "612.00",
+      applianceType: "dishwasher",
+      assignedTo: TEST_AGENT_ID,
+      scenario: "Second AHS auth (dishwasher) — repeat AHS+RGC dual-code path without resetting SO 99999000002",
+    },
+    techUser.id,
+  );
+
+  await ensureSubmission(
+    {
+      so: "99999000009",
+      warrantyType: "sears_protect",
+      ticketStatus: "completed",
+      procId: "SPRCLL",
+      clientNm: "Sears Protect",
+      authCode: "TEST-AUTH-009",
+      estimateAmount: "525.00",
+      applianceType: "laundry",
+      assignedTo: TEST_AGENT_ID,
+      // Claimed ~5 h ago (wall), completed ~2 h ago (wall). Total Time +
+      // Handle Time columns will round through the new business-hours
+      // formatter so they read consistently with the on-screen badge.
+      claimedMinutesAgo: 300,
+      statusChangedHoursAgo: 2,
+      createdHoursAgo: 5,
+      scenario: "Completed laundry SP auth — exercises Completed filter + handle-time/total-time columns",
     },
     techUser.id,
   );
