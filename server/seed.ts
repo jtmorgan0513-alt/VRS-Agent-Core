@@ -343,6 +343,99 @@ const DEFAULT_COMMUNICATION_TEMPLATES: SeedTemplate[] = [
       { name: "instructionsLine", required: false, sample: "\n\nInstructions: Order through standard parts flow.", description: "Pre-formatted or empty." },
     ],
   },
+
+  // ---- NLA second-stage resolution (parts team disposition) ----------------
+  // Tyler 2026-04-29: previously inline strings in routes.ts. Now editable
+  // through Communication Templates so admin can tune the wording the techs
+  // see when their NLA request is dispositioned by the parts team.
+  // {technicianMessageBlock} is a compound variable: empty when no agent
+  // note, or `\n\n<prefix>: <message>` with the historical prefix baked in.
+  {
+    channel: "sms",
+    actionKey: "nla_replacement_submitted",
+    name: "NLA — replacement submitted to warranty co.",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nAuth Code: {rgcCode}\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "technicianMessage", required: false, sample: "Customer prefers afternoon callback." },
+      { name: "technicianMessageBlock", required: false, sample: "\n\nInstructions: Customer prefers afternoon callback.", description: "Pre-formatted block (with leading newlines + 'Instructions:' prefix), or empty if no agent note." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_replacement_tech_initiates",
+    name: "NLA — replacement approved (tech initiates in TechHub)",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nAuth Code: {rgcCode}\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted block or empty." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_part_found_vrs_ordered",
+    name: "NLA — part found, ordered by VRS",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: {rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted block. Prefix is 'Instructions:' for direct fulfillment, 'Feedback from VRS:' when reached via P-card confirmation." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_part_found_tech_orders",
+    name: "NLA — part found, technician orders",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: {rgcCode}\nPart Number: {partNumber}\n\nThis part is available in TechHub. Order it and reschedule the call.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "partNumber", required: true, sample: "WPW10311524" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted block. Prefix is 'Feedback from VRS — Action required:' for direct fulfillment, 'Feedback from VRS:' when reached via P-card confirmation." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_rfr_eligible",
+    name: "NLA — RFR eligible (return for repair)",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: RFR ELIGIBLE\nAuth Code: {rgcCode}\n\nThis part is RFR eligible. Remove the failed part and return it for repair, then reschedule the call in TechHub.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted block or empty." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_pcard_confirmed.generic",
+    name: "NLA — P-card confirmed (generic / fallback)",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nAuth Code: {rgcCode}\nYour NLA parts request has been processed by the VRS team.{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "rgcCode", required: true, sample: "RGC-4421" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted 'Feedback from VRS:' block or empty. Used when the resolution doesn't match a more specific NLA template." },
+    ],
+  },
+  {
+    channel: "sms",
+    actionKey: "nla_rejected",
+    name: "NLA rejected — needs more info (resubmit)",
+    body: `VRS NLA Update for SO#{serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: {reason}\n\nTap to resubmit:\n{resubmitLink}{technicianMessageBlock}`,
+    variables: [
+      { name: "serviceOrder", required: true, sample: "12345678" },
+      { name: "reason", required: true, sample: "Make/model/serial photos missing" },
+      { name: "resubmitLink", required: true, sample: "https://vrs.example.com/tech/resubmit/123" },
+      { name: "technicianMessage", required: false, sample: "" },
+      { name: "technicianMessageBlock", required: false, sample: "", description: "Pre-formatted 'Feedback from VRS — Action required:' block or empty." },
+    ],
+  },
 ];
 
 async function seedDefaultCommunicationTemplates() {

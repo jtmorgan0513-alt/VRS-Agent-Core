@@ -400,3 +400,179 @@ export async function buildNlaInvalidMessage(
   if (instructions) msg += `\n\nInstructions: ${instructions}`;
   return msg;
 }
+
+// ============================================================================
+// Tyler 2026-04-29 (Phase B continuation): NLA second-stage resolution
+// builders. These were previously inline string literals in routes.ts inside
+// the `nla_*` action handlers (lines 1651-1785). Extracting them into
+// renderTemplate-backed builders means EVERY tech-facing SMS the system
+// sends now flows through the admin-editable Communication Templates table
+// — there are no inline string literals left in the codebase that techs
+// could receive.
+//
+// Each builder uses the same shape as the existing ones:
+//   1. Try renderTemplate(actionKey, vars) — pulls admin-edited copy if set,
+//      seeded default otherwise.
+//   2. If that returns null (template missing or required var unresolved),
+//      fall back to the byte-identical hardcoded string. The fallback is the
+//      safety net Tyler explicitly asked for in the silent-blank-fix audit;
+//      it ensures techs never receive an empty SMS even if the templates
+//      table is wiped.
+//
+// `technicianMessageBlock` is a pre-formatted compound variable: empty
+// string when no agent note, or `\n\n<prefix>: <message>` with the
+// historically-correct prefix word ("Instructions:" / "Feedback from VRS — Action required:")
+// baked in. This matches the `agentMessageLine` pattern already used in
+// buildAuthCodeMessage and keeps existing tech-facing UX byte-identical.
+// ============================================================================
+
+export async function buildNlaReplacementSubmittedMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  const technicianMessageBlock = technicianMessage ? `\n\nInstructions: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_replacement_submitted", {
+    serviceOrder,
+    rgcCode,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
+  if (technicianMessage) msg += `\n\nInstructions: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaReplacementTechInitiatesMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  const technicianMessageBlock = technicianMessage ? `\n\nInstructions: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_replacement_tech_initiates", {
+    serviceOrder,
+    rgcCode,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.`;
+  if (technicianMessage) msg += `\n\nInstructions: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaPartFoundVrsOrderedMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  technicianMessage?: string | null,
+  // pcardConfirmContext: when called from the nla_pcard_confirm branch the
+  // historical prefix was "Feedback from VRS:" not "Instructions:". Default
+  // false preserves the original "Instructions:" prefix used in the
+  // nla_part_found_vrs_ordered branch.
+  fromPcardConfirm: boolean = false
+): Promise<string> {
+  const prefix = fromPcardConfirm ? "Feedback from VRS" : "Instructions";
+  const technicianMessageBlock = technicianMessage ? `\n\n${prefix}: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_part_found_vrs_ordered", {
+    serviceOrder,
+    rgcCode,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+  if (technicianMessage) msg += `\n\n${prefix}: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaPartFoundTechOrdersMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  partNumber: string,
+  technicianMessage?: string | null,
+  fromPcardConfirm: boolean = false
+): Promise<string> {
+  // Same prefix-vs-pcard-context distinction. The original inline string for
+  // nla_part_found_tech_orders used "Feedback from VRS — Action required:"
+  // (note the em-dash + ALL CAPS Action), and the pcard branch used
+  // "Feedback from VRS:" — keep both verbatim so techs see no change.
+  const prefix = fromPcardConfirm ? "Feedback from VRS" : "Feedback from VRS — Action required";
+  const technicianMessageBlock = technicianMessage ? `\n\n${prefix}: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_part_found_tech_orders", {
+    serviceOrder,
+    rgcCode,
+    partNumber,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${partNumber}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+  if (technicianMessage) msg += `\n\n${prefix}: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaRfrEligibleMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  const technicianMessageBlock = technicianMessage ? `\n\nInstructions: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_rfr_eligible", {
+    serviceOrder,
+    rgcCode,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: RFR ELIGIBLE\nAuth Code: ${rgcCode}\n\nThis part is RFR eligible. Remove the failed part and return it for repair, then reschedule the call in TechHub.`;
+  if (technicianMessage) msg += `\n\nInstructions: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaPcardConfirmedGenericMessage(
+  serviceOrder: string,
+  rgcCode: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  // Generic fallback used by the nla_pcard_confirm branch when the
+  // resolution type doesn't match the two specific cases (part_found_*).
+  const technicianMessageBlock = technicianMessage ? `\n\nFeedback from VRS: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_pcard_confirmed.generic", {
+    serviceOrder,
+    rgcCode,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nAuth Code: ${rgcCode}\nYour NLA parts request has been processed by the VRS team.`;
+  if (technicianMessage) msg += `\n\nFeedback from VRS: ${technicianMessage}`;
+  return msg;
+}
+
+export async function buildNlaRejectedMessage(
+  serviceOrder: string,
+  reason: string,
+  resubmitLink: string,
+  technicianMessage?: string | null
+): Promise<string> {
+  const technicianMessageBlock = technicianMessage ? `\n\nFeedback from VRS — Action required: ${technicianMessage}` : "";
+  const rendered = await renderTemplate("nla_rejected", {
+    serviceOrder,
+    reason,
+    resubmitLink,
+    technicianMessage: technicianMessage ?? "",
+    technicianMessageBlock,
+  });
+  if (rendered !== null) return rendered;
+
+  let msg = `VRS NLA Update for SO#${serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reason}\n\nTap to resubmit:\n${resubmitLink}`;
+  if (technicianMessage) msg += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
+  return msg;
+}

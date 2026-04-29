@@ -34,6 +34,16 @@ import {
   buildTwoStageClaimMessage,
   buildSubmissionApprovedMessage,
   buildNlaInvalidMessage,
+  // Tyler 2026-04-29 (NLA second-stage): inline NLA-resolution SMS strings
+  // extracted into named builders so admins can edit them through the
+  // Communication Templates page like every other tech-facing message.
+  buildNlaReplacementSubmittedMessage,
+  buildNlaReplacementTechInitiatesMessage,
+  buildNlaPartFoundVrsOrderedMessage,
+  buildNlaPartFoundTechOrdersMessage,
+  buildNlaRfrEligibleMessage,
+  buildNlaPcardConfirmedGenericMessage,
+  buildNlaRejectedMessage,
 } from "./sms";
 import { enhanceDescription, checkRateLimit } from "./services/openai";
 import { queryServiceOrder, sendFollowup } from "./services/shsai";
