@@ -2566,29 +2566,29 @@ export default function AgentDashboard() {
                               <CheckCircle2 className="w-3 h-3" /> Authorization Sent
                             </p>
                             <p className="text-xs text-green-600 dark:text-green-400 mt-1" data-testid="text-stage3-context">
-                              Technician received the auth code. Last step: log this ticket in Smartsheet so the next claim isn't blocked.
+                              Technician received the auth code. Last step: open the <strong>Intake Form</strong> tab on the right and log this ticket in Smartsheet so the next claim isn't blocked.
                             </p>
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                          <IntakeFormFieldset
-                            procId={(selectedSubmission as any).procId ?? null}
-                            values={intakeValues}
-                            onChange={setIntakeValues}
-                          />
-                          {/* Tyler 2026-04-27 (modal -> tab migration):
-                              the "Re-open intake form" button (formerly
-                              data-testid="button-open-intake-review") was
-                              removed because the form now lives as the
-                              third tab in the right panel — there is no
-                              modal to re-open. The fieldset above stays
-                              the working-payload editor; values flow
-                              into the tab's iframe pre-fill in real
-                              time via `intakeValues` prop. Agents who
-                              switched away from the Intake tab can
-                              click it back from the right-panel TabsList
-                              (data-testid="tab-intake"). */}
-                        </CardContent>
+                        {/* Tyler 2026-04-29 (intake-form layout fix):
+                            "We are supposed to be seeing the Ticket
+                            information on the left even after it has been
+                            approved and sent to the technician, and see the
+                            intake form on the right so that the form stays
+                            on screen until submitted allowing the agent to
+                            start working another ticket."
+                            The IntakeFormFieldset previously rendered here
+                            has moved INTO the IntakeFormTab on the right,
+                            above the iframe (collapsible card). All helpers
+                            move with it: notes auto-paste into Comments,
+                            "X required fields still" gate, branch awareness.
+                            This card now functions purely as a Stage 3
+                            status indicator — no data entry on the left,
+                            so the ticket information cards above stay the
+                            dominant content. The agent reads the ticket on
+                            the left and works the intake form on the right.
+                            CardContent intentionally omitted (header
+                            banner above already carries the message). */}
                       </Card>
                     )}
 
@@ -3585,6 +3585,15 @@ export default function AgentDashboard() {
                           // serviceOrder=null mid-Authorize and fail to
                           // build the prefill URL.
                           serviceOrder={effectiveSelectedSubmission?.serviceOrder ?? null}
+                          // Tyler 2026-04-29 (intake-form layout fix): procId
+                          // + onPayloadChange wire the IntakeFormFieldset
+                          // (which moved into this tab from the left Stage 3
+                          // card) so it can detect the SHW/SPHW/AHS/SRW
+                          // branch and mutate the working payload in place.
+                          // Same `intakeValues` state, same plumbing — just
+                          // a different parent owning the rendered fieldset.
+                          procId={(effectiveSelectedSubmission as any)?.procId ?? null}
+                          onPayloadChange={setIntakeValues}
                           payload={intakeValues}
                           intakeStatus={intakeFormStatusQuery.data}
                           onPreviewLoaded={(derivedDefaults) => {

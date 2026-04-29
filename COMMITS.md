@@ -1478,3 +1478,56 @@ Every one of these populates 6 always-visible fields — `VRS Tech ID = ZZTEST9`
 - **Data updates** are single-field UPDATEs on existing rows (`users.rac_id`, `submissions.proc_id`, `submissions.assigned_to`).
 - **No republish performed.** Published only when Tyler clicks Publish.
 
+
+---
+
+## 2026-04-29 — Tyler intake-form layout fix: ticket info left, intake form right
+
+### Tyler's directive
+> "We are supposed to be seeing the Ticket information on the left even after it has been approved and sent to the technician, and see the intake form on the right so that the form stays on screen until submitted allowing the agent to start working another ticket."
+
+### What was wrong
+On the agent ticket-resolution page, the **left column** Stage 3 card embedded the full `IntakeFormFieldset` (SPHW Active Date, Days Active, Pre-existing Yes/No, Repair Decision, Comments — see attached screenshot Tyler shared at 5:07 AM). When Stage 3 became active, that card pushed the actual ticket information (Technician Info, Customer Info, Issue Description) off-screen. **Result:** agent had to scroll up to read the ticket while filling the inline fieldset, AND those same fields were duplicated inside the Smartsheet iframe in the right tab.
+
+The inline fieldset originally lived on the left because intake was a **modal** (pre-2026-04-27) and the fieldset was the "stage your data, then click Open" pattern. After the modal → tab refactor, the iframe became always-visible in the right panel — which made the left-side fieldset redundant in design intent and harmful to the layout.
+
+### Surgical fix (two files)
+
+**client/src/pages/agent-dashboard.tsx — left side:**
+- Stripped `<IntakeFormFieldset>` out of the Stage 3 card's `CardContent`. The wrapping `CardContent` block was removed entirely (was lines 2573-2594).
+- Stage 3 card on the left now renders header-only: `<CardTitle>Stage 3: Smartsheet Intake</CardTitle>` + 3-segment progress bar (green/green/blue) + green "Authorization Sent" banner. Banner copy updated: was *"…log this ticket in Smartsheet so the next claim isn't blocked"*, now *"…open the **Intake Form** tab on the right and log this ticket in Smartsheet…"*.
+- `IntakeFormTab` usage extended with two new props (`procId={effectiveSelectedSubmission?.procId}`, `onPayloadChange={setIntakeValues}`) so the relocated fieldset can detect branch + write back into the same `intakeValues` state the parent already owns.
+- `import { IntakeFormFieldset }` line LEFT IN PLACE (TS6133 unused-import is tolerated; if Tyler decides to keep the move permanent we can remove the import in a follow-up sweep).
+
+**client/src/components/intake-form-tab.tsx — right tab:**
+- Added 2 new optional props: `procId?: string | null` and `onPayloadChange?: (next: Record<string, string>) => void`.
+- Imported `Collapsible` / `CollapsibleContent` / `CollapsibleTrigger` (already-installed shadcn primitive) + `ChevronDown` / `ChevronRight` icons + `IntakeFormFieldset` itself.
+- Added `const [fieldsetOpen, setFieldsetOpen] = useState(true)` — defaults open so first-time agents see all branch fields + the "X required fields still" gate immediately.
+- Injected `<Collapsible>` between the warnings banner and the iframe, with a `max-h-[40vh] overflow-y-auto` body so the iframe still gets the bulk of the vertical space. Trigger label flips between "Branch fields (click to collapse)" and "Branch fields (click to expand)".
+- Conditional render — `{submissionId && onPayloadChange && (…)}` — defensively skips the fieldset for the empty-state / non-interactive cases.
+
+### What's preserved
+All three helpers the inline fieldset provided are still available, just inside the right tab now:
+1. **Auto-paste from agent notes** — `intakeValues` state still owned by parent; existing notes-paste plumbing untouched.
+2. **"X required fields still required" gate** — rendered by `IntakeFormFieldset` itself (`findMissingRequired` from `intake-form-config`), now visible above the iframe.
+3. **Branch awareness** — `procId` flows through the new prop; `IntakeFormFieldset` runs `detectBranch(procId)` exactly as before.
+
+### What changed in the workflow
+| Before | After |
+|---|---|
+| Left: ticket info pushed up by Stage 3 fieldset card | Left: ticket info stays dominant; Stage 3 card is a slim status banner only |
+| Right: iframe + attestation only | Right: collapsible "Branch fields" section above iframe + iframe + attestation |
+| Agent fills fieldset on left, then Smartsheet form on right (duplicated mental model) | Agent reads ticket on left, works intake on right (single mental model) |
+
+### Verification
+- `tsc --noEmit` total error count unchanged at 55. All errors are pre-existing in unrelated files (`password-input.tsx`, `admin-dashboard.tsx`, `routes.ts`, and the 2 `notes`-property errors in agent-dashboard.tsx that shifted from line 3917→3926 because I added a 9-line prop comment).
+- App boots cleanly; no new runtime warnings in browser console (only pre-existing Vite HMR WebSocket noise).
+- Hot-reload picked up both file changes during the workflow restart at 5:17 AM.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes.
+- No Smartsheet form changes.
+- No republish.
+- Two existing files edited surgically (one card body removed on the left; one collapsible added on the right + two new optional props). Reversible in <30 lines if you want to roll back.
+
