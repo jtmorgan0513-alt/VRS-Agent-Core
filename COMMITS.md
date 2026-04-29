@@ -1646,3 +1646,58 @@ Tyler's words for the grayed cells: *"the No Model tag is handled through TechHu
 - No republish.
 - Single file edited (`client/src/pages/tech-submit.tsx`) with the changes scoped to: 1 new const + 2 useEffects + 1 onSubmit gate + 2 banner removals + 1 warranty card section restructure. Reversible in <80 lines if you want to roll back.
 
+
+---
+
+## 2026-04-29 — Tyler request: VRS business-hours timer (8 AM-8 PM ET)
+
+### Tyler's directive
+> "VRS hours are 8 am to 8 pm Eastern Time. I'd like to make sure our timer in the admin panel stops at 8:00 PM ET and starts again at 8:00 AM so it doesn't affect the total ticket times if someone submits after hours."
+
+### What changed
+**New file: `client/src/lib/business-hours.ts`** — single source of truth for the business-hours window. Exports:
+- `VRS_OPEN_HOUR_ET = 8`, `VRS_CLOSE_HOUR_ET = 20` — constants, easy to flip.
+- `getBusinessElapsedMs(start, end)` — sums the overlap of `[start, end]` with each ET calendar day's `[8 AM, 8 PM]` window. DST-aware via `Intl.DateTimeFormat("America/New_York")` — no third-party tz lib added (would require `package.json` change which is on the hard-no list).
+- `getBusinessElapsedFromNow(start)` — convenience wrapper.
+- `formatBusinessElapsed(ms)` — same `Xd Yh / Xh Ym / Xm / < 1m` format the existing timers used, so admin column widths don't shift.
+- `isWithinBusinessHours(d?)` — true when the given (or current) UTC instant is inside the ET business window. Drives the after-hours indicator.
+
+**Algorithm walkthrough (so you can sanity-check it):**
+- Ticket submitted 2026-04-29 18:00 ET, claimed 2026-04-30 09:00 ET → 2h (6 PM-8 PM Apr 29) + 1h (8 AM-9 AM Apr 30) = **3h**.
+- Ticket submitted 2026-04-29 22:00 ET, claimed 2026-04-30 06:00 ET (entirely after-hours) → **0**.
+- Ticket submitted 2026-04-29 22:00 ET, claimed 2026-04-30 09:00 ET → **1h** (8-9 AM next day).
+- Same-day 14:00-16:00 ET → **2h**, identical to wall clock.
+- 366-iteration safety cap so a bad clock can't loop forever.
+
+### Files updated to use the utility
+
+**`client/src/pages/admin-dashboard.tsx`**
+- `getTimeInStatus` (3 columns: Queue Wait, Handle Time, Total Time) now routes through `getBusinessElapsedMs` + `formatBusinessElapsed`. Function signature unchanged so callers untouched.
+- Row-aging highlight at the top of the `filteredTickets.map` (red ≥4h urgent, amber ≥2h aging) now uses business hours too — an overnight queued ticket isn't flagged urgent at 8 AM just because the wall clock says 11 hours have passed.
+- New `data-testid="badge-after-hours"` indicator at the top of the tickets view (next to the request-type filter) — only renders when `isWithinBusinessHours()` returns false. Amber pill: *"After hours — ticket timers paused until 8 AM ET"* with a hover tooltip explaining the window. Hidden during business hours so the admin view stays clean.
+
+**`client/src/pages/agent-dashboard.tsx`**
+- `getTimeElapsed` (queue elapsed column, `text-elapsed-${id}`) → business-hours.
+- `getUrgencyLevel` (queue row coloring) → business-hours.
+- Rationale: keep the agent's queue display consistent with the admin table — otherwise an agent at 8 AM would see "10h" in the queue while admin sees "1h". Same source of truth in both places.
+
+### What's NOT changed (intentional)
+- **Server-side timer / TAT calculations**: any reporting endpoint that subtracts `createdAt` from `statusChangedAt` directly in SQL or in a Node aggregation is still wall-clock. None of those surface in the admin UI today (the columns are computed client-side from the row data), but if you have SLA reports or analytics queries that expect business-hours TAT, those need the same algorithm ported to the server. ~50 lines of TypeScript in `server/lib/business-hours.ts` mirroring the client utility — call it out and I'll add it.
+- **Shared package**: the utility lives under `client/src/lib/` for now. If the server needs it too, factor it into `shared/lib/business-hours.ts` (works in both Node and browser since it uses only `Intl` and `Date`).
+- **Weekends / holidays**: not excluded. The matrix is 7 days/week. Header comment in `business-hours.ts` documents how to add a `WEEKEND_DAYS` short-circuit (1 line) or a `HOLIDAYS: Set<string>` exclusion (4 lines) if Sears observes a closed-Saturday rule.
+- **Schema**: no changes (timestamps already stored as UTC; the math is purely on the read side).
+- **Smartsheet form / republish**: none.
+
+### Verification checklist for Tyler
+1. Hit `/admin` while it's after-hours in ET (current time). Look for the amber `badge-after-hours` pill at the top of the Tickets section.
+2. Open a queued ticket from 8 PM the previous evening. The Queue Wait column should show ~0m or under-an-hour (just the morning's overlap), not 10+ hours.
+3. Submit a fresh ticket as a tech and watch the agent dashboard queue — `text-elapsed-${id}` should also use business hours.
+4. Edge case: change a ticket's `createdAt` in the DB to 7:30 AM today, refresh — the Queue Wait should start at the moment 8 AM ET hits (or `getBusinessElapsedMs` from 7:30 AM = 0 if before 8 AM, then accumulates from 8 AM).
+
+### Hard rules — observed
+- Append-only audit (this section).
+- No `package.json` change (no new tz library).
+- No schema change.
+- No Smartsheet form change.
+- No republish.
+- 1 new file (~140 lines), 2 files edited (~4 small surgical changes each). Reversible by deleting `business-hours.ts` and reverting the 3 imports + 4 callsites.

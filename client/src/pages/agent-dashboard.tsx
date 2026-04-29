@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { downloadPhotoUrl, safeDate, formatDate } from "@/lib/utils";
+import { getBusinessElapsedMs } from "@/lib/business-hours";
 import { useWebSocket, playNotificationDing, disconnectWs, requestNotificationPermission, showBrowserNotification, loadNotificationSettings, getNotificationPermission } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -133,15 +134,18 @@ const APPLIANCE_LABELS: Record<string, string> = {
   all_other: "All Other",
 };
 
+// Tyler 2026-04-29 (VRS business-hours timer): both queue-elapsed and
+// urgency-level computations now use business hours (8 AM-8 PM ET) so the
+// queue doesn't show inflated times overnight. After-hours windows pause
+// the accumulation. Format string preserved to avoid column-width churn.
 function getTimeElapsed(createdAt: string | Date | null | undefined): string {
   const created = safeDate(createdAt);
   if (!created) return "—";
-  const now = new Date();
-  const diffMs = now.getTime() - created.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m`;
+  const businessMs = getBusinessElapsedMs(created, new Date());
+  const totalMinutes = Math.floor(businessMs / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const diffHours = Math.floor(totalMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ${totalMinutes % 60}m`;
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ${diffHours % 24}h`;
 }
@@ -149,8 +153,7 @@ function getTimeElapsed(createdAt: string | Date | null | undefined): string {
 function getUrgencyLevel(createdAt: string | Date | null | undefined): "normal" | "warning" | "urgent" {
   const created = safeDate(createdAt);
   if (!created) return "normal";
-  const now = new Date();
-  const diffHours = (now.getTime() - created.getTime()) / 3600000;
+  const diffHours = getBusinessElapsedMs(created, new Date()) / 3600000;
   if (diffHours >= 4) return "urgent";
   if (diffHours >= 2) return "warning";
   return "normal";

@@ -6,6 +6,13 @@ import { useAuth, getToken } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { safeDate, formatDate, formatDateShort } from "@/lib/utils";
+import {
+  getBusinessElapsedMs,
+  formatBusinessElapsed,
+  isWithinBusinessHours,
+  VRS_OPEN_HOUR_ET,
+  VRS_CLOSE_HOUR_ET,
+} from "@/lib/business-hours";
 import { useWebSocket, loadNotificationSettings, playNotificationDing, showBrowserNotification } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import type { User, TechnicianUserView } from "@shared/schema";
@@ -322,19 +329,17 @@ function AgentStatusSection() {
   );
 }
 
+// Tyler 2026-04-29 (VRS business-hours timer): all admin timer columns now
+// route through `getBusinessElapsedMs` so after-hours windows (8 PM ET to
+// 8 AM ET) don't accumulate against ticket TAT. Wall-clock subtraction was
+// previously inflating overnight tickets by 12+ hours. Format string is
+// unchanged so the column widths stay stable.
 function getTimeInStatus(createdAt: string | Date | null | undefined, reviewedAt?: string | Date | null): string {
   const start = safeDate(createdAt);
   if (!start) return "—";
   const end = safeDate(reviewedAt) || new Date();
-  const diffMs = end.getTime() - start.getTime();
-  const totalMinutes = Math.floor(diffMs / 60000);
-  if (totalMinutes < 1) return "< 1m";
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  const businessMs = getBusinessElapsedMs(start, end);
+  return formatBusinessElapsed(businessMs);
 }
 
 function getStatusColor(status: string): string {
@@ -939,27 +944,45 @@ function TicketOverviewSection() {
     { key: "rejected", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
   ];
 
+  // Tyler 2026-04-29 (VRS business-hours timer): when we're outside the
+  // 8 AM-8 PM ET window, surface a small inline indicator at the top of the
+  // tickets view so admins understand the column timers aren't ticking. The
+  // indicator only renders during after-hours.
+  const businessHoursActive = isWithinBusinessHours();
+
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center gap-1 border rounded-lg p-1 w-fit bg-muted/30" data-testid="request-type-filter">
-        {([
-          { key: "all" as const, label: "All Tickets" },
-          { key: "auth" as const, label: "Authorization Only" },
-          { key: "nla" as const, label: "NLA Only" },
-        ]).map((opt) => (
-          <button
-            key={opt.key}
-            onClick={() => setRequestTypeFilter(opt.key)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              requestTypeFilter === opt.key
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            data-testid={`filter-request-type-${opt.key}`}
+      <div className="flex items-center gap-3 flex-wrap" data-testid="filter-and-status-row">
+        <div className="flex items-center gap-1 border rounded-lg p-1 w-fit bg-muted/30" data-testid="request-type-filter">
+          {([
+            { key: "all" as const, label: "All Tickets" },
+            { key: "auth" as const, label: "Authorization Only" },
+            { key: "nla" as const, label: "NLA Only" },
+          ]).map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setRequestTypeFilter(opt.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                requestTypeFilter === opt.key
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid={`filter-request-type-${opt.key}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {!businessHoursActive && (
+          <div
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 text-xs font-medium text-amber-800 dark:text-amber-200"
+            data-testid="badge-after-hours"
+            title={`VRS hours are ${VRS_OPEN_HOUR_ET}:00 AM to ${VRS_CLOSE_HOUR_ET - 12}:00 PM Eastern Time. Ticket timers don't accumulate outside that window.`}
           >
-            {opt.label}
-          </button>
-        ))}
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+            After hours — ticket timers paused until 8 AM ET
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -1027,8 +1050,14 @@ function TicketOverviewSection() {
                 </TableHeader>
                 <TableBody>
                   {filteredTickets.map((ticket: any) => {
-                    const ageMs = new Date().getTime() - (safeDate(ticket.createdAt)?.getTime() || new Date().getTime());
-                    const ageHours = ageMs / 3600000;
+                    // Tyler 2026-04-29: row-aging highlight (red = urgent
+                    // ≥4h, amber = aging ≥2h) now uses business-hours
+                    // elapsed too, so an overnight queued ticket isn't
+                    // flagged urgent at 8 AM just because the wall clock
+                    // says 11 hours have passed. Same source of truth as
+                    // the column timers.
+                    const created = safeDate(ticket.createdAt);
+                    const ageHours = created ? getBusinessElapsedMs(created, new Date()) / 3600000 : 0;
                     const isUrgent = ageHours >= 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
                     const isAging = ageHours >= 2 && ageHours < 4 && (ticket.ticketStatus === "queued" || ticket.ticketStatus === "pending");
 
