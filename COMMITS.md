@@ -1758,3 +1758,38 @@ The two deleted files exist in git history at the checkpoint immediately before 
 - No Smartsheet form change.
 - No republish.
 - 1 file edited (intake-form-tab.tsx), 1 file edited (agent-dashboard.tsx — imports + 2 comments + 0 functional changes), 2 files deleted, 0 schema changes. Net code reduction ~520 lines.
+
+---
+
+## 2026-04-29 — Tyler correction: "IH Unit Number" maps to District on the ticket, not techUnNo
+
+### Tyler's directive
+> "IH Unit number maps to the District on the ticket"
+
+### What was wrong
+Since the D4 max-derivation pass on 2026-04-26, the intake-form prefill was sourcing the **"IH Unit Number"** Smartsheet column from `technicians.tech_un_no` via an LDAP-id join (`storage.getTechnicianByLdapId(submission.technicianLdapId)?.techUnNo`). That was the wrong field — Tyler verified today that the column should hold the **District code** that's already stamped on the submission row at intake time (`submissions.district_code`).
+
+Net effect of the bug: every intake form sent to Smartsheet for the past 3 days had the technician's internal unit number in a column that should have held the district code. Tyler caught it before it became a reporting problem on the TRANSFORMCO side.
+
+### Fix (1 file, 2 spots)
+**`server/routes.ts`**
+- `POST /api/submissions/:id/intake-form/preview` (line ~3603–3613): replaced the 4-line LDAP lookup block with `const ihUnitNumber: string | null = owned.submission.districtCode ?? null;`
+- `POST /api/submissions/:id/intake-form/confirm` (line ~3708–3713): same replacement, also dropped the surrounding try/catch since there's no DB call to fail. The `op=ih-unit-lookup` breadcrumb is no longer reachable in the confirm handler — one fewer step that can break silently.
+
+### Side benefits
+- **2 fewer DB queries per intake submission.** Both routes used to do a `SELECT * FROM technicians WHERE ldap_id = ?` purely for this one field. Now zero — `district_code` is already on the submission.
+- **One less point of silent failure.** The previous comment in the confirm route said "field becomes blank in the recorded URL but the row still saves" — that degradation path is gone because there's nothing left to fail.
+
+### Hard rules — observed
+- Append-only audit (this section).
+- No `package.json` change.
+- No schema change. The `submissions.district_code` column already existed (varchar 4); we're just reading from it instead of from `technicians.tech_un_no`.
+- No Smartsheet form change. Same column ("IH Unit Number") still receives a value — the value's source on our side is the only thing that changed.
+- No republish.
+- 1 file edited (server/routes.ts), 0 client changes, 0 schema changes. Net code: ~14 lines deleted (the two LDAP lookup blocks + try/catch) replaced with 2 one-liners.
+
+### Note on the `derivedDefaults` flow
+The `BuildIntakeFormUrlInput` interface in `server/services/smartsheet.ts` still types `submission` as `... & { ihUnitNumber?: string | null }` — no change needed there. The build function reads `submission.ihUnitNumber` and bakes it into the "IH Unit Number" Smartsheet column exactly as before. We're just feeding it from a different source. So the iframe URL contract, the `derivedDefaults` response shape, and the recorded `intake_forms.payload` are all byte-identical to before EXCEPT the value in that one field is now the district code instead of the techUnNo.
+
+### Backfill / historical data
+Not retroactively fixing the ~handful of intake_forms rows already recorded with the wrong value — Tyler hasn't asked for it and the recorded URL is just an audit artifact (the actual Smartsheet record is what TRANSFORMCO reads from, and that row already exists with whatever value Smartsheet accepted at submission time). If a backfill is later requested, the path is: `UPDATE intake_forms SET prefilled_url = REPLACE(prefilled_url, '<old techUnNo>', '<district_code>')` per row. Documented for posterity.

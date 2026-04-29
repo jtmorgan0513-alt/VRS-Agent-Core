@@ -3600,15 +3600,14 @@ export async function registerRoutes(
         const owned = await loadOwnedSubmission(authReq, id);
         if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
 
-        // Tyler 2026-04-26 (D4 max-derivation): IH Unit Number lives on the
-        // technicians table, not on submissions. Resolve it via the LDAP id
-        // join so the pre-fill builder can default the field. Best-effort —
-        // missing technician row is non-fatal (field stays blank).
-        let ihUnitNumber: string | null = null;
-        if (owned.submission.technicianLdapId) {
-          const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
-          ihUnitNumber = (tech as any)?.techUnNo ?? null;
-        }
+        // Tyler 2026-04-29 (data-mapping correction): "IH Unit Number" on the
+        // Smartsheet form maps to the District on the ticket itself
+        // (`submissions.district_code`), NOT the technician's `tech_un_no`.
+        // The previous LDAP-join lookup was sourcing the wrong value. The
+        // district code is already on the submission row — no extra DB call,
+        // no fallback path needed (a ticket without a district code is a
+        // data-quality issue upstream, not something we paper over here).
+        const ihUnitNumber: string | null = owned.submission.districtCode ?? null;
 
         // Tyler 2026-04-26 (post-audit): "VRS Tech ID" Smartsheet column is
         // now sourced from the authenticated agent's racId (LDAP-shaped),
@@ -3703,22 +3702,12 @@ export async function registerRoutes(
           });
         }
 
-        // Tyler 2026-04-26 (D4 max-derivation): mirror the preview route so
-        // the URL we record matches what the agent saw — IH Unit Number is
-        // resolved from the technicians table via LDAP id.
-        let ihUnitNumber: string | null = null;
-        if (owned.submission.technicianLdapId) {
-          try {
-            const tech = await storage.getTechnicianByLdapId(owned.submission.technicianLdapId);
-            ihUnitNumber = (tech as any)?.techUnNo ?? null;
-          } catch (lookupErr) {
-            // Tyler 2026-04-28: was previously unguarded — a flake here
-            // would land in the catch-all 500 with no breadcrumb. Now we
-            // log and degrade gracefully (the field becomes blank in the
-            // recorded URL but the row still saves).
-            console.warn(`${tag("ih-unit-lookup")} status=warn err=${(lookupErr as Error)?.message} ldapId=${owned.submission.technicianLdapId}`);
-          }
-        }
+        // Tyler 2026-04-29 (data-mapping correction — see preview route): IH
+        // Unit Number is the District on the ticket, not the technician's
+        // tech_un_no. Read straight from the submission row — no DB call,
+        // so the previous `op=ih-unit-lookup` breadcrumb is no longer
+        // reachable (one fewer step that can fail silently).
+        const ihUnitNumber: string | null = owned.submission.districtCode ?? null;
 
         // Tyler 2026-04-26 (post-audit): mirror the preview route so the
         // recorded URL's "VRS Tech ID" comes from the same agent racId
