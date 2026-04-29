@@ -1658,8 +1658,15 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
         updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: REPLACEMENT SUBMITTED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. A replacement request has been submitted to the warranty company.\n\nAction Required: Close the call using the NLA labor code.`;
-        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        // Tyler 2026-04-29: was inline string; now flows through the
+        // editable Communication Templates table (actionKey:
+        // nla_replacement_submitted). Builder falls back to the
+        // byte-identical hardcoded copy if the template is missing.
+        smsMessage = await buildNlaReplacementSubmittedMessage(
+          submission.serviceOrder,
+          rgcCode!,
+          technicianMessage,
+        );
         smsType = "nla_replacement_submitted";
 
       } else if (action === "nla_replacement_tech_initiates") {
@@ -1671,8 +1678,12 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
         updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: NLA REPLACEMENT APPROVED\nAuth Code: ${rgcCode}\nThe part(s) you requested could not be sourced. VRS has approved a replacement.\n\nAction Required: You must initiate the replacement in TechHub. Follow standard replacement procedures in TechHub to process this replacement.`;
-        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        // Tyler 2026-04-29: actionKey nla_replacement_tech_initiates.
+        smsMessage = await buildNlaReplacementTechInitiatesMessage(
+          submission.serviceOrder,
+          rgcCode!,
+          technicianMessage,
+        );
         smsType = "nla_replacement_tech_initiates";
 
       } else if (action === "nla_part_found_vrs_ordered") {
@@ -1687,8 +1698,16 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
         updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
-        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        // Tyler 2026-04-29: actionKey nla_part_found_vrs_ordered.
+        // fromPcardConfirm=false → builder uses "Instructions:" prefix on
+        // the technician message block (matches the historical inline
+        // string for this branch).
+        smsMessage = await buildNlaPartFoundVrsOrderedMessage(
+          submission.serviceOrder,
+          rgcCode!,
+          technicianMessage,
+          false,
+        );
         smsType = "nla_part_ordered_vrs";
 
       } else if (action === "nla_part_found_tech_orders") {
@@ -1704,8 +1723,17 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
         updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${nlaFoundPartNumber.trim().toUpperCase()}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
-        if (technicianMessage) smsMessage += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
+        // Tyler 2026-04-29: actionKey nla_part_found_tech_orders.
+        // fromPcardConfirm=false → builder uses
+        // "Feedback from VRS — Action required:" prefix (matches the
+        // historical inline string for this branch).
+        smsMessage = await buildNlaPartFoundTechOrdersMessage(
+          submission.serviceOrder,
+          rgcCode!,
+          nlaFoundPartNumber.trim().toUpperCase(),
+          technicianMessage,
+          false,
+        );
         smsType = "nla_part_tech_orders";
 
       } else if (action === "nla_rfr_eligible") {
@@ -1717,8 +1745,12 @@ export async function registerRoutes(
         updateData.technicianMessage = technicianMessage || null;
         updateData.rgcCode = rgcCode;
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: RFR ELIGIBLE\nAuth Code: ${rgcCode}\n\nThis part is RFR eligible. Remove the failed part and return it for repair, then reschedule the call in TechHub.`;
-        if (technicianMessage) smsMessage += `\n\nInstructions: ${technicianMessage}`;
+        // Tyler 2026-04-29: actionKey nla_rfr_eligible.
+        smsMessage = await buildNlaRfrEligibleMessage(
+          submission.serviceOrder,
+          rgcCode!,
+          technicianMessage,
+        );
         smsType = "nla_rfr_eligible";
 
       } else if (action === "nla_escalate_to_pcard") {
@@ -1765,16 +1797,36 @@ export async function registerRoutes(
         updateData.rgcCode = rgcCode;
         if (technicianMessage) updateData.technicianMessage = technicianMessage;
 
+        // Tyler 2026-04-29: nla_pcard_confirm reuses the same template
+        // bodies as the direct-fulfillment branches above, but with
+        // fromPcardConfirm=true so the tech-message prefix becomes
+        // "Feedback from VRS:" (matches the prior inline string).
+        // The agent-message precedence is `technicianMessage ?? submission.technicianMessage`
+        // — original (just-submitted) value wins, but if absent we fall
+        // back to whatever the researcher noted during escalation.
+        const effectiveTechMsg = technicianMessage || submission.technicianMessage || null;
         if (resolution === "part_found_vrs_ordered") {
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — ORDERED BY VRS\nAuth Code: ${rgcCode}\nThe VRS parts team has located and ordered the part(s) for this service order.`;
+          smsMessage = await buildNlaPartFoundVrsOrderedMessage(
+            submission.serviceOrder,
+            rgcCode!,
+            effectiveTechMsg,
+            true,
+          );
         } else if (resolution === "part_found_tech_orders") {
           const partNum = submission.nlaFoundPartNumber || nlaFoundPartNumber || "";
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: PART FOUND — YOU NEED TO ORDER\nAuth Code: ${rgcCode}\nPart Number: ${partNum}\n\nThis part is available in TechHub. Order it and reschedule the call.`;
+          smsMessage = await buildNlaPartFoundTechOrdersMessage(
+            submission.serviceOrder,
+            rgcCode!,
+            partNum,
+            effectiveTechMsg,
+            true,
+          );
         } else {
-          smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nAuth Code: ${rgcCode}\nYour NLA parts request has been processed by the VRS team.`;
-        }
-        if (technicianMessage || submission.technicianMessage) {
-          smsMessage += `\n\nFeedback from VRS: ${technicianMessage || submission.technicianMessage}`;
+          smsMessage = await buildNlaPcardConfirmedGenericMessage(
+            submission.serviceOrder,
+            rgcCode!,
+            effectiveTechMsg,
+          );
         }
         smsType = "nla_pcard_confirmed";
 
@@ -1792,8 +1844,13 @@ export async function registerRoutes(
         const resubmitLink = `${protocol}://${host}/tech/resubmit/${submission.id}`;
         const reasonText = rejectionReasons?.join(", ") || "More information needed";
 
-        smsMessage = `VRS NLA Update for SO#${submission.serviceOrder}\n\nStatus: MORE INFO NEEDED\nReason: ${reasonText}\n\nTap to resubmit:\n${resubmitLink}`;
-        if (technicianMessage) smsMessage += `\n\nFeedback from VRS — Action required: ${technicianMessage}`;
+        // Tyler 2026-04-29: actionKey nla_rejected.
+        smsMessage = await buildNlaRejectedMessage(
+          submission.serviceOrder,
+          reasonText,
+          resubmitLink,
+          technicianMessage,
+        );
         smsType = "nla_rejected";
 
         broadcastToNlaDivisionAgents(submission.applianceType, {

@@ -1997,3 +1997,71 @@ After the initial implementation passed e2e, code review surfaced three real iss
 
 ### Net change vs the original ship
 - 3 files touched (same files), +~80 LOC (the new `atomicCreateIntakeForm` method + the route's discriminated-result handling). 0 deletions of existing functionality. 0 schema changes. 0 new packages.
+
+---
+
+## 2026-04-29 — Phase B continuation: NLA second-stage SMS templates
+
+Tyler's hard rule for the Communication Templates work: every tech-facing SMS the system sends must flow through the admin-editable `communication_templates` table so the seeded defaults pre-fill on republish AND every approval/rejection/NLA/etc text is properly mapped to its trigger action. The first ship covered 16 actionKeys (initial submission, agent pickup, stage-1 approval, stage-2 auth, NLA approval, rejected/invalid). This pass closes the remaining gap: the **7 inline NLA second-stage resolution strings** that lived as template literals inside `server/routes.ts` (lines 1651-1785 in the action handler).
+
+### Gap audit
+Found 7 actionKeys with no template — every one of these messages was constructed inline and sent verbatim to techs with zero admin override:
+
+| actionKey | Trigger (action handler branch) | Tech-facing prefix on agent note |
+|---|---|---|
+| `nla_replacement_submitted` | NLA replacement submitted to warranty co. | `Instructions:` |
+| `nla_replacement_tech_initiates` | NLA replacement approved (tech initiates in TechHub) | `Instructions:` |
+| `nla_part_found_vrs_ordered` | Part found, ordered by VRS (direct fulfillment) | `Instructions:` |
+| `nla_part_found_tech_orders` | Part found, technician orders | `Feedback from VRS — Action required:` |
+| `nla_rfr_eligible` | RFR eligible (return for repair) | `Instructions:` |
+| `nla_pcard_confirmed.generic` | P-card agent confirmed escalated order — generic fallback | `Feedback from VRS:` |
+| `nla_rejected` | NLA-specific "more info needed" with resubmit link | `Feedback from VRS — Action required:` |
+
+Note: the `nla_pcard_confirm` action branch reuses the same template *body* as `nla_part_found_vrs_ordered` and `nla_part_found_tech_orders` for two of its three sub-cases — but historically the prefix on the technician-message tail was different ("Feedback from VRS:" instead of "Instructions:"). Captured this distinction with a `fromPcardConfirm: boolean` parameter on those two builders so the prefix flips while the rest of the template body is shared.
+
+### Files touched (4 files, 0 schema, 0 package, 0 Smartsheet, 0 republish)
+
+**`server/sms.ts` — 7 new builder functions** (each follows the existing `build*Message` pattern)
+- `buildNlaReplacementSubmittedMessage(serviceOrder, rgcCode, technicianMessage?)`
+- `buildNlaReplacementTechInitiatesMessage(serviceOrder, rgcCode, technicianMessage?)`
+- `buildNlaPartFoundVrsOrderedMessage(serviceOrder, rgcCode, technicianMessage?, fromPcardConfirm=false)`
+- `buildNlaPartFoundTechOrdersMessage(serviceOrder, rgcCode, partNumber, technicianMessage?, fromPcardConfirm=false)`
+- `buildNlaRfrEligibleMessage(serviceOrder, rgcCode, technicianMessage?)`
+- `buildNlaPcardConfirmedGenericMessage(serviceOrder, rgcCode, technicianMessage?)`
+- `buildNlaRejectedMessage(serviceOrder, reason, resubmitLink, technicianMessage?)`
+
+Each builder calls `renderTemplate(actionKey, vars)` first (pulls admin-edited copy if set, seeded default otherwise) and falls back to a byte-identical hardcoded string if the template is missing or any required variable is unresolved. The fallback is the same silent-blank-fix safety net Tyler asked for during the initial Communication Templates ship.
+
+`technicianMessageBlock` is a pre-formatted compound variable matching the existing `agentMessageLine` convention: empty string when no agent note, or `\n\n<prefix>: <message>` with the historical prefix baked in. This keeps the tech-facing UX byte-identical while letting the admin edit everything *around* the agent-note block through the template body.
+
+**`server/seed.ts` — 7 new entries** appended to `DEFAULT_COMMUNICATION_TEMPLATES`
+Each new entry:
+- Body uses the `{technicianMessageBlock}` placeholder so the prefix stays under code control while the surrounding wording becomes admin-editable.
+- `variables` array drives the "Available variables" panel in the admin UI (`serviceOrder` required, `rgcCode` required, `partNumber` required for tech_orders, `reason`/`resubmitLink` required for rejected, `technicianMessage` + `technicianMessageBlock` non-required).
+- Sample values + descriptions written for the variable panel so admins know what each placeholder resolves to.
+
+Seeding runs through the existing `upsertDefaultCommunicationTemplate` which only inserts if the (channel, action_key) row is missing — never overwrites an admin edit. Verified against dev DB: all 7 keys present after restart, byte-identical to the prior inline strings.
+
+**`server/routes.ts` — 9 call-site swaps** (plus import update)
+- Imported the 7 new builders from `./sms`.
+- Replaced 7 simple inline assignments at the action-branch call sites (lines 1651, 1664, 1680, 1697, 1710, 1785) with `await build*Message(...)` calls.
+- Replaced the 3-way `nla_pcard_confirm` branch (lines 1759-1772) with calls to `buildNlaPartFoundVrsOrderedMessage(..., fromPcardConfirm=true)`, `buildNlaPartFoundTechOrdersMessage(..., fromPcardConfirm=true)`, and `buildNlaPcardConfirmedGenericMessage(...)` — preserving the original `technicianMessage || submission.technicianMessage` precedence rule (just-submitted note wins, falls back to the researcher's escalation note).
+- `smsType` values passed to `sendSms()` (the 3rd arg, used as the audit `notification_type`) deliberately left unchanged — these are pre-existing audit-trail values (`nla_replacement_submitted`, `nla_part_ordered_vrs`, `nla_pcard_confirmed`, etc.) and changing them would break the historical SMS notification log query by type.
+
+**`client/src/pages/admin-communications.tsx` — UI gating fix** (caught by the e2e test)
+- Initial fix only landed the templates in the DB; the admin Communications page had a hardcoded `ACTIVE_ACTION_KEYS` allowlist + `FAMILIES` array that quietly filtered out any actionKey not pre-registered. The new templates were in the API response but invisible in the UI.
+- Added the 7 new actionKeys to `ACTIVE_ACTION_KEYS`.
+- Added a new family `nla_resolution` (label: "6. NLA parts-team resolution", testid `section-nla_resolution`) that groups all 7 NLA second-stage templates together, separate from the stage-1 NLA approval (which lives under stage-2 family) and the NLA invalid (which lives under rejected/invalid family). This keeps the admin's mental model aligned with the lifecycle: initial → claim → stage1 → stage2 → rejected/invalid → NLA resolution.
+
+### Verification
+- Restart: clean. Seed log line `[seed] communication_templates: inserted N default(s) (existing rows untouched)` confirms upsert path. DB query: all 7 actionKeys present in `communication_templates` after boot.
+- Inline-string audit: `grep 'VRS NLA Update' server/routes.ts` → 0 matches. Every NLA SMS now goes through `renderTemplate`.
+- E2E test (browser flow + API flow): logs in as TESTADMIN, navigates to Communication Templates, asserts the new "6. NLA parts-team resolution" section is present with all 7 expected actionKeys, opens `nla_replacement_submitted`, verifies seeded body contains `VRS NLA Update for SO#`, `REPLACEMENT SUBMITTED`, `{rgcCode}`, `{technicianMessageBlock}`, verifies the variable panel lists `serviceOrder` + `rgcCode` + `technicianMessage` + `technicianMessageBlock`, edits the body to add a marker, saves, re-fetches via authenticated API to confirm marker persists, re-opens the editor, removes the marker, saves, re-fetches to confirm clean. **Status: success** — first run failed on the visibility assertion (UI gating bug), fixed inline, re-ran, all green.
+- `npx tsc --noEmit`: 58 errors (was 57 baseline). The +1 is a downstream line-shift recount — no new errors land in the touched line ranges (1660-1860). All new builder names + imports resolve cleanly. Same pre-existing TS18048/TS2345/TS2802 categories as before.
+- Hard rules observed: append-only audit, no `package.json`, no schema, no Smartsheet form, no republish.
+
+### What's NOT covered yet (deferred / not in this scope)
+- The prefix words ("Instructions:", "Feedback from VRS:", "Feedback from VRS — Action required:") still live in code (inside the builder functions, not the template bodies). If Tyler later wants the prefix wording itself to be admin-editable, the path is to inline the prefix into each template body around `{technicianMessage}` (instead of using the compound `{technicianMessageBlock}` placeholder), and have the builders pass the raw value with empty-string handling. Marked as a possible follow-up — out of scope for this ship since the request was "make the messages flow through the table", not "make every word of every message editable".
+
+### Net change vs prior ship
+- 4 files touched, +~250 LOC builders, +~110 LOC seed entries, +~50 LOC route wiring, +~30 LOC admin UI registration. 0 schema changes, 0 new packages, 0 deletions of existing functionality.

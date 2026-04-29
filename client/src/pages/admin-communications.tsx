@@ -63,6 +63,16 @@ const ACTIVE_ACTION_KEYS = new Set([
   "ticket_rejected_closed.no_cash_call",
   "ticket_invalid",
   "nla_invalid",
+  // Tyler 2026-04-29: NLA second-stage resolution templates. Previously
+  // these messages were inline strings inside routes.ts; now each one is
+  // an admin-editable template surfaced in its own family below.
+  "nla_replacement_submitted",
+  "nla_replacement_tech_initiates",
+  "nla_part_found_vrs_ordered",
+  "nla_part_found_tech_orders",
+  "nla_rfr_eligible",
+  "nla_pcard_confirmed.generic",
+  "nla_rejected",
 ]);
 
 // Group action keys into the user-facing event families Tyler called out:
@@ -101,6 +111,25 @@ const FAMILIES: { id: string; label: string; description: string; matches: (key:
       k.startsWith("ticket_rejected_closed") ||
       k === "ticket_invalid" ||
       k === "nla_invalid",
+  },
+  // Tyler 2026-04-29: dedicated family for the NLA second-stage parts-team
+  // dispositions. These are sent later in the lifecycle than the
+  // submission_received.nla / nla_approval messages above (which are
+  // grouped under their respective stages) — they're the final outcome
+  // text the technician sees once the parts team has resolved the NLA.
+  {
+    id: "nla_resolution",
+    label: "6. NLA parts-team resolution",
+    description:
+      "Sent after the VRS parts team dispositions an NLA request — replacement, part-found, RFR, P-card outcome, or NLA-specific rejection.",
+    matches: (k) =>
+      k === "nla_replacement_submitted" ||
+      k === "nla_replacement_tech_initiates" ||
+      k === "nla_part_found_vrs_ordered" ||
+      k === "nla_part_found_tech_orders" ||
+      k === "nla_rfr_eligible" ||
+      k === "nla_pcard_confirmed.generic" ||
+      k === "nla_rejected",
   },
 ];
 
