@@ -1201,3 +1201,50 @@ To re-seed any time after cleanup: `npx tsx scripts/seed-test-tickets.ts` (idemp
 - COMMITS.md updated only after seed verified via SELECT.
 
 **No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**
+
+
+---
+
+## 2026-04-28 — Tyler request: real-format VRS Tech ID for test technician
+
+### Context
+Tyler asked for the test tickets to use a real VRS Tech ID format so the intake-form IH Unit Number lookup (server/routes.ts:3610 / :3713 — `tech.techUnNo` resolved by `technician_ldap_id`) shows a believable value during end-to-end testing, not a placeholder string like `T_TEST_001`.
+
+### Format chosen
+**`9999001`** — 7-digit zero-padded numeric (matches the real VRS Tech ID format observed across 1,721 production technician rows; samples: `0934786`, `0024588`, `0017152`). Reserved range `9999xxx` is well above the real-tech maximum (`0999706`), so collision with a real technician is mathematically impossible.
+
+### Changes
+
+**File: `scripts/seed-test-tickets.ts`**
+- `TECH_UN_NO` constant changed from `"T_TEST_001"` to `"9999001"`. In-code comment block documents the rationale and the reserved-range guarantee.
+- `ensureTechnicianRow()` extended: when the row already exists, it now checks `existing.techUnNo !== TECH_UN_NO` and runs an idempotent `UPDATE` to conform the value. This means the seed script can now be re-run any time `TECH_UN_NO` changes and the technicians row catches up automatically — no manual SQL needed for future format changes.
+
+### Verification
+
+Re-ran `npx tsx scripts/seed-test-tickets.ts`:
+```
+[update] technicians row for test_tech_1 (id=10992): tech_un_no T_TEST_001 -> 9999001
+```
+
+Then verified the intake-form lookup resolves correctly via JOIN against the same path the route handler walks (`technicians.tech_un_no` keyed by `submission.technician_ldap_id`):
+
+```
+ service_order |  request_type | ticket_status | technician_ldap_id | ih_unit_lookup
+---------------+---------------+---------------+--------------------+----------------
+ 99999000001   | authorization | pending       | test_tech_1        | 9999001
+ 99999000002   | authorization | queued        | test_tech_1        | 9999001
+ 99999000003   | authorization | approved      | test_tech_1        | 9999001
+ 99999000004   | parts_nla     | queued        | test_tech_1        | 9999001
+ 99999000005   | authorization | rejected      | test_tech_1        | 9999001
+```
+
+All 5 test SOs now pre-fill IH Unit Number = `9999001` in the Smartsheet intake URL. Submission IDs and SO numbers unchanged from prior seed expansion (84-88).
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (only data update on existing `technicians.tech_un_no` column).
+- No Smartsheet form changes.
+- No republish.
+- Test-data layer additive (the technicians row was already a test row; this just conforms its display value).
+
+**No version-control commits. No schema changes. No Smartsheet form definition changes. No republish.**

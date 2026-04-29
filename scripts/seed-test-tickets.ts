@@ -32,7 +32,12 @@ const TECH_LDAP = "test_tech_1";
 const TECH_NAME = "TEST_TECH_1";
 const TECH_PHONE = "555-0100";
 const TECH_RAC = "TEST_TECH_1";
-const TECH_UN_NO = "T_TEST_001";
+// 2026-04-28 (Tyler request): use a real VRS Tech ID format (7-digit
+// zero-padded numeric) so the intake-form IH Unit Number lookup
+// resolves to a believable value during end-to-end testing. Reserved
+// 9999xxx range is safely above the real-tech max (~0999706), so no
+// collision with production data is possible.
+const TECH_UN_NO = "9999001";
 const DISTRICT = "8175";
 
 const SO_1 = "99999000001";
@@ -73,7 +78,19 @@ async function ensureTechnicianRow() {
     .where(eq(technicians.ldapId, TECH_LDAP))
     .limit(1);
   if (existing.length) {
-    console.log(`[skip] technicians row for ${TECH_LDAP} exists (id=${existing[0].id})`);
+    // Conform tech_un_no on existing row in case the seed constant changed
+    // since the row was first created (e.g. switching from T_TEST_001 to a
+    // real-format VRS Tech ID). Idempotent — no-op when already correct.
+    if (existing[0].techUnNo !== TECH_UN_NO) {
+      const [updated] = await db
+        .update(technicians)
+        .set({ techUnNo: TECH_UN_NO })
+        .where(eq(technicians.ldapId, TECH_LDAP))
+        .returning();
+      console.log(`[update] technicians row for ${TECH_LDAP} (id=${updated.id}): tech_un_no ${existing[0].techUnNo} -> ${TECH_UN_NO}`);
+      return updated;
+    }
+    console.log(`[skip] technicians row for ${TECH_LDAP} exists (id=${existing[0].id}, tech_un_no=${existing[0].techUnNo})`);
     return existing[0];
   }
   const [created] = await db
