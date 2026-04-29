@@ -986,7 +986,15 @@ export default function TechSubmitPage() {
                   <div className="space-y-2">
                     {[
                       { value: "authorization", label: "Authorization", desc: "Request approval for repairs or non-repairable determination" },
-                      { value: "infestation_non_accessible", label: "Infestation / Non-Accessible", desc: "Unable to service due to infestation or access limitations" },
+                      // Tyler 2026-04-29: renamed from "Infestation / Non-Accessible" to
+                      // include the "no model tag" case, with explicit "(FA & AHS Only)"
+                      // suffix so techs see at-a-glance that this option does not apply
+                      // to Sears Protect / Sears PA / Sears Home Warranty (Cinch) calls.
+                      // The wrong-warranty enforcement is the destructive banner below
+                      // (mirrors the parts_nla pattern at line ~1028 — UI-side gate;
+                      // request-type enum value `infestation_non_accessible` unchanged
+                      // so historical rows + downstream Smartsheet routing still match).
+                      { value: "infestation_non_accessible", label: "Infestation / No Model Tag or Infestation / Non-Accessible (FA & AHS Only)", desc: "Unable to service due to infestation, missing model tag, or access limitations. American Home Shield and First American calls only." },
                       { value: "parts_nla", label: "Parts — No Longer Available (NLA)", desc: "Part is unavailable in TechHub. Submit for VRS parts team research. Sears Protect, Sears PA, and Sears Home Warranty (Cinch) calls only." },
                     ].map((opt) => (
                       <button
@@ -1038,6 +1046,30 @@ export default function TechSubmitPage() {
                     <p className="font-medium text-destructive">Use TechHub for AHS / First American NLA</p>
                     <p className="text-destructive/90 mt-0.5">
                       Handle AHS or First American NLA situations through TechHub — VRS does not route these to agents. Switch the request type to "Authorization" if this is a coverage approval question instead.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tyler 2026-04-29: Infestation / No Model Tag / Non-Accessible is
+                an AHS + First American only request type. If the warranty
+                auto-resolves (or is manually set) to Sears Protect, surface a
+                destructive banner pointing the tech back to Authorization.
+                Mirrors the parts_nla wrong-warranty banner above. UI-side gate
+                only — same approach the parts_nla path uses today. */}
+            {watchedRequestType === "infestation_non_accessible" &&
+              watchedValues.warrantyType === "sears_protect" && (
+              <div
+                className="rounded-md border border-destructive bg-destructive/10 p-3"
+                data-testid="banner-infestation-wrong-warranty"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-destructive">Infestation / Non-Accessible is for AHS & First American only</p>
+                    <p className="text-destructive/90 mt-0.5">
+                      For Sears Protect, Sears PA, or Sears Home Warranty (Cinch) calls, switch the request type to "Authorization" and document the infestation, missing model tag, or access limitation in the issue description.
                     </p>
                   </div>
                 </div>

@@ -1531,3 +1531,48 @@ All three helpers the inline fieldset provided are still available, just inside 
 - No republish.
 - Two existing files edited surgically (one card body removed on the left; one collapsible added on the right + two new optional props). Reversible in <30 lines if you want to roll back.
 
+
+---
+
+## 2026-04-29 — Tyler request: Infestation / Non-Accessible restricted to AHS + First American only
+
+### Tyler's directive
+> "infestation/no model tag or infestation/non-accessible (FA & AHS Only) - on technician submission form. This option will be for AHS and FA only - SPHW/SEARS PA etc should not be an option for this submission type. Can you change infestation/non-accessible to the above"
+
+### What changed
+**`client/src/pages/tech-submit.tsx`** — two surgical edits, no schema changes:
+
+**1. Renamed the request-type option label + desc (line ~989).**
+- Was: `label: "Infestation / Non-Accessible"`, `desc: "Unable to service due to infestation or access limitations"`
+- Now: `label: "Infestation / No Model Tag or Infestation / Non-Accessible (FA & AHS Only)"`, `desc: "Unable to service due to infestation, missing model tag, or access limitations. American Home Shield and First American calls only."`
+- Captures the new "no model tag" case Tyler called out.
+- Suffix `(FA & AHS Only)` makes the warranty restriction visible at glance.
+
+**2. Added wrong-warranty destructive banner (new ~18-line JSX block after the parts_nla banner).**
+- Triggers when `watchedRequestType === "infestation_non_accessible" && watchedValues.warrantyType === "sears_protect"`.
+- Copy: *"Infestation / Non-Accessible is for AHS & First American only — For Sears Protect, Sears PA, or Sears Home Warranty (Cinch) calls, switch the request type to Authorization and document the infestation, missing model tag, or access limitation in the issue description."*
+- Test id: `banner-infestation-wrong-warranty`.
+- Mirrors the existing `parts_nla` wrong-warranty banner (line ~1028) exactly — same destructive variant, same `AlertTriangle` icon, same two-line copy structure. UI-side gate only (no zod refine, no server-side block) for parity with the parts_nla pattern.
+
+### Why UI-side only (not server-validated)
+The parts_nla path enforces its mirror restriction (sears_protect only) entirely in the UI with no server-side zod refine. Following the same precedent for consistency. If Tyler wants hard server-side enforcement for either or both later, it's an additive ~5-line `z.refine` in `server/routes.ts` line 476's submission schema — call it out and we'll add it.
+
+### What was NOT changed (intentional, awaiting Tyler confirmation)
+- **`client/src/pages/tech-resubmit.tsx`** has the same `requestType` enum (line 52) and exposes the option as a `<SelectItem>` at line 502. Left untouched because Tyler said "on technician submission form" — singular. The resubmit path is a different surface. If you want the same label + warranty restriction applied there too, say the word and it's a 2-edit mirror.
+- **`client/src/pages/agent-dashboard.tsx`** at line 1332 has `label: "Infestation / Non-Accessible"` in a filter dropdown. That's the agent's queue filter (display-only), not a creation surface, so left as-is. If you want the renamed label propagated for visual consistency in the agent's queue filter, also a 1-line edit.
+- **Request type enum value** stays `infestation_non_accessible` (no schema/data migration). Only the displayed label and the gating banner changed. Historical rows continue to display correctly via the existing label-mapping logic at agent-dashboard.tsx:1685, submission-detail.tsx:402, tech-submit.tsx:705.
+
+### Behavior in the form flow
+The technician picks Request Type before entering Service Order (warranty auto-resolves from SO). So the option remains visible until SO is entered:
+1. Tech picks "Infestation / No Model Tag or Infestation / Non-Accessible (FA & AHS Only)" — fine, no banner yet (warranty still default `sears_protect` but tech hasn't seen warranty yet).
+2. Tech enters SO → `/api/tech/lookup-warranty` resolves warranty.
+3. If warranty resolves to AHS or First American → no banner; submission proceeds normally.
+4. If warranty resolves to Sears Protect → destructive red banner appears immediately ("Infestation / Non-Accessible is for AHS & First American only"). Tech sees the gate before submitting, switches to Authorization.
+
+### Tyler's hard rules — observed
+- No version-control commits.
+- No schema changes (the `requestType` text enum and the `warrantyType` enum both unchanged).
+- No Smartsheet form changes.
+- No republish.
+- Two surgical edits in one file, both reversible in <30 lines.
+
