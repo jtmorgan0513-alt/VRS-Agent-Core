@@ -2390,3 +2390,33 @@ Three-part request from Tyler before tomorrow's tech rollout:
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No schema changes (cutoff is a code constant, not a DB row).
+
+## 2026-04-30 (post-publish hotfix) — Remove agent availability banner references from Help Center
+
+### Trigger
+Tyler: "The agent availability banner has been removed, so I'm not sure why it's still in the Help Center. I need to make sure the entire agent availability section gets removed."
+
+### Files touched
+- `client/src/pages/help-center.tsx` — 4 edits
+
+### Changes
+1. **Removed dedicated item** (was lines 47-51 in `gettingStartedItems`): the "Agent Availability Banner" entry that described the green/amber banner. Item is gone in its entirety.
+2. **FAQ "How long does approval usually take?"**: dropped the trailing sentence "You can check the availability banner on your home screen to see how many agents are online and how many tickets are in the queue." Kept the supervisor-escalation guidance.
+3. **Troubleshooting "My submission is stuck on Pending"**: removed "Check the availability banner on your home screen to see whether agents are online." Replaced with "If you submitted after business hours, your request will be processed once agents are back online the following business day. If your submission has been pending for an unusually long time, contact your supervisor."
+4. **Troubleshooting item rename**: "Submitting after hours when no agents are online" → "Submitting after business hours". The "no agents are online" framing was tied to the now-gone banner. Body rewritten to drop "If the availability banner shows no agents are online" and lead with "If you need to submit an authorization request outside of business hours, you can still send it." Substantive workflow guidance (queue + scheduling channel reschedule) preserved.
+
+### What was NOT touched
+- `whats-new-modal.tsx`: no banner references existed (verified via grep).
+- Server code: no banner-related text or routes.
+- Audience tagging from prior entry: untouched.
+- No schema, no `package.json`, no Smartsheet form changes.
+
+### Verification
+- `rg -i "agent.{0,4}avail|availability banner" client/` → exit 1 (no matches).
+- Workflow restarted cleanly: `serving on port 5000`, websocket connected, no compile errors.
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No schema changes.

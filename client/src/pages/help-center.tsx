@@ -44,11 +44,6 @@ const gettingStartedItems: HelpItem[] = [
     content:
       "After logging in, your home screen shows three stat cards — Pending, Approved, and Rejected — so you can see your submission counts at a glance. Below that is a \"New Submission\" button, followed by your most recent submissions. Use \"View All\" to see your full submission history.",
   },
-  {
-    title: "Agent Availability Banner",
-    content:
-      "At the top of your home screen, you will see a real-time availability banner. When VRS agents are online and ready to process requests, the banner is green and shows the number of agents available along with how many tickets are currently in the queue. When no agents are online, the banner turns amber. You can still submit requests when no agents are online — they will be queued and processed once agents come back online.",
-  },
 ];
 
 const howToGuidesItems: HelpItem[] = [
@@ -93,7 +88,7 @@ const faqItems: HelpItem[] = [
   {
     title: "How long does approval usually take?",
     content:
-      "Wait time depends on the warranty provider.\n\n• Sears Protect / Sears PA / Sears Home Warranty (Cinch): typically 2–15 minutes during business hours.\n• American Home Shield and First American: these require VRS to call the provider for approval, which can take significantly longer — sometimes over an hour depending on their hold times. Plan to stay at the site until you receive the decision text.\n• NLA Parts requests: researched by the VRS parts team — typical turnaround is 1–2 business days.\n\nYou can check the availability banner on your home screen to see how many agents are online and how many tickets are in the queue. If your submission has been pending for an extended period, check with your supervisor.",
+      "Wait time depends on the warranty provider.\n\n• Sears Protect / Sears PA / Sears Home Warranty (Cinch): typically 2–15 minutes during business hours.\n• American Home Shield and First American: these require VRS to call the provider for approval, which can take significantly longer — sometimes over an hour depending on their hold times. Plan to stay at the site until you receive the decision text.\n• NLA Parts requests: researched by the VRS parts team — typical turnaround is 1–2 business days.\n\nIf your submission has been pending for an extended period, check with your supervisor.",
   },
   {
     title: "Can I edit a submission after sending it?",
@@ -132,7 +127,7 @@ const troubleshootingItems: HelpItem[] = [
   {
     title: "My submission is stuck on Pending",
     content:
-      "A submission may stay in Pending status if no agents are currently available to review it, or if the queue volume is high. Check the availability banner on your home screen to see whether agents are online. If you submitted after hours, your request will be processed once agents are back online the following business day.",
+      "A submission may stay in Pending status if no agents are currently available to review it, or if the queue volume is high. If you submitted after business hours, your request will be processed once agents are back online the following business day. If your submission has been pending for an unusually long time, contact your supervisor.",
   },
   {
     title: "I didn't receive an authorization code",
@@ -151,9 +146,9 @@ const troubleshootingItems: HelpItem[] = [
       "For security, login sessions expire after 7 days. When this happens, you will be redirected to the login screen. Simply log in again with your credentials. This is normal and helps protect your account.",
   },
   {
-    title: "Submitting after hours when no agents are online",
+    title: "Submitting after business hours",
     content:
-      "If the availability banner shows no agents are online and it is after business hours, you can still submit your authorization request. Your submission will be placed in the queue and processed when agents come back online the next business day. After submitting, reach out through your normal scheduling channels to have the service call rescheduled so that the authorization can be obtained and processed before the follow-up appointment.",
+      "If you need to submit an authorization request outside of business hours, you can still send it. Your submission will be placed in the queue and processed when agents are back online the next business day. After submitting, reach out through your normal scheduling channels to have the service call rescheduled so that the authorization can be obtained and processed before the follow-up appointment.",
   },
 ];
 
