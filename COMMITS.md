@@ -2525,3 +2525,24 @@ With dev seed data (12 submissions across 2 districts), the live endpoints were 
 - `GET /api/admin/analytics/districts` → district `8175` (11 tickets, ~34.5 business hours avg), district `Unknown` (1 ticket, ~102.7 business hours avg).
 
 Confirms (a) the JS averaging path executes without throwing, (b) the per-district `Map`-based grouping works, (c) the values are non-zero and finite, (d) the same code path will produce equivalent (now-business-hours-corrected) numbers against the much larger prod dataset on next dashboard load.
+
+## 2026-04-30 — Login/landing heading: "VRS Digital Authorization" → "VRS Express"
+
+### Trigger
+Tyler (with screenshot of the technician login screen): "This needs to say VRS Express."
+
+### Files touched
+- `client/src/pages/tech-login.tsx` (line 174)
+- `client/src/pages/login.tsx` (line 285)
+- `client/src/pages/landing.tsx` (line 36)
+
+### Change
+Three identical `<h1>` headings on the user-facing entry points still read "VRS Digital Authorization" — left over from the 4/30 brand rename, which had updated the rest of the app surface but missed these three headers. Replaced the heading text with "VRS Express" in all three files. Subtitles (`Field Technician`, `Sears Home Services`) and `data-testid` attributes preserved.
+
+### What was NOT touched
+- Internal-only docs that still reference the original product name (`VRS_PLATFORM_DEVELOPER_GUIDE.md`, `VRS_PLATFORM_USER_GUIDE.md`, `CLAUDE.md`, `CHANGELOG.md`, `replit.md`, the original Replit build prompt, the 2026-04-23 plan doc). None of these render to end users; leaving them as historical record. Tyler can request a sweep if the internal docs need to match.
+- Logos, favicons, page titles, `<meta>` tags — all already updated by the prior 4/30 brand rename.
+- No schema, package.json, or Smartsheet form changes.
+
+### Verification
+Live screenshot of `/tech/login` confirms the heading now renders as "VRS Express" with the Field Technician subtitle intact and all card/form styling unchanged.
