@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Accordion,
@@ -8,8 +9,18 @@ import {
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, LifeBuoy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, LifeBuoy, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+
+// Tyler 2026-04-30: Map each role to its "home" so the back button has
+// somewhere meaningful to send the user. The help center is a leaf page
+// reached from sidebars/footers and previously had no way back.
+function getDashboardPath(role: string | undefined): string {
+  if (role === "admin" || role === "super_admin") return "/admin/dashboard";
+  if (role === "vrs_agent") return "/agent/dashboard";
+  return "/tech"; // technicians + any unknown role fall back to tech home
+}
 
 // Tyler 2026-04-30: Audience tagging for help items.
 //   - "tech": only relevant to field technicians (LDAP login, photo upload,
@@ -199,6 +210,17 @@ export default function HelpCenter() {
       className="flex-1 overflow-y-auto p-4 md:p-6"
     >
       <div className="mx-auto max-w-4xl space-y-6">
+        <Link href={getDashboardPath(role)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-2"
+            data-testid="button-back-to-dashboard"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
         <div className="flex items-center gap-3">
           <LifeBuoy className="h-7 w-7 text-muted-foreground" />
           <h1 className="text-2xl font-semibold">Help Center</h1>

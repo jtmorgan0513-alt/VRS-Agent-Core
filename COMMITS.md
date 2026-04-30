@@ -2420,3 +2420,37 @@ Tyler: "The agent availability banner has been removed, so I'm not sure why it's
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No schema changes.
+
+## 2026-04-30 (post-publish hotfix #2) — Help Center back-button navigation
+
+### Trigger
+Tyler: "If you're in the Help section as an admin or technician and you want to return to the admin panel, clicking the Back button doesn't work. There's no navigation to get back to the admin portion."
+
+### Root cause
+`HelpCenterPage` rendered just a heading + tabs with no back button or in-page navigation. `AdminHelpRoute` and `AgentHelpRoute` in `App.tsx` mount the page directly (no sidebar wrapper), so non-tech users had no way back to their dashboard short of using the browser back button or retyping the URL. Techs had `BottomNav` (via `TechRoute`) but still no in-page back affordance.
+
+### Files touched
+- `client/src/pages/help-center.tsx` — 2 edits (imports + header)
+
+### Changes
+1. Added `Link` (wouter), `Button`, and `ArrowLeft` imports.
+2. Added `getDashboardPath(role)` helper that maps:
+   - `admin` / `super_admin` → `/admin/dashboard`
+   - `vrs_agent` → `/agent/dashboard`
+   - everything else (technicians + unknown) → `/tech`
+3. Rendered a "Back to Dashboard" ghost button at the top of the page, above the LifeBuoy + "Help Center" heading. `data-testid="button-back-to-dashboard"`. Uses wouter `<Link>` (per fullstack-js skill — no `window.location`).
+
+### What was NOT touched
+- Routing in `App.tsx`: unchanged. `AdminHelpRoute`/`AgentHelpRoute`/`TechRoute` mounting unchanged.
+- Audience filtering, content, search, tabs: unchanged.
+- No new endpoints, no schema changes, no `package.json` changes, no Smartsheet form changes.
+
+### Verification
+- Workflow restarted cleanly: `serving on port 5000`, websocket connected, no compile errors.
+- Role-aware destination logic mirrors the role-detection patterns in `App.tsx` (admin/super_admin/vrs_agent/technician) so a super_admin lands on `/admin/dashboard` exactly like clicking the sidebar would.
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No schema changes.
