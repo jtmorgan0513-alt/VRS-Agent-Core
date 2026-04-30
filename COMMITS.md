@@ -2454,3 +2454,52 @@ Tyler: "If you're in the Help section as an admin or technician and you want to 
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No schema changes.
+
+## 2026-04-30 — Business-hours analytics + one-shot prod purge of test-account submissions
+
+### Triggers
+1. Tyler: "There are many tickets that run overnight, and it's skewing the numbers for the average ticket time."
+2. Tyler: "We also need to do a cleanup and remove any testtech1 tickets... tmorri1 also keep testtech1 user just remove their tickets and ONLY their tickets from prod."
+
+### Files touched
+- NEW `shared/business-hours.ts` (165 lines, copied verbatim from client utility)
+- `client/src/lib/business-hours.ts` — collapsed to a re-export of shared helpers
+- `server/storage.ts` — `getAnalytics()` and `getDistrictRollup()` rewritten to compute averages in JS via `getBusinessElapsedMs`
+- `server/seed.ts` — new `purgeTestSubmissionsProdOneTime()` + import of `communicationSendAudit` + boot-sequence wiring
+
+### Change 1 — business-hours math on server analytics
+- Moved the 4/29 client utility (`getBusinessElapsedMs`, `formatBusinessElapsed`, `isWithinBusinessHours`, `VRS_OPEN_HOUR_ET`, `VRS_CLOSE_HOUR_ET`) into `shared/business-hours.ts` so client and server share one implementation. Client file now re-exports — zero behavior change for existing imports.
+- `getAnalytics()`: counts (submissionsToday/Week/Month/total/approved/rejected/pending) stay in SQL. Averages now fetched as raw timestamps and computed in JS:
+  - `avgTimeToStage1Ms` = avg of `getBusinessElapsedMs(createdAt, stage1ReviewedAt)` for rows where stage1 is set.
+  - `avgTimeToAuthCodeMs` = avg of `getBusinessElapsedMs(stage1ReviewedAt, stage2ReviewedAt)` for rows where both are set.
+- `getDistrictRollup()`: same pattern. Counts in SQL; per-district timestamps fetched, grouped in a `Map`, averaged via the helper.
+- **Result**: every historical prod ticket's average instantly reflects business-hours-only durations on the next dashboard load. No DB migration. No data rewrite. The `createdAt`, `stage1ReviewedAt`, and `stage2ReviewedAt` audit timestamps remain immutable — only the derived averages change.
+
+### Change 2 — one-shot prod purge of testtech1 + tmorri1 submissions
+- New `purgeTestSubmissionsProdOneTime()` in `seed.ts`. Flag-gated on user record `__test_submissions_prod_purge_v1_done__`. Mirrors the `password-reset` and `claimedAt-backfill` patterns already running in prod boot.
+- Scope: deletes submissions where `racId IN ('testtech1','tmorri1')` (existing `TEST_SUBMISSION_RAC_IDS` constant). Also deletes the FK fanout in correct child→parent order:
+  1. `communication_send_audit` (no cascade defined)
+  2. `sms_notifications` (no cascade defined)
+  3. `submissions` — `intake_forms` and `submission_notes` cascade automatically via `onDelete: "cascade"`.
+- **Keeps user records** for testtech1 and tmorri1 — only their tickets are removed, per Tyler's exact directive ("ONLY their tickets from prod"). Seed/login still works for dev.
+- Wired into the boot sequence after `backfillClaimedAt()` and before the existing dev-only `cleanupTestSubmissions()`. The new function runs in **all environments** (since the flag makes it idempotent), then sets the flag and is permanently inert.
+- Production read-only inspection (run before this change) confirmed expected impact: 40 testtech1 submissions, 124 linked sms_notifications, 0 communication_send_audit, 0 intake_forms, 0 submission_notes. tmorri1 has 0 submissions in prod (already clean). Flag was not set.
+- Defensive note: `communicationSendAudit` is deleted even though prod currently has 0 linked rows, in case any land between this code merge and the next deploy.
+
+### What was NOT touched
+- `intake_forms`, `submission_notes`: cascade automatically — no manual delete needed.
+- The user records for testtech1, tmorri1, or anyone else.
+- The dev-only `cleanupTestSubmissions()` function (still runs every boot in dev).
+- The existing 4/29 client business-hours utility behavior — only the file's structure changed.
+- No schema changes (the new flag is just another row in the existing `users` table). No `package.json` changes. No Smartsheet form changes.
+
+### Verification
+- Workflow restart clean: `serving on port 5000`, websocket connected as System Administrator, no compile errors.
+- Boot log shows: `[test-purge-prod] One-time purge complete: 0 submissions, 0 sms_notifications, 0 communication_send_audit. User records (testtech1, tmorri1) preserved.` — confirms the function executes, the queries are well-formed, and the flag insert succeeds. (0 rows in dev because seed had just re-populated the test data; the flag is now set so it won't re-run.)
+- On next prod publish + boot, the same code path will find the un-set prod flag, purge the 40 + 124 rows verified above, and self-disable.
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No schema changes.

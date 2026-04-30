@@ -1,6 +1,6 @@
 import bcryptjs from "bcryptjs";
 import { storage, db } from "./storage";
-import { technicians, users, submissions, smsNotifications } from "@shared/schema";
+import { technicians, users, submissions, smsNotifications, communicationSendAudit } from "@shared/schema";
 import { sql, isNull, isNotNull } from "drizzle-orm";
 
 const SEED_USERS = [
@@ -149,6 +149,7 @@ export async function seedDatabase() {
 
   await resetAllPasswords();
   await backfillClaimedAt();
+  await purgeTestSubmissionsProdOneTime();
   await cleanupTestSubmissions();
   await seedDefaultCommunicationTemplates();
 }
@@ -591,5 +592,74 @@ async function cleanupTestSubmissions() {
   if (deleted > 0) {
     console.log(`[test-cleanup] Startup: deleted ${deleted} test submissions`);
   }
+}
+
+// Tyler 2026-04-30: One-shot production cleanup of test-account submissions.
+// Differs from `cleanupTestSubmissions` (which is dev-only and runs every
+// boot) — this variant runs ONCE in any environment, gated behind a flag
+// user record so it never re-fires after a successful run. Mirrors the
+// `password-reset` and `claimedAt-backfill` patterns already in use.
+//
+// Scope: deletes submissions for racIds in TEST_SUBMISSION_RAC_IDS
+// (testtech1 + tmorri1) plus their FK fanout. Keeps the user records
+// themselves so seed/login still works for dev environments. Per Tyler:
+// "remove their tickets and ONLY their tickets from prod".
+//
+// Delete order (children → parent) so FK constraints are satisfied:
+//   1. communication_send_audit (no cascade)
+//   2. sms_notifications        (no cascade)
+//   3. submissions              (intake_forms + submission_notes cascade)
+async function purgeTestSubmissionsProdOneTime() {
+  const FLAG_RAC = "__test_submissions_prod_purge_v1_done__";
+  const flagUser = await storage.getUserByRacId(FLAG_RAC);
+  if (flagUser) {
+    console.log("[test-purge-prod] Already completed (flag found), skipping");
+    return;
+  }
+
+  const testSubs = await db.select({ id: submissions.id })
+    .from(submissions)
+    .where(sql`${submissions.racId} IN (${sql.join(TEST_SUBMISSION_RAC_IDS.map(r => sql`${r}`), sql`, `)})`);
+
+  const testSubIds = testSubs.map(s => s.id);
+
+  let deletedCommAudit = 0;
+  let deletedSms = 0;
+  let deletedSubs = 0;
+
+  if (testSubIds.length > 0) {
+    const idsList = sql.join(testSubIds.map(id => sql`${id}`), sql`, `);
+
+    const commRes = await db.delete(communicationSendAudit)
+      .where(sql`${communicationSendAudit.submissionId} IN (${idsList})`);
+    deletedCommAudit = commRes.rowCount ?? 0;
+
+    const smsRes = await db.delete(smsNotifications)
+      .where(sql`${smsNotifications.submissionId} IN (${idsList})`);
+    deletedSms = smsRes.rowCount ?? 0;
+
+    const subRes = await db.delete(submissions)
+      .where(sql`${submissions.id} IN (${idsList})`);
+    deletedSubs = subRes.rowCount ?? 0;
+  }
+
+  // Insert flag user so this never re-runs, even when 0 rows were deleted
+  // (an empty environment is a valid "done" state).
+  await db.insert(users).values({
+    email: null,
+    password: "flag",
+    name: "Test Submissions Prod Purge Flag",
+    role: "technician",
+    phone: null,
+    racId: FLAG_RAC,
+    isActive: false,
+    isSystemAccount: true,
+  });
+
+  console.log(
+    `[test-purge-prod] One-time purge complete: ${deletedSubs} submissions, ` +
+    `${deletedSms} sms_notifications, ${deletedCommAudit} communication_send_audit. ` +
+    `User records (testtech1, tmorri1) preserved.`
+  );
 }
 

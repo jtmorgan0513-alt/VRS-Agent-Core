@@ -42,6 +42,7 @@ import {
   communicationTemplateVersions,
   CommunicationTemplateVersion,
 } from "@shared/schema";
+import { getBusinessElapsedMs } from "@shared/business-hours";
 
 // Initialize database connection
 const pool = new Pool({
@@ -1026,7 +1027,8 @@ export class DatabaseStorage implements IStorage {
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const result = await db
+    // Counts stay in SQL (cheap, no business-hours logic needed).
+    const countsResult = await db
       .select({
         submissionsToday: sql<number>`count(*) filter (where ${submissions.createdAt} >= ${startOfToday})`,
         submissionsThisWeek: sql<number>`count(*) filter (where ${submissions.createdAt} >= ${sevenDaysAgo})`,
@@ -1035,12 +1037,38 @@ export class DatabaseStorage implements IStorage {
         approvedCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'approved')`,
         rejectedCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'rejected')`,
         pendingCount: sql<number>`count(*) filter (where ${submissions.stage1Status} = 'pending')`,
-        avgTimeToStage1Ms: sql<number | null>`avg(extract(epoch from (${submissions.stage1ReviewedAt} - ${submissions.createdAt})) * 1000) filter (where ${submissions.stage1ReviewedAt} is not null)`,
-        avgTimeToAuthCodeMs: sql<number | null>`avg(extract(epoch from (${submissions.stage2ReviewedAt} - ${submissions.stage1ReviewedAt})) * 1000) filter (where ${submissions.stage1ReviewedAt} is not null and ${submissions.stage2ReviewedAt} is not null)`,
       })
       .from(submissions);
 
-    const row = result[0];
+    // Tyler 2026-04-30: averages computed in JS using business-hours math
+    // (8 AM-8 PM ET, weekends/holidays included), so overnight time doesn't
+    // skew the headline numbers. Mirrors the row-timer logic in
+    // admin-dashboard.tsx via the shared `getBusinessElapsedMs` helper.
+    const timestampRows = await db
+      .select({
+        createdAt: submissions.createdAt,
+        stage1ReviewedAt: submissions.stage1ReviewedAt,
+        stage2ReviewedAt: submissions.stage2ReviewedAt,
+      })
+      .from(submissions)
+      .where(sql`${submissions.stage1ReviewedAt} is not null`);
+
+    let stage1Sum = 0;
+    let stage1Count = 0;
+    let authCodeSum = 0;
+    let authCodeCount = 0;
+    for (const r of timestampRows) {
+      if (r.createdAt && r.stage1ReviewedAt) {
+        stage1Sum += getBusinessElapsedMs(r.createdAt, r.stage1ReviewedAt);
+        stage1Count++;
+        if (r.stage2ReviewedAt) {
+          authCodeSum += getBusinessElapsedMs(r.stage1ReviewedAt, r.stage2ReviewedAt);
+          authCodeCount++;
+        }
+      }
+    }
+
+    const row = countsResult[0];
     return {
       submissionsToday: Number(row.submissionsToday) || 0,
       submissionsThisWeek: Number(row.submissionsThisWeek) || 0,
@@ -1049,8 +1077,8 @@ export class DatabaseStorage implements IStorage {
       approvedCount: Number(row.approvedCount) || 0,
       rejectedCount: Number(row.rejectedCount) || 0,
       pendingCount: Number(row.pendingCount) || 0,
-      avgTimeToStage1Ms: row.avgTimeToStage1Ms !== null ? Number(row.avgTimeToStage1Ms) : null,
-      avgTimeToAuthCodeMs: row.avgTimeToAuthCodeMs !== null ? Number(row.avgTimeToAuthCodeMs) : null,
+      avgTimeToStage1Ms: stage1Count > 0 ? stage1Sum / stage1Count : null,
+      avgTimeToAuthCodeMs: authCodeCount > 0 ? authCodeSum / authCodeCount : null,
     };
   }
 
@@ -1109,29 +1137,56 @@ export class DatabaseStorage implements IStorage {
     completed: number;
     avgTimeToStage1Ms: number | null;
   }[]> {
-    const rows = await db.execute(sql`
+    // Counts stay in SQL.
+    const countRows = await db.execute(sql`
       select
         coalesce(district_code, 'Unknown') as "district",
         count(*) as "totalTickets",
         count(*) filter (where stage1_status = 'approved') as "approved",
         count(*) filter (where stage1_status = 'rejected') as "rejected",
         count(*) filter (where stage1_status = 'pending') as "pending",
-        count(*) filter (where ticket_status in ('completed', 'approved')) as "completed",
-        avg(extract(epoch from (stage1_reviewed_at - created_at)) * 1000) filter (where stage1_reviewed_at is not null) as "avgTimeToStage1Ms"
+        count(*) filter (where ticket_status in ('completed', 'approved')) as "completed"
       from submissions
       group by district_code
       order by count(*) desc
     `);
 
-    return (rows.rows as any[]).map(r => ({
-      district: r.district || "Unknown",
-      totalTickets: Number(r.totalTickets) || 0,
-      approved: Number(r.approved) || 0,
-      rejected: Number(r.rejected) || 0,
-      pending: Number(r.pending) || 0,
-      completed: Number(r.completed) || 0,
-      avgTimeToStage1Ms: r.avgTimeToStage1Ms !== null ? Number(r.avgTimeToStage1Ms) : null,
-    }));
+    // Tyler 2026-04-30: business-hours-aware avg per district. Fetch only
+    // the timestamps needed (small payload — two columns + district), group
+    // in JS, average via shared `getBusinessElapsedMs` helper.
+    const timestampRows = await db
+      .select({
+        districtCode: submissions.districtCode,
+        createdAt: submissions.createdAt,
+        stage1ReviewedAt: submissions.stage1ReviewedAt,
+      })
+      .from(submissions)
+      .where(sql`${submissions.stage1ReviewedAt} is not null`);
+
+    const sumByDistrict = new Map<string, { sum: number; count: number }>();
+    for (const r of timestampRows) {
+      if (!r.createdAt || !r.stage1ReviewedAt) continue;
+      const key = r.districtCode || "Unknown";
+      const ms = getBusinessElapsedMs(r.createdAt, r.stage1ReviewedAt);
+      const cur = sumByDistrict.get(key) ?? { sum: 0, count: 0 };
+      cur.sum += ms;
+      cur.count += 1;
+      sumByDistrict.set(key, cur);
+    }
+
+    return (countRows.rows as any[]).map(r => {
+      const districtKey = r.district || "Unknown";
+      const agg = sumByDistrict.get(districtKey);
+      return {
+        district: districtKey,
+        totalTickets: Number(r.totalTickets) || 0,
+        approved: Number(r.approved) || 0,
+        rejected: Number(r.rejected) || 0,
+        pending: Number(r.pending) || 0,
+        completed: Number(r.completed) || 0,
+        avgTimeToStage1Ms: agg && agg.count > 0 ? agg.sum / agg.count : null,
+      };
+    });
   }
 
   async createFeedback(data: InsertFeedback): Promise<Feedback> {
