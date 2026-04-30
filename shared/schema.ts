@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { sql } from "drizzle-orm";
-import { pgTable, serial, text, varchar, integer, timestamp, date, unique, boolean, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, integer, timestamp, date, unique, boolean, jsonb, pgEnum, foreignKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -392,7 +392,16 @@ export type CommunicationTemplate = typeof communicationTemplates.$inferSelect;
 // optional editReason field.
 export const communicationTemplateVersions = pgTable("communication_template_versions", {
   id: serial("id").primaryKey(),
-  templateId: integer("template_id").notNull().references(() => communicationTemplates.id, { onDelete: "cascade" }),
+  // FK is declared in the table-extras callback below with an EXPLICIT name
+  // because drizzle's auto-generated name
+  // (`..._template_id_communication_templates_id_fk`) is 67 chars and exceeds
+  // PostgreSQL's 63-char identifier limit. PG silently truncates, leaving the
+  // dev DB constraint named `..._communication_templ` while drizzle-kit thinks
+  // the name should be the full version — that drift generates a DROP+ADD on
+  // every deploy, which the deploy validator (correctly) refuses to ship.
+  // Pinning the name here aligns drizzle-kit's view with PG reality. The DB
+  // structure (column type, FK relationship, ON DELETE CASCADE) is unchanged.
+  templateId: integer("template_id").notNull(),
   version: integer("version").notNull(),
   subject: text("subject"),
   title: text("title"),
@@ -403,6 +412,11 @@ export const communicationTemplateVersions = pgTable("communication_template_ver
   editReason: text("edit_reason"),
 }, (table) => ({
   templateVersionUnique: unique("communication_template_versions_template_version_unique").on(table.templateId, table.version),
+  templateIdFk: foreignKey({
+    columns: [table.templateId],
+    foreignColumns: [communicationTemplates.id],
+    name: "communication_template_versions_template_id_communication_templ",
+  }).onDelete("cascade"),
 }));
 
 export const insertCommunicationTemplateVersionSchema = createInsertSchema(communicationTemplateVersions).omit({
@@ -425,7 +439,12 @@ export const communicationSendAudit = pgTable("communication_send_audit", {
   submissionId: integer("submission_id").references(() => submissions.id),
   channel: communicationChannelEnum("channel").notNull(),
   actionKey: text("action_key").notNull(),
-  templateId: integer("template_id").references(() => communicationTemplates.id),
+  // Same situation as communication_template_versions — drizzle's intended
+  // FK name (`..._template_id_communication_templates_id_fk`) is 66 chars,
+  // PG truncated to `..._communication_templates_id`. Pinning the name here
+  // to match the dev DB reality so drizzle-kit stops issuing a DROP+ADD on
+  // every deploy. Default ON DELETE NO ACTION is unchanged (no .onDelete()).
+  templateId: integer("template_id"),
   templateVersion: integer("template_version").notNull(),
   renderedBody: text("rendered_body").notNull(),
   renderedSubject: text("rendered_subject"),
@@ -434,7 +453,13 @@ export const communicationSendAudit = pgTable("communication_send_audit", {
   sendStatus: text("send_status").notNull(), // 'preview' | 'sent' | 'failed'
   providerId: text("provider_id"),            // twilio_sid / sendgrid_msg_id / fcm_id
   sentAt: timestamp("sent_at").default(sql`now()`).notNull(),
-});
+}, (table) => ({
+  templateIdFk: foreignKey({
+    columns: [table.templateId],
+    foreignColumns: [communicationTemplates.id],
+    name: "communication_send_audit_template_id_communication_templates_id",
+  }),
+}));
 
 export const insertCommunicationSendAuditSchema = createInsertSchema(communicationSendAudit).omit({
   id: true,

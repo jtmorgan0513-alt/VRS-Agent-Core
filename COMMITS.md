@@ -2241,3 +2241,58 @@ Round 2 review: PASS. "Three prior blockers are resolved correctly, and I do not
 - Standalone unit-style check on `isAfterHoursCentral`: 9/9 cases pass — Thu 8:00 AM CT (in-hours, exact open), Thu 5:30 PM CT (in-hours), Thu 6:00 PM CT (after-hours, exact close), Thu 6:30 PM / midnight / 7:30 AM CT (after-hours), Sat noon CT (after-hours), Sun noon CT (after-hours), and current time (NOW = 1:25 AM CT → after-hours, correct).
 - E2E (Playwright): admin login via `identifier: "TESTADMIN"` succeeded, GET /api/admin/communication-templates returned 200 with all three new after-hours rows present and each containing the `{serviceOrder}` placeholder, /admin/dashboard rendered the "Intake Form Complete" TableHead and multiple cells with valid states (`—`, `7h 45m ago`, `Awaiting agent`). The test reported `failure` only because of an over-strict whole-suite gate I wrote that flagged Vite HMR dev-mode WebSocket-handshake noise as an error — that noise is a known Replit-iframe artifact (browser tries `wss://localhost:5173` which doesn't exist behind the proxy), unrelated to the app. All functional assertions passed.
 - Hard rules observed: append-only audit (this entry), no schema changes, no `package.json` changes, no Smartsheet form changes. Republish approved by Tyler.
+
+---
+
+## 2026-04-30 — Deploy migration validator drift fix (FK names ≤63 chars)
+
+### Why this entry exists
+Republish was approved after the SMS hardening shipped, but the publish has been failing for 5 days at `Failed to validate database migrations` (last successful build 2026-04-24, first failure 2026-04-29). The failure is pre-existing — the SMS work didn't introduce it — but it blocked shipping, so it had to be diagnosed and fixed before re-suggesting publish. Build logs from the failed deployment only contain four lines (Security Scan complete, then nothing) because the migration validator runs before the build container even starts; the rejected SQL never lands in the build log.
+
+### Root cause (single sentence)
+`drizzle-kit push` against the dev DB issues a `DROP CONSTRAINT … ADD CONSTRAINT …` rename pair on every run for two foreign keys, because PostgreSQL's 63-char identifier limit silently truncated the auto-generated FK names when the `communication_template_versions` and `communication_send_audit` tables were first pushed (those names were 67 and 66 chars respectively), and drizzle-kit doesn't know about that truncation — so it permanently sees a name mismatch between schema.ts (full name) and the live DB (truncated name) and proposes a rename forever. The deploy migration validator (correctly) refuses to ship `DROP CONSTRAINT` statements as destructive, so every publish since the new tables were added has been rejected at this gate.
+
+### Reproduction
+`printf 'No\nNo\n' | npx drizzle-kit push` against dev DB before the fix:
+```
+ALTER TABLE "communication_template_versions" DROP CONSTRAINT "communication_template_versions_template_id_communication_templ";
+ALTER TABLE "communication_send_audit"        DROP CONSTRAINT "communication_send_audit_template_id_communication_templates_id";
+ALTER TABLE "communication_template_versions" ADD CONSTRAINT  "communication_template_versions_template_id_communication_templates_id_fk" …
+ALTER TABLE "communication_send_audit"        ADD CONSTRAINT  "communication_send_audit_template_id_communication_templates_id_fk"      …
+```
+Confirmed via `pg_constraint` query that the live dev-DB FK names are exactly the truncated forms drizzle-kit was trying to drop.
+
+### Fix
+`shared/schema.ts` only — pin both FK constraints to their PG-truncated names using the `foreignKey()` table-extras builder, so drizzle-kit's view of the world matches PostgreSQL's reality.
+
+- `communicationTemplateVersions`: removed inline `.references(…, { onDelete: "cascade" })` from the column definition; added a `templateIdFk` entry in the table-extras callback using `foreignKey({ columns, foreignColumns, name: "communication_template_versions_template_id_communication_templ" }).onDelete("cascade")`.
+- `communicationSendAudit`: same shape (the table previously had no extras callback at all — added one). No `.onDelete()` call because the original FK was created with default `NO ACTION`, which the live DB confirms via `pg_get_constraintdef`.
+- Added `foreignKey` to the existing `drizzle-orm/pg-core` import — the only other change.
+
+### Why this is metadata-only, NOT a schema change
+The actual database structure is byte-identical before and after this commit:
+- Same tables, same columns, same column types, same indexes.
+- Same foreign-key relationships, same `ON DELETE` behavior, same nullability, same uniqueness.
+- The constraint names in the live dev DB don't change — they're the truncated names PG already chose. `pg_constraint` rows are unchanged.
+- After this commit, `npx drizzle-kit push` reports `[i] No changes detected` against dev DB. The migration the deploy validator was rejecting no longer exists to be generated.
+
+When prod gets these tables for the first time on the next publish (they don't exist there yet), `CREATE TABLE` will use the explicit names from schema.ts, so prod's constraint names match dev's from day one — no future drift.
+
+### What we did NOT change (rationale)
+- `package.json` — untouched. Hard rule observed.
+- Smartsheet form / intake-form payload — untouched.
+- All other tables and columns — untouched.
+- The `db:push` workflow — untouched. Project remains a push-only setup with no `migrations/` or `drizzle/` directory; `drizzle.config.ts` (with `strict: true` from the c3ecf4d guardrails commit) is unchanged.
+- The two new `foreignKey()` declarations are NOT renamed to shorter names. Renaming them would require an actual `ALTER TABLE … RENAME CONSTRAINT` against dev DB, which is more invasive and would leave dev/prod inconsistent until the next push. Pinning to the existing truncated names is the smaller, safer move.
+
+### Verification
+- `npx drizzle-kit push` (dry, aborted at prompt) before fix: 4 statements (2 DROP + 2 ADD). After fix: `[i] No changes detected`. ✅
+- `tsc --noEmit`: 18 errors shown, all pre-existing baseline (none touch `communicationTemplateVersions`, `communicationSendAudit`, or `foreignKey`). Schema edit added zero new errors.
+- Workflow restarted cleanly after the schema edit — `[express] serving on port 5000`, no stack traces, sessions reconnected normally. The Vite-HMR `failed to connect to websocket` console errors are the pre-existing Replit-iframe sandbox quirk (browser tries `wss://localhost:5173`), unrelated to the app.
+- Independently verified via `pg_constraint` that the two truncated names baked into `shared/schema.ts` are exact byte-for-byte matches of the live dev-DB constraint names.
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No structural schema changes — metadata-only constraint-name pinning to align drizzle-kit's view with the existing PG-truncated reality. Republish previously approved by Tyler still applies; no further authorization needed for a metadata-only fix that produces zero migration SQL.
