@@ -2503,3 +2503,25 @@ Tyler: "If you're in the Help section as an admin or technician and you want to 
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No schema changes.
+
+### Addendum 2026-04-30 — Purge scope confirmed via prod read-only inspection
+After the architect review surfaced that `TEST_RAC_IDS` in `seed.ts` includes three other test accounts (`ZZTEST9`, `TESTADMIN`, `testagent1`), Tyler asked whether they should also be in scope: "yes only if they have created test tickets that do not have actual technicians information."
+
+Prod read-only inspection (joined `users` to `submissions` on both `rac_id` and `technician_id` FK):
+
+| rac_id | role | submissions via rac_id | submissions via technician_id |
+|---|---|---:|---:|
+| testtech1 | technician | 40 | 40 |
+| tmorri1 | technician | 0 | 0 |
+| TESTADMIN | admin | 0 | 0 |
+| ZZTEST9 | vrs_agent | 0 | 0 |
+| testagent1 | vrs_agent | 0 | 0 |
+
+The other three have produced zero submissions on either FK in prod, so the conditional doesn't trigger. Scope stays at `testtech1` + `tmorri1` exactly as wired. No code change.
+
+### Addendum 2026-04-30 — Endpoint sanity-check
+With dev seed data (12 submissions across 2 districts), the live endpoints were probed end-to-end after restart:
+- `GET /api/admin/analytics` → `avgTimeToStage1Ms: 173,209,192` (~48 business hours), no NaN, no nulls.
+- `GET /api/admin/analytics/districts` → district `8175` (11 tickets, ~34.5 business hours avg), district `Unknown` (1 ticket, ~102.7 business hours avg).
+
+Confirms (a) the JS averaging path executes without throwing, (b) the per-district `Map`-based grouping works, (c) the values are non-zero and finite, (d) the same code path will produce equivalent (now-business-hours-corrected) numbers against the much larger prod dataset on next dashboard load.
