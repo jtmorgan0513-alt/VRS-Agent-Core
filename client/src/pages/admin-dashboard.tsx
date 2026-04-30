@@ -16,6 +16,7 @@ import {
 import { useWebSocket, loadNotificationSettings, playNotificationDing, showBrowserNotification } from "@/lib/websocket";
 import NotificationSettings from "@/components/notification-settings";
 import type { User, TechnicianUserView } from "@shared/schema";
+import { deriveIntakeFormStatus } from "@shared/intake-form-config";
 import searsLogo from "@assets/sears-home-services-logo-brands_1770949137899.png";
 import {
   SidebarProvider,
@@ -1115,29 +1116,49 @@ function TicketOverviewSection() {
                            ticket.warrantyType || "—"}
                         </TableCell>
                         <TableCell className="text-sm" data-testid={`intake-form-complete-${ticket.id}`}>
-                          {/* Tyler 2026-04-29: Intake Form Complete column.
-                              4 states: completed (green check + relative time),
-                              N/A for parts_nla (no Smartsheet form for NLA),
-                              awaiting agent (amber, ticket processed but no
-                              intake_forms row yet), and a muted dash for
-                              everything still in-flight. The intakeFormCompletedAt
-                              field comes from the LEFT JOIN added in
-                              storage.ts:getSubmissionsWithTechnician. */}
-                          {ticket.intakeFormCompletedAt ? (
-                            <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span className="text-xs">{getTimeInStatus(ticket.intakeFormCompletedAt)} ago</span>
-                            </span>
-                          ) : ticket.requestType === "parts_nla" ? (
-                            <span className="text-muted-foreground italic text-xs" title="Not applicable for parts NLA tickets">N/A</span>
-                          ) : (ticket.ticketStatus === "approved" || ticket.ticketStatus === "completed") ? (
-                            <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
-                              <Clock className="w-4 h-4" />
-                              <span className="text-xs">Awaiting agent</span>
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
+                          {/* Tyler 2026-04-30: Intake Form Complete column.
+                              Derived status (see shared/intake-form-config.ts)
+                              folds together completion timestamp, parts_nla
+                              request type, the INTAKE_FORM_GO_LIVE_UTC cutoff
+                              (8 AM Eastern May 1, 2026 — anything created
+                              before pre-dates the workflow and was handled by
+                              the prior separate intake form process), and the
+                              ticket's approval state. The same helper backs
+                              the server-side gate in routes.ts so the column
+                              and the API stay in lockstep. */}
+                          {(() => {
+                            const intakeStatus = deriveIntakeFormStatus({
+                              createdAt: ticket.createdAt,
+                              ticketStatus: ticket.ticketStatus,
+                              requestType: ticket.requestType,
+                              intakeFormCompletedAt: ticket.intakeFormCompletedAt,
+                            });
+                            if (intakeStatus === "completed") {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span className="text-xs">{getTimeInStatus(ticket.intakeFormCompletedAt)} ago</span>
+                                </span>
+                              );
+                            }
+                            if (intakeStatus === "not_applicable") {
+                              const reason = ticket.requestType === "parts_nla"
+                                ? "Not applicable for parts NLA tickets"
+                                : "Pre-dates the intake form workflow — handled through the prior process";
+                              return (
+                                <span className="text-muted-foreground italic text-xs" title={reason}>N/A</span>
+                              );
+                            }
+                            if (intakeStatus === "awaiting") {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
+                                  <Clock className="w-4 h-4" />
+                                  <span className="text-xs">Awaiting agent</span>
+                                </span>
+                              );
+                            }
+                            return <span className="text-muted-foreground text-xs">—</span>;
+                          })()}
                         </TableCell>
                         <TableCell className="text-sm text-right whitespace-nowrap text-muted-foreground" data-testid={`last-updated-${ticket.id}`}>
                           {formatDate(ticket.updatedAt || ticket.statusChangedAt || ticket.createdAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}

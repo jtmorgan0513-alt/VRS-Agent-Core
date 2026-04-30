@@ -9,15 +9,28 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, LifeBuoy } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+
+// Tyler 2026-04-30: Audience tagging for help items.
+//   - "tech": only relevant to field technicians (LDAP login, photo upload,
+//     PWA install, etc). Hidden from agents/admins ONLY if Tyler later
+//     decides he wants that — current rule is agents/admins see everything.
+//   - "agent_admin": agent/admin-portal content. Hidden from techs.
+//   - "all": general orientation, applies to every role.
+// Filter rule: technicians see {tech, all}. Agents/admins see everything.
+// Default audience when omitted is "tech" (the historical content origin).
+type Audience = "tech" | "agent_admin" | "all";
 
 interface HelpItem {
   title: string;
   content: string;
+  audience?: Audience;
 }
 
 const gettingStartedItems: HelpItem[] = [
   {
     title: "What is VRS Express?",
+    audience: "all",
     content:
       "VRS Express is a digital authorization platform for Sears Home Services that replaces the traditional call-in process. It allows you to submit authorization requests directly from your mobile device, track their status in real time, and receive authorization codes via SMS once approved.",
   },
@@ -94,6 +107,7 @@ const faqItems: HelpItem[] = [
   },
   {
     title: "Which warranty providers are supported?",
+    audience: "all",
     content:
       "VRS Express currently supports Sears Protect (Cinch), American Home Shield (AHS), and First American warranty submissions. Select the correct warranty provider during the submission process. Additional providers may be added in the future.",
   },
@@ -132,8 +146,9 @@ const troubleshootingItems: HelpItem[] = [
   },
   {
     title: "My session expired and I was logged out",
+    audience: "all",
     content:
-      "For security, login sessions expire after 7 days. When this happens, you will be redirected to the login screen. Simply log in again with your LDAP ID and password. This is normal and helps protect your account.",
+      "For security, login sessions expire after 7 days. When this happens, you will be redirected to the login screen. Simply log in again with your credentials. This is normal and helps protect your account.",
   },
   {
     title: "Submitting after hours when no agents are online",
@@ -149,6 +164,13 @@ const tabSections = [
   { id: "troubleshooting", label: "Troubleshooting", testId: "tab-troubleshooting", items: troubleshootingItems },
 ];
 
+function isVisibleToRole(item: HelpItem, role: string | undefined): boolean {
+  // Agents and admins see everything (Tyler 2026-04-30 directive).
+  if (role && role !== "technician") return true;
+  const audience = item.audience ?? "tech";
+  return audience === "tech" || audience === "all";
+}
+
 function filterItems(items: HelpItem[], query: string): HelpItem[] {
   if (!query.trim()) return items;
   const lower = query.toLowerCase();
@@ -161,11 +183,16 @@ function filterItems(items: HelpItem[], query: string): HelpItem[] {
 
 export default function HelpCenter() {
   const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
+  const role = user?.role;
 
-  const filteredSections = tabSections.map((section) => ({
-    ...section,
-    filteredItems: filterItems(section.items, searchQuery),
-  }));
+  const filteredSections = tabSections.map((section) => {
+    const visibleItems = section.items.filter((item) => isVisibleToRole(item, role));
+    return {
+      ...section,
+      filteredItems: filterItems(visibleItems, searchQuery),
+    };
+  });
 
   const hasAnyResults = filteredSections.some((s) => s.filteredItems.length > 0);
 

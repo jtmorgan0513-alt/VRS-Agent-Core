@@ -2327,3 +2327,66 @@ Brand rename only. No domain wording (resubmission counts, photo limits, RGC cod
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No schema changes.
+
+## 2026-04-30 — Help center role gating + intake form go-live cutoff
+
+### Why
+Three-part request from Tyler before tomorrow's tech rollout:
+1. Field technicians were being shown help/whats-new content written for the agent portal — irrelevant to them and confusing.
+2. The new "Intake Form Complete" column was rendering "Awaiting agent" against every approved ticket already in the database. Those tickets were filed via the prior separate intake form process and should display as "Not Applicable", not as a fresh agent task.
+3. The intake form workflow is not supposed to be live for agents until 8:00 AM Eastern May 1, 2026 (when the first technician of the day logs in). Same cutoff handles both #2 and #3 — anything created before the cutoff is grandfathered.
+
+### What
+- **NEW** `shared/intake-form-config.ts` — single source of truth for the cutoff.
+  - `INTAKE_FORM_GO_LIVE_UTC = new Date("2026-05-01T12:00:00Z")` (8 AM EDT, UTC-4 since DST is active in May).
+  - `deriveIntakeFormStatus({ createdAt, ticketStatus, requestType, intakeFormCompletedAt })` returns one of `"completed" | "awaiting" | "not_applicable" | "not_ready"`. Order: completion wins, then `parts_nla`, then the cutoff (grandfather), then approval state.
+
+- **server/routes.ts** — confirm-intake endpoint (line ~3903, between the duplicate-check and the `NOT_APPROVED` gate):
+  - New 409 with `code: "PRE_GO_LIVE"` when `submission.createdAt < INTAKE_FORM_GO_LIVE_UTC`. Mirrors the existing breadcrumb log pattern (`tag("pre-go-live")`).
+  - Pre-cutoff tickets cannot insert an `intake_forms` row regardless of any client behavior.
+
+- **client/src/pages/admin-dashboard.tsx** — Intake Form Complete column (line ~1121):
+  - Replaced the inline 4-state ternary with a switch on `deriveIntakeFormStatus(ticket)`. Same helper as the server-side gate, so the column and the API stay in lockstep.
+  - `not_applicable` now distinguishes its tooltip between "parts NLA" and "pre-dates the workflow" while rendering identically (italic muted "N/A").
+
+- **client/src/pages/help-center.tsx** — audience tagging:
+  - New `audience?: "tech" | "agent_admin" | "all"` field on each `HelpItem` (default `"tech"`).
+  - 3 items broadened to `"all"`: "What is VRS Express?", "Which warranty providers are supported?", "My session expired and I was logged out".
+  - `useAuth()` reads the role; technicians see `tech + all`, agents/admins see everything (Tyler's directive).
+
+- **client/src/components/whats-new-modal.tsx** — same audience pattern:
+  - Tags on the v1.0.0 features: "Digital Authorization Submissions"=`tech`, "Two-Stage Review Workflow"=`agent_admin`, "Admin Analytics Dashboard"=`agent_admin`, "PWA Support"=`tech`, "Interactive Help System"=`all`.
+  - Net effect for techs: 3 of 5 cards (the two agent/admin-side items are filtered out).
+  - New `role?: string` prop, passed from `OnboardingManager` in `App.tsx`.
+
+- **client/src/App.tsx** — make help reachable for non-techs:
+  - New `HelpRedirect` component routes each role to its own help URL.
+  - New `AgentHelpRoute` and `AdminHelpRoute` mirror the gating from `AgentRoute`/`AdminRoute` and render `HelpCenterPage` under `/agent/help` and `/admin/help`.
+  - `/help` now uses `HelpRedirect` instead of the hardcoded `<Redirect to="/tech/help" />`. Pre-existing bug: the "Help Center" button in both the agent and admin sidebar footers (`navigate("/help")`) was bouncing through `TechRoute` and dumping non-techs back to their dashboard. They now reach the help page correctly.
+
+### What was NOT touched
+- `package.json` — untouched. Hard rule observed.
+- Smartsheet form — untouched. The intake form payload, branch logic, and URL builder are unchanged.
+- `shared/schema.ts` — no schema changes. The cutoff is a code constant, not a database row. The existing `intakeFormCompletedAt` correlated subquery in `storage.ts:604` is unchanged.
+- `intake_forms` table — no schema changes; no backfill SQL. Grandfather behavior is purely derived from `submissions.createdAt`, so existing rows (if any) keep working and no DML is needed.
+- The technician-side intake form UI gating (`IntakeFormTab`) — unchanged. The pre-go-live API gate is sufficient defense-in-depth; the client gate is reading the same status endpoint that already returns `required=false` for non-approved tickets, and pre-cutoff tickets that hit the endpoint will now also be rejected with the new 409.
+- Existing test IDs — preserved (`intake-form-complete-${ticket.id}`, `whats-new-modal`, `accordion-item-*`, `tab-*`, etc).
+- Sidebar nav — untouched; both agent and admin sidebars already had a "Help Center" footer button pointing at `/help`. The new `HelpRedirect` makes that pre-existing button finally work for them.
+
+### Cutoff math (one place to revisit if the date/tz changes)
+- Eastern Daylight Time on May 1, 2026 is UTC-4 (US DST runs March → November).
+- 8:00 AM EDT = 12:00:00 UTC.
+- Constant: `new Date("2026-05-01T12:00:00Z")` in `shared/intake-form-config.ts`. Update there only — both the server gate and the admin column will pick it up.
+
+### Verification
+- `tsc --noEmit`: pre-existing baseline errors only; the new files and edits added zero new diagnostics.
+- Workflow restarted cleanly — `[express] serving on port 5000`, no stack traces. Vite-HMR `failed to connect to websocket` console errors are the pre-existing Replit-iframe sandbox quirk (browser tries `wss://localhost:5173`), unrelated to the app.
+- Manual sanity: `INTAKE_FORM_GO_LIVE_UTC.getTime() === Date.UTC(2026, 4, 1, 12, 0, 0)` ✅ (May = month index 4).
+- Pre-cutoff ticket scenario in `deriveIntakeFormStatus`: `createdAt = "2026-04-29T15:00Z"`, `ticketStatus = "approved"`, `requestType = "vrs_authorization"`, `intakeFormCompletedAt = null` → returns `"not_applicable"` (intended; renders as italic "N/A"). ✅
+- Post-cutoff ticket scenario: `createdAt = "2026-05-01T13:30Z"`, `ticketStatus = "approved"`, others same → `"awaiting"` (intended; renders as amber "Awaiting agent"). ✅
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No schema changes (cutoff is a code constant, not a DB row).

@@ -8,6 +8,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { authenticateToken, requireRole, type AuthenticatedRequest } from "./middleware/auth";
 import type { User, Technician } from "@shared/schema";
 import { deriveWarrantyFromProcId } from "@shared/warranty";
+import { INTAKE_FORM_GO_LIVE_UTC } from "@shared/intake-form-config";
 import * as fs from "fs";
 import * as path from "path";
 import { createWriteStream, createReadStream } from "fs";
@@ -3893,6 +3894,24 @@ export async function registerRoutes(
             error: "Intake form already recorded for this submission",
             code: "ALREADY_RECORDED",
             intakeForm: preExisting,
+          });
+        }
+
+        // Tyler 2026-04-30: Intake form workflow goes live at 8:00 AM
+        // Eastern on May 1, 2026 (when the first technician of the day
+        // logs in). Tickets created before this cutoff pre-date the
+        // workflow and were handled through a separate prior intake
+        // form process. They must NOT accept new intake form submissions
+        // here. Cutoff lives in shared/intake-form-config.ts so the
+        // admin dashboard column and this gate stay in lockstep.
+        const createdAtMs = owned.submission.createdAt
+          ? new Date(owned.submission.createdAt as unknown as string).getTime()
+          : 0;
+        if (createdAtMs < INTAKE_FORM_GO_LIVE_UTC.getTime()) {
+          console.warn(`${tag("pre-go-live")} status=fail createdAt=${owned.submission.createdAt} cutoff=${INTAKE_FORM_GO_LIVE_UTC.toISOString()}`);
+          return res.status(409).json({
+            error: "This ticket pre-dates the intake form workflow — it was handled through the prior process and does not require a new intake form here.",
+            code: "PRE_GO_LIVE",
           });
         }
 
