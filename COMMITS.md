@@ -2296,3 +2296,34 @@ When prod gets these tables for the first time on the next publish (they don't e
 - No `package.json` changes.
 - No Smartsheet form changes.
 - No structural schema changes — metadata-only constraint-name pinning to align drizzle-kit's view with the existing PG-truncated reality. Republish previously approved by Tyler still applies; no further authorization needed for a metadata-only fix that produces zero migration SQL.
+
+---
+
+## 2026-04-30 — Brand rename: VRS Submit → VRS Express
+
+### What
+Renamed user-facing brand string "VRS Submit" → "VRS Express" everywhere it appeared in the technician/PWA shell. 10 occurrences across 6 files; verified zero remaining via ripgrep.
+
+### Files touched
+- `client/index.html` — `<title>` and `apple-mobile-web-app-title` meta
+- `client/public/manifest.json` — PWA `name`
+- `client/src/components/install-prompt.tsx` — install banner label
+- `client/src/components/onboarding-wizard.tsx` — technician welcome slide title
+- `client/src/components/whats-new-modal.tsx` — PWA-support description
+- `client/src/pages/help-center.tsx` — 4 references in Getting Started, FAQs, Troubleshooting
+
+### What was NOT touched
+- `replit.md`, `README.md`, `package.json` — no brand strings present (verified).
+- "VRS Digital Authorization" on the technician login screen — different brand string, not in scope of this request.
+- "VRS Dashboard" / "VRS Admin" onboarding titles for agent and admin roles — different role-specific names; await explicit guidance before renaming.
+- `attached_assets/` — out of scope.
+- COMMITS.md historical entries — append-only invariant preserved.
+
+### Help-file content review
+Brand rename only. No domain wording (resubmission counts, photo limits, RGC code terminology, after-hours behavior, request-type labels, supported warranty providers) was modified. If any of those need updating to reflect today's behavior, awaiting specific direction from Tyler.
+
+### Hard rules observed
+- Append-only audit (this entry).
+- No `package.json` changes.
+- No Smartsheet form changes.
+- No schema changes.

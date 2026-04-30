@@ -33,7 +33,7 @@ const FEATURES = {
     },
     {
       title: "PWA Support",
-      description: "Install VRS Submit on your phone for quick access",
+      description: "Install VRS Express on your phone for quick access",
     },
     {
       title: "Interactive Help System",

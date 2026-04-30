@@ -17,9 +17,9 @@ interface HelpItem {
 
 const gettingStartedItems: HelpItem[] = [
   {
-    title: "What is VRS Submit?",
+    title: "What is VRS Express?",
     content:
-      "VRS Submit is a digital authorization platform for Sears Home Services that replaces the traditional call-in process. It allows you to submit authorization requests directly from your mobile device, track their status in real time, and receive authorization codes via SMS once approved.",
+      "VRS Express is a digital authorization platform for Sears Home Services that replaces the traditional call-in process. It allows you to submit authorization requests directly from your mobile device, track their status in real time, and receive authorization codes via SMS once approved.",
   },
   {
     title: "How do I log in?",
@@ -95,7 +95,7 @@ const faqItems: HelpItem[] = [
   {
     title: "Which warranty providers are supported?",
     content:
-      "VRS Submit currently supports Sears Protect (Cinch), American Home Shield (AHS), and First American warranty submissions. Select the correct warranty provider during the submission process. Additional providers may be added in the future.",
+      "VRS Express currently supports Sears Protect (Cinch), American Home Shield (AHS), and First American warranty submissions. Select the correct warranty provider during the submission process. Additional providers may be added in the future.",
   },
   {
     title: "What are the photo and video requirements?",
@@ -128,7 +128,7 @@ const troubleshootingItems: HelpItem[] = [
   {
     title: "The app won't install on my phone",
     content:
-      "VRS Submit is a Progressive Web App (PWA). To install it, open the app URL in Chrome (Android) or Safari (iOS). Tap the browser menu (three dots on Android or the share icon on iOS), then select \"Add to Home Screen.\" The app will appear as an icon on your device just like a regular app.",
+      "VRS Express is a Progressive Web App (PWA). To install it, open the app URL in Chrome (Android) or Safari (iOS). Tap the browser menu (three dots on Android or the share icon on iOS), then select \"Add to Home Screen.\" The app will appear as an icon on your device just like a regular app.",
   },
   {
     title: "My session expired and I was logged out",
