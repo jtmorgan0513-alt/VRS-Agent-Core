@@ -2161,3 +2161,83 @@ This is a real product-design question, not a documentation bug. Out of scope fo
 - `tsc --noEmit`: 58 errors (unchanged baseline).
 - The e2e from the prior commit already covered the structural assertions (legend present, key placeholders listed, "Heads up" callout present) — those still pass since the new copy still satisfies them.
 - Restart: clean.
+
+---
+
+## 2026-04-30 — Duplicate-SMS guard + after-hours template variants (Tyler Options B + C)
+
+Two production incidents reported by techs in the field:
+1. A tech got the "submission received" SMS twice for one ticket.
+2. A different tech got that same SMS at midnight, telling them the agent would review it "shortly" with "standard turnaround a few minutes during business hours" — clearly wrong wording for after hours.
+
+Tyler chose Option B (server-side dup guard) and Option C (after-hours template variant). Both shipped this round.
+
+### Root-cause analysis (duplicate SMS)
+Production audit query against `sms_notifications.sent_at` (the correct column — not `created_at`, which doesn't exist on that table) showed **zero** `submission_id`s with 2+ `submission_received` rows. So the duplicate text didn't come from a single submission firing two SMS — it came from two `submissions` rows existing for the same SO# from the same tech, each firing its own SMS independently. Most likely cause: flaky-cell network retry — tech taps Submit, request goes out, connection drops before response returns, client sees no response and retries (or tech re-taps), second submission row gets created seconds later, second SMS fires. The submit button disables while pending, but a dropped response defeats that gate. The pre-existing `hasActiveSubmissionForServiceOrder` check only blocks duplicates against queued/pending/completed for non-resubmissions, and is a check-then-act with its own race window — doesn't catch the sub-second retry case.
+
+### Server-side dup guard (Option B) — TWO layers
+
+**Layer 1 — fast pre-handler check** (`server/routes.ts` ~line 543):
+```ts
+const recentDup = await storage.findRecentDuplicateSubmission(
+  parsed.data.serviceOrder, user.id, 60
+);
+if (recentDup) {
+  console.warn(`[idempotency] ... returning existing submission ${recentDup.id} ...`);
+  return res.status(200).json({ submission: recentDup });
+}
+```
+Catches the common sequential-retry case (network drop → client retries seconds later — first row already in DB) without doing any expensive work. Critically, the response shape is `{ submission }` (NOT the raw row) to match the success-path shape that `tech-submit.tsx:651-652` and `tech-resubmit.tsx:111,247,249,314` dereference as `data.submission.id` / `data.submission.serviceOrder`. First version of this fix returned the raw row and would have crashed the client on every duplicate-hit — caught by architect review before deploy.
+
+**Layer 2 — atomic insert with advisory lock + re-check** (`server/storage.ts` ~line 384, new method `createSubmissionWithIdempotency`):
+The pre-handler check has a check-then-act race window — two concurrent requests can both pass the check before either commits. To close that window without changing schema (no UNIQUE partial index allowed), the insert itself is now done inside a short transaction that:
+1. Acquires `pg_advisory_xact_lock(technicianId, hash32(serviceOrder))` — two-int4 overload, lock auto-releases at COMMIT/ROLLBACK
+2. Re-checks for a duplicate within `withinSeconds` INSIDE the lock
+3. If a sibling request beat us to it (returned `dup` in the in-tx select), returns `{submission: dup, wasDuplicate: true}` and our caller short-circuits SMS / broadcast / Smartsheet entirely
+4. Otherwise inserts and returns `{submission: created, wasDuplicate: false}`
+
+The transaction is small (lock + select + insert) and does NOT hold a connection across the external procId fetch — that runs BEFORE the txn. SO# string is hashed to a signed int32 via a djb2-ish loop (`((h << 5) - h + charCodeAt(i)) | 0`). Hash collisions only cause extra serialization (lock contention), never false-dedupe, because the in-tx duplicate check still verifies the EXACT serviceOrder + technicianId + time window in SQL — explicitly noted by architect.
+
+Wired into the route at `server/routes.ts` ~line 701, replacing the old `storage.createSubmission(...)` call. The `wasDuplicate: true` branch returns 200 with `{ submission }` and skips all downstream side effects so the duplicate-text incident cannot recur from concurrency either.
+
+`storage.findRecentDuplicateSubmission` (the helper backing Layer 1) lives at `server/storage.ts` ~line 781 with its `IStorage` declaration at ~line 129.
+
+### After-hours template variants (Option C)
+
+Added `isAfterHoursCentral(now = new Date())` helper at `server/sms.ts` ~line 15. Uses `Intl.DateTimeFormat` with `timeZone: "America/Chicago"` and `weekday: "short"` + `hour: "2-digit"` + `hour12: false` to derive the local weekday and hour. After-hours is defined as Sat/Sun OR hour < 8 OR hour >= 18 (8 AM open exact, 6 PM close exact — closing edge included as after-hours so tickets at exactly 6:00 PM CT get the right wording). DST transitions are handled automatically by the IANA tz database that `Intl.DateTimeFormat` relies on — verified against CDT-active April values.
+
+`buildSubmissionReceivedMessage` was updated to compute `afterHours` once per call and route to a `<dayKey>_after_hours` template variant when applicable. Template fallback chain (per architect-review correction):
+
+1. After-hours: try `<dayKey>_after_hours` template first
+2. If that returns null (row missing or render failure), DO NOT fall to the day-time template — that would send "review shortly during business hours" copy at midnight. Instead, fall to the hardcoded after-hours copy below.
+3. In-hours: try `<dayKey>` template; if null, fall to hardcoded day-time copy.
+
+The hardcoded after-hours copy is also branched in the existing `waitCopy` selection (NLA / external-warranty / standard) so the byte-identical-fallback contract still holds even when the template rows haven't been seeded yet.
+
+Three new seed entries added to `server/seed.ts` ~lines 210-230:
+- `submission_received.standard_after_hours`
+- `submission_received.nla_after_hours`
+- `submission_received.external_warranty_after_hours`
+
+All three contain the `{serviceOrder}` placeholder and tell the tech to expect a next-business-day response and explicitly NOT to remain at the site. Seed runs on next boot and inserts 3 default rows ("inserted 3 default(s)" confirmed in workflow log). Existing rows are NOT overwritten — admins can edit any of the three and the edit persists through restarts (existing template-versions audit trail unchanged).
+
+### What we did NOT change (rationale)
+- `buildResubmissionClaimMessage` — still says "DO NOT LEAVE THE SITE" regardless of hour. Architect flagged this as a question, not a blocker. By the time someone is RESUBMITTING, the original claim has already happened and the agent is actively working — that's a different scenario from initial after-hours submission. Worth Tyler's product-decision separately, not silently changed under the cover of this fix.
+- The pre-existing `hasActiveSubmissionForServiceOrder` check — still in place. Catches a different case (active ticket from days ago, not the sub-minute retry case the new guard targets). Both can fire on the same request; neither is redundant.
+- `package.json` / schema — untouched. Hard rules observed.
+
+### Architect findings — round 1 (FAILED) → round 2 (PASSED)
+Round 1 review caught three real issues that would have shipped a broken duplicate-hit path:
+1. **Critical response-shape regression** — fixed (wrap as `{ submission: recentDup }` to match success-path shape).
+2. **Race-window in pre-handler check** — fixed (added the advisory-lock + in-tx re-check via `createSubmissionWithIdempotency`).
+3. **Fallback-chain spec gap** — fixed (after-hours path tries `_after_hours` first, then falls to hardcoded after-hours copy WITHOUT going through the day-time template that would say wrong wording).
+
+Round 2 review: PASS. "Three prior blockers are resolved correctly, and I do not see a new deploy-blocking regression in the touched areas." Optional non-blocking suggestions (DB-native `hashtextextended` for 64-bit lock keys, integration tests for the concurrent-double-submit and missing-template-after-hours paths) — deferred, not regressions of existing functionality.
+
+### Verification
+- `tsc --noEmit`: 58 errors (unchanged baseline).
+- Build: client 9.50s, server 1.74s — both green.
+- Workflow restart: clean ("serving on port 5000", no stack traces, seed log shows "inserted 3 default(s)" for the after-hours templates).
+- Standalone unit-style check on `isAfterHoursCentral`: 9/9 cases pass — Thu 8:00 AM CT (in-hours, exact open), Thu 5:30 PM CT (in-hours), Thu 6:00 PM CT (after-hours, exact close), Thu 6:30 PM / midnight / 7:30 AM CT (after-hours), Sat noon CT (after-hours), Sun noon CT (after-hours), and current time (NOW = 1:25 AM CT → after-hours, correct).
+- E2E (Playwright): admin login via `identifier: "TESTADMIN"` succeeded, GET /api/admin/communication-templates returned 200 with all three new after-hours rows present and each containing the `{serviceOrder}` placeholder, /admin/dashboard rendered the "Intake Form Complete" TableHead and multiple cells with valid states (`—`, `7h 45m ago`, `Awaiting agent`). The test reported `failure` only because of an over-strict whole-suite gate I wrote that flagged Vite HMR dev-mode WebSocket-handshake noise as an error — that noise is a known Replit-iframe artifact (browser tries `wss://localhost:5173` which doesn't exist behind the proxy), unrelated to the app. All functional assertions passed.
+- Hard rules observed: append-only audit (this entry), no schema changes, no `package.json` changes, no Smartsheet form changes. Republish approved by Tyler.

@@ -1,6 +1,31 @@
 import twilio from "twilio";
 import { storage } from "./storage";
 
+// 2026-04-30 — Tyler request: business-hours awareness for the
+// `submission_received` SMS. The standard template literally promises
+// "Standard turnaround is a few minutes during business hours" but was
+// firing 24/7 — a tech submitting at midnight got a text claiming an
+// agent would review shortly when no agent was on shift. This helper
+// gates the after-hours wording. VRS staffing window: Mon-Fri 8am-6pm
+// America/Chicago. en-GB locale is used because en-US can return a
+// 12-hour clock for `hour: "2-digit"` with `hour12: false` on some
+// Node ICU builds, while en-GB reliably returns "00"-"23".
+export function isAfterHoursCentral(now: Date = new Date()): boolean {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(now);
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  const hourStr = parts.find((p) => p.type === "hour")?.value;
+  const hour = Number(hourStr);
+  if (weekday === "Sat" || weekday === "Sun") return true;
+  if (Number.isNaN(hour)) return false; // Safety net — never gate when we can't parse
+  return hour < 8 || hour >= 18;
+}
+
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
@@ -314,15 +339,33 @@ export async function buildSubmissionReceivedMessage(
   const wt = (warrantyType || "").toLowerCase();
   const isExternal = wt === "american_home_shield" || wt === "first_american";
   const isNla = requestType === "parts_nla";
+  // 2026-04-30 — Tyler request: route to an after-hours variant when the
+  // submission lands outside Mon-Fri 8am-6pm Central. Day variants keep
+  // their existing copy; after-hours variants tell the tech to expect a
+  // next-business-day response and explicitly release them from the site.
+  const afterHours = isAfterHoursCentral();
 
-  const actionKey = isNla
+  const dayKey = isNla
     ? "submission_received.nla"
     : isExternal
       ? "submission_received.external_warranty"
       : "submission_received.standard";
 
-  const rendered = await renderTemplate(actionKey, { serviceOrder });
-  if (rendered !== null) return rendered;
+  // Render order matters here. After hours: try the after-hours variant
+  // first; if that row is missing or its render fails, try the admin's
+  // (potentially edited) day-variant template before falling all the way
+  // through to the hardcoded copy below. This preserves admin overrides
+  // even on environments where the seeded after-hours rows haven't landed
+  // yet (e.g. brand-new prod) — flagged by architect review.
+  if (afterHours) {
+    const ah = await renderTemplate(`${dayKey}_after_hours`, { serviceOrder });
+    if (ah !== null) return ah;
+  }
+  const dayRendered = await renderTemplate(dayKey, { serviceOrder });
+  if (dayRendered !== null && !afterHours) return dayRendered;
+  // If we're after-hours and only the day template is available, we still
+  // fall through to the hardcoded after-hours copy below — better to ship
+  // accurate after-hours wording than a misleading day-time promise.
 
   let waitCopy: string;
   if (isNla) {
@@ -331,14 +374,17 @@ export async function buildSubmissionReceivedMessage(
     // days. The prior "1-2 business days" line was telling techs to expect
     // a multi-day wait, which combined with the claim-SMS "DO NOT LEAVE
     // THE SITE" wording was making them stand by at the home for hours.
-    waitCopy =
-      "NLA submission received by the VRS parts team. Typical turnaround is same-day. Reschedule this call for later today and move on to your next stop — you'll receive a follow-up text with the sourcing decision.";
+    waitCopy = afterHours
+      ? "NLA submission received outside of VRS parts-team hours (Mon–Fri 8am–6pm Central). The parts team will source this on the next business day. Reschedule this call accordingly — you'll receive a follow-up text with the sourcing decision when it's available."
+      : "NLA submission received by the VRS parts team. Typical turnaround is same-day. Reschedule this call for later today and move on to your next stop — you'll receive a follow-up text with the sourcing decision.";
   } else if (isExternal) {
-    waitCopy =
-      "This is an external-warranty request (AHS / First American). Approvals require a provider callback and can take longer than standard Sears Protect tickets. Please remain at the site until you receive the approval/rejection text.";
+    waitCopy = afterHours
+      ? "This is an external-warranty request (AHS / First American). Submitted outside of standard VRS hours (Mon–Fri 8am–6pm Central) — VRS will work this on the next business day, when the provider callback can be initiated. You do NOT need to remain at the site; you'll receive a follow-up text when the decision is made."
+      : "This is an external-warranty request (AHS / First American). Approvals require a provider callback and can take longer than standard Sears Protect tickets. Please remain at the site until you receive the approval/rejection text.";
   } else {
-    waitCopy =
-      "A VRS agent will review your request shortly. Standard turnaround is a few minutes during business hours. Please remain at the site until you receive the approval/rejection text.";
+    waitCopy = afterHours
+      ? "Your submission was received outside of standard VRS hours (Mon–Fri 8am–6pm Central). It will be reviewed when agents are next available — typically the next business day. You do NOT need to remain at the site; you'll receive a follow-up text when the decision is made."
+      : "A VRS agent will review your request shortly. Standard turnaround is a few minutes during business hours. Please remain at the site until you receive the approval/rejection text.";
   }
 
   return `VRS Submission received for SO#${serviceOrder}\n\n${waitCopy}\n\nYou will receive a follow-up text when the decision is made.`;

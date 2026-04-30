@@ -528,6 +528,32 @@ export async function registerRoutes(
         return res.status(404).json({ error: "User not found" });
       }
 
+      // 2026-04-30 — Tyler request: server-side idempotency guard.
+      // A tech reported receiving the "submission received" SMS twice. The
+      // most likely root cause is a flaky-cell retry: client tap → POST in
+      // flight → connection drops → client retries → second row created →
+      // second SMS fired. The submit button disables while pending, but a
+      // dropped response defeats that gate. Resolve idempotently rather
+      // than 4xx: if this exact (tech, SO#) pair was just submitted within
+      // 60s, return the existing row so the client sees "submitted" and
+      // we don't fire a duplicate SMS or burn a resubmission slot.
+      const recentDup = await storage.findRecentDuplicateSubmission(parsed.data.serviceOrder, user.id, 60);
+      if (recentDup) {
+        // createdAt is `Date | null` in the schema (defaulted server-side),
+        // so guard for the null case before doing time math.
+        const createdMs = recentDup.createdAt ? new Date(recentDup.createdAt).getTime() : Date.now();
+        const ageSec = Math.round((Date.now() - createdMs) / 1000);
+        console.warn(
+          `[idempotency] POST /api/submissions: returning existing submission ${recentDup.id} ` +
+          `for tech=${user.id} SO=${parsed.data.serviceOrder} (age=${ageSec}s). Suppressed duplicate insert + SMS.`
+        );
+        // Architect-flagged: the success path below returns `{ submission }`,
+        // not the raw row, and the tech-submit / tech-resubmit clients
+        // dereference `data.submission.id` / `.serviceOrder`. Match that
+        // shape exactly so the idempotent-hit path doesn't crash the client.
+        return res.status(200).json({ submission: recentDup });
+      }
+
       // Tier 2 (2026-04-28 hotfix): identity-mismatch detection.
       // Logs only — no behavior change. If the JWT-bound user.id disagrees
       // with the users row resolved by JWT-bound ldapId, the request is
@@ -659,7 +685,17 @@ export async function registerRoutes(
         console.log(`[warranty-derive] SO ${parsed.data.serviceOrder}: tech selected ${parsed.data.warrantyType}, derived ${derivedWarranty.warrantyType} from ${derivedWarranty.source} (procId=${procIdResult.procId}, clientNm=${procIdResult.clientNm})`);
       }
 
-      const submission = await storage.createSubmission({
+      // Architect-flagged race-window close. The pre-handler call to
+      // `findRecentDuplicateSubmission` (above, line ~543) catches the common
+      // sequential-retry case fast and avoids the procId fetch for known
+      // dupes. This atomic insert serializes concurrent (tech, SO#) requests
+      // on a transaction-scoped advisory lock and re-checks for a recent
+      // duplicate inside the lock — closing the small remaining window where
+      // two near-simultaneous requests both pass the pre-check before either
+      // commits. On race-hit, returns the existing row; we then short-circuit
+      // SMS / broadcast / Smartsheet so the duplicate-text incident cannot
+      // recur from concurrency either.
+      const idempResult = await storage.createSubmissionWithIdempotency({
         technicianId: user.id,
         racId: user.racId || "",
         technicianLdapId: authReq.user?.ldapId || null,
@@ -696,7 +732,15 @@ export async function registerRoutes(
         resubmissionOf: parsed.data.resubmissionOf || null,
         procId: procIdResult.procId,
         clientNm: procIdResult.clientNm,
-      });
+      }, 60);
+      const submission = idempResult.submission;
+      if (idempResult.wasDuplicate) {
+        console.warn(
+          `[idempotency-tx] Race detected — returning existing submission ${submission.id} ` +
+          `for tech=${user.id} SO=${parsed.data.serviceOrder}. Skipping SMS / broadcast / Smartsheet.`
+        );
+        return res.status(200).json({ submission });
+      }
 
       const submissionReceivedPhone = submission.phoneOverride || submission.phone;
       if (submissionReceivedPhone) {

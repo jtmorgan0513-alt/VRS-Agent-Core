@@ -118,6 +118,17 @@ export interface IStorage {
   getSubmissionHistory(serviceOrder: string): Promise<Submission[]>;
   hasRejectedClosedForServiceOrder(serviceOrder: string): Promise<boolean>;
   hasActiveSubmissionForServiceOrder(serviceOrder: string, technicianId: number): Promise<{ exists: boolean; status?: string }>;
+  // Idempotency guard for double-submit / network-retry scenarios.
+  // Returns the most recent submission by this tech for this SO# created
+  // within `withinSeconds`, regardless of ticketStatus or resubmission flag.
+  // The route handler treats a hit as "the original request already won —
+  // return that row instead of creating a phantom duplicate."
+  findRecentDuplicateSubmission(serviceOrder: string, technicianId: number, withinSeconds: number): Promise<Submission | undefined>;
+  // Atomic insert-with-idempotency: serializes on advisory lock keyed by
+  // (technicianId, hash(serviceOrder)), re-checks for a recent duplicate
+  // inside the lock, and inserts only if no sibling request beat us to it.
+  // See implementation comment for the rationale.
+  createSubmissionWithIdempotency(submission: InsertSubmission, withinSeconds: number): Promise<{ submission: Submission; wasDuplicate: boolean }>;
 
   // SMS methods
   createSmsNotification(
@@ -355,6 +366,58 @@ export class DatabaseStorage implements IStorage {
       .values(submission)
       .returning();
     return result[0];
+  }
+
+  // 2026-04-30 — Architect-flagged race-window close. The pre-handler call
+  // to `findRecentDuplicateSubmission` catches the common sequential-retry
+  // case (network drop → client retry seconds later — first row already in
+  // DB). It does NOT close the concurrent-tap race where two requests both
+  // pass the check before either inserts. This method does:
+  //   1. Acquire a transaction-scoped advisory lock keyed on
+  //      (technicianId, hash(serviceOrder)) so concurrent requests for the
+  //      same (tech, SO#) pair serialize on the lock instead of racing.
+  //   2. Re-check for a recent duplicate INSIDE the lock — if a sibling
+  //      request inserted while we were waiting, return that row and skip
+  //      our insert + downstream SMS / broadcast work.
+  //   3. Otherwise insert and return the new row.
+  // The transaction is short (lock + select + insert), so it does NOT hold
+  // a connection across the external procId fetch — that runs before this
+  // call. Auto-releases the lock at COMMIT/ROLLBACK.
+  async createSubmissionWithIdempotency(
+    submission: InsertSubmission,
+    withinSeconds: number
+  ): Promise<{ submission: Submission; wasDuplicate: boolean }> {
+    return await db.transaction(async (tx) => {
+      // pg_advisory_xact_lock has a two-int4 overload; combine technicianId
+      // (small int4) with a hash of the SO# string (also int4). djb2-ish
+      // hash, signed-int32-truncated via `| 0` so the result fits int4.
+      let soHash = 0;
+      const so = submission.serviceOrder;
+      for (let i = 0; i < so.length; i++) {
+        soHash = ((soHash << 5) - soHash + so.charCodeAt(i)) | 0;
+      }
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${submission.technicianId}, ${soHash})`);
+
+      const cutoff = new Date(Date.now() - withinSeconds * 1000);
+      const dup = await tx
+        .select()
+        .from(submissions)
+        .where(
+          and(
+            eq(submissions.serviceOrder, so),
+            eq(submissions.technicianId, submission.technicianId),
+            gte(submissions.createdAt, cutoff)
+          )
+        )
+        .orderBy(desc(submissions.createdAt))
+        .limit(1);
+      if (dup[0]) {
+        return { submission: dup[0], wasDuplicate: true };
+      }
+
+      const [created] = await tx.insert(submissions).values(submission).returning();
+      return { submission: created, wasDuplicate: false };
+    });
   }
 
   async getSubmission(id: number): Promise<Submission | undefined> {
@@ -759,6 +822,31 @@ export class DatabaseStorage implements IStorage {
       return { exists: true, status: results[0].ticketStatus };
     }
     return { exists: false };
+  }
+
+  // 2026-04-30 — Tyler request: server-side idempotency for double-submit /
+  // retry-after-flaky-cell scenarios. The submit button disables while in
+  // flight, and `hasActiveSubmissionForServiceOrder` blocks duplicates against
+  // queued/pending/completed rows for non-resubmissions. Neither protects
+  // against (a) two requests racing past that check before either commits,
+  // or (b) a resubmission flow accidentally being submitted twice. A 60s
+  // window safely brackets both — legitimate resubmissions happen minutes or
+  // hours apart, never within a minute.
+  async findRecentDuplicateSubmission(serviceOrder: string, technicianId: number, withinSeconds: number): Promise<Submission | undefined> {
+    const cutoff = new Date(Date.now() - withinSeconds * 1000);
+    const results = await db
+      .select()
+      .from(submissions)
+      .where(
+        and(
+          eq(submissions.serviceOrder, serviceOrder),
+          eq(submissions.technicianId, technicianId),
+          gte(submissions.createdAt, cutoff)
+        )
+      )
+      .orderBy(desc(submissions.createdAt))
+      .limit(1);
+    return results[0];
   }
 
   // SMS methods
