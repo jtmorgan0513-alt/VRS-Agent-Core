@@ -165,10 +165,26 @@ export function buildIntakeFormUrl(
   const branch = detectBranch(submission.procId);
   const warnings: string[] = [];
 
-  // Strip "1234-" district prefix when present? Tyler verified the live form
-  // accepts the value as-is (helper text says "Copy and Paste from Service
-  // Pro or WOM"), so we pass it unmodified.
-  const serviceOrder = submission.serviceOrder ?? "";
+  // Tyler 2026-04-30 (REVERSAL of the 2026-04-26 decision): the IH Service
+  // Order Number field on the Smartsheet intake form must contain ONLY the
+  // 8-digit Service Order number — no district prefix, no separators. The
+  // technician submission stores the value as "DDDD-NNNNNNNN" (district +
+  // 8-digit SO, e.g. "8175-12345678"); the 4/26 decision left it that way
+  // because the field's helper text said "Copy and Paste from Service Pro or
+  // WOM". Tyler has now reversed that — when this value is pasted over /
+  // pre-filled into the IH Service Order Number field while a ticket is
+  // being worked, only the 8-digit SO portion should land. Mirror the same
+  // split the SHSAI helper already uses at agent-dashboard.tsx:569.
+  // Architect-flagged hardening 2026-04-30: only strip when the value
+  // matches the exact technician-form shape (4-digit district + dash +
+  // 8-digit SO). Anything else — already-bare 8-digit SOs, malformed
+  // imports, future SO formats — passes through untouched so this filter
+  // can never silently over-trim a legitimate value.
+  const rawServiceOrder = submission.serviceOrder ?? "";
+  const districtPrefixedMatch = rawServiceOrder.match(/^\d{4}-(\d{8})$/);
+  const serviceOrder = districtPrefixedMatch
+    ? districtPrefixedMatch[1]
+    : rawServiceOrder;
 
   // Tyler 2026-04-26 (post-audit fix): the live Smartsheet dropdown has
   // ~80+ options; PROC_ID_LABEL only enumerates 23 of them. Filtering the

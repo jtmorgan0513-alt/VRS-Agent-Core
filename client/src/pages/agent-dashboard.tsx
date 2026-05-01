@@ -282,6 +282,79 @@ export default function AgentDashboard() {
     if (pendingIntakeAutoFireRef.current) pendingIntakeAutoFireRef.current = false;
     setRightPanelView(v);
   };
+  // ----------------------------------------------------------------------
+  // Tyler 2026-04-30 (resizable right panel):
+  // Agents asked to be able to drag the boundary between the left ticket
+  // pane and the right SHSAI/Calculator/Intake-Form tabs panel — the
+  // hard-coded md:w-1/2 split was too narrow for the intake form on
+  // larger monitors. We track the right panel's width as a percentage of
+  // the parent flex row (clamped 25%-75%) and persist per-user. Below
+  // the md breakpoint the layout still stacks (right panel keeps its
+  // `hidden md:flex`), so the percentage is only consulted on md+.
+  // The splitter handle and drag overlay live further down in the JSX.
+  // ----------------------------------------------------------------------
+  const RIGHT_PANEL_WIDTH_MIN = 25;
+  const RIGHT_PANEL_WIDTH_MAX = 75;
+  const RIGHT_PANEL_WIDTH_DEFAULT = 50;
+  const [rightPanelWidthPct, setRightPanelWidthPct] = useState<number>(RIGHT_PANEL_WIDTH_DEFAULT);
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const saved = localStorage.getItem(`agent:${user.id}:rightPanelWidthPct`);
+      if (saved) {
+        const n = Number(saved);
+        if (Number.isFinite(n) && n >= RIGHT_PANEL_WIDTH_MIN && n <= RIGHT_PANEL_WIDTH_MAX) {
+          setRightPanelWidthPct(n);
+        }
+      }
+    } catch {}
+  }, [user?.id]);
+  const [isResizingRightPanel, setIsResizingRightPanel] = useState(false);
+  const splitterContainerRef = useRef<HTMLDivElement | null>(null);
+  const handleSplitterMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const container = splitterContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const containerWidth = rect.width;
+    // The splitter sits between the left ScrollArea and the right panel.
+    // We compute the right panel width directly from cursor X relative to
+    // the container's right edge — this keeps the splitter visually glued
+    // to the cursor even after clamping at the min/max bounds.
+    let lastPct = rightPanelWidthPct;
+    const onMove = (moveEvent: MouseEvent) => {
+      if (containerWidth <= 0) return;
+      const pctFromCursor = ((rect.right - moveEvent.clientX) / containerWidth) * 100;
+      const clamped = Math.max(RIGHT_PANEL_WIDTH_MIN, Math.min(RIGHT_PANEL_WIDTH_MAX, pctFromCursor));
+      lastPct = clamped;
+      setRightPanelWidthPct(clamped);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setIsResizingRightPanel(false);
+      if (user?.id) {
+        try {
+          localStorage.setItem(`agent:${user.id}:rightPanelWidthPct`, String(lastPct));
+        } catch {}
+      }
+    };
+    setIsResizingRightPanel(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [rightPanelWidthPct, user?.id]);
+  const handleSplitterDoubleClick = useCallback(() => {
+    setRightPanelWidthPct(RIGHT_PANEL_WIDTH_DEFAULT);
+    if (user?.id) {
+      try {
+        localStorage.setItem(`agent:${user.id}:rightPanelWidthPct`, String(RIGHT_PANEL_WIDTH_DEFAULT));
+      } catch {}
+    }
+  }, [user?.id]);
   const [calcSettingsOpen, setCalcSettingsOpen] = useState(false);
   // ----------------------------------------------------------------------
   // Intake form (T3/T4/T5; modal->tab migrated 2026-04-27):
@@ -1632,13 +1705,32 @@ export default function AgentDashboard() {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-1 min-h-0">
+                <div
+                  ref={splitterContainerRef}
+                  className="flex flex-1 min-h-0"
+                  style={
+                    isMyTicketsView &&
+                    shsaiVisible &&
+                    effectiveSelectedSubmission &&
+                    effectiveSelectedSubmission.requestType !== "parts_nla"
+                      ? ({ ["--right-panel-w" as any]: `${rightPanelWidthPct}%` } as React.CSSProperties)
+                      : undefined
+                  }
+                >
                 {/* Tyler 2026-04-27: column split widened from 60/40 to 50/50
                     so the Sears Repair/Replace Calculator (right panel) has
                     breathing room. Below md the panel still goes w-full and
                     the right panel is `hidden`, so mobile/tablet stack is
-                    preserved. Internal ScrollArea retained on both sides. */}
-                <ScrollArea className={isMyTicketsView && shsaiVisible ? "w-full md:w-1/2 border-r" : "flex-1"}>
+                    preserved. Internal ScrollArea retained on both sides.
+
+                    Tyler 2026-04-30: split is now drag-resizable on md+. The
+                    parent <div> exposes `--right-panel-w` (a percentage from
+                    rightPanelWidthPct state). On md+ the left ScrollArea
+                    consumes the remaining space via flex-1 and the right
+                    panel below gets `md:w-[var(--right-panel-w)]`. The
+                    splitter handle in between drives the percentage; min/max
+                    clamps live in the drag handler (25%-75%). */}
+                <ScrollArea className={isMyTicketsView && shsaiVisible ? "w-full md:flex-1 md:w-auto border-r min-w-0" : "flex-1"}>
                   <div className="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
                     <Button
                       variant="ghost"
@@ -3349,6 +3441,29 @@ export default function AgentDashboard() {
                     )}
                   </div>
                 </ScrollArea>
+                {/* Tyler 2026-04-30: drag-to-resize splitter. Only renders
+                    on md+ AND when the right panel is visible. The shared
+                    --right-panel-w CSS variable on the parent flex row
+                    drives the right panel's width below; this handle
+                    updates that variable via rightPanelWidthPct state.
+                    Double-click resets to the 50/50 default. */}
+                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && effectiveSelectedSubmission.requestType !== "parts_nla" && (
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize right panel"
+                    aria-valuemin={RIGHT_PANEL_WIDTH_MIN}
+                    aria-valuemax={RIGHT_PANEL_WIDTH_MAX}
+                    aria-valuenow={Math.round(rightPanelWidthPct)}
+                    onMouseDown={handleSplitterMouseDown}
+                    onDoubleClick={handleSplitterDoubleClick}
+                    title="Drag to resize · double-click to reset"
+                    data-testid="splitter-right-panel"
+                    className="hidden md:flex shrink-0 w-1.5 cursor-col-resize bg-border hover-elevate active-elevate-2 group items-center justify-center select-none"
+                  >
+                    <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-muted-foreground/70" />
+                  </div>
+                )}
                 {/* Tyler 2026-04-28 (intake-tab disappearance bug, Fix B):
                     Use effectiveSelectedSubmission (snapshot fallback) so the
                     right panel stays mounted across the post-Authorize list
@@ -3358,7 +3473,10 @@ export default function AgentDashboard() {
                     timer's setRightPanelView("intake") lands on a destroyed
                     Tabs container. */}
                 {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && effectiveSelectedSubmission.requestType !== "parts_nla" && (
-                  <div className="hidden md:flex md:w-1/2 flex-col min-h-0" data-testid="panel-shsai">
+                  <div
+                    className="hidden md:flex md:w-[var(--right-panel-w)] shrink-0 flex-col min-h-0 min-w-0"
+                    data-testid="panel-shsai"
+                  >
                     {/* T2: Tabbed right panel — Service Order History (default) /
                         Calculator. The hide button (button-hide-shsai) and
                         refresh button (button-shsai-refresh) are preserved as
@@ -3656,6 +3774,19 @@ export default function AgentDashboard() {
           the <IntakeFormTab> rendered inside the right-panel <Tabs> above.
           The onPreviewLoaded / onConfirmed callbacks moved with it
           unchanged. See COMMITS.md for the full migration note. */}
+
+      {/* Tyler 2026-04-30: drag overlay — fixed full-viewport layer that
+          intercepts pointer events while the agent is dragging the right-
+          panel splitter. Without this, the cursor passing over the
+          Smartsheet / Calculator / SHSAI iframes would let the iframe
+          capture the mousemove and stall the resize. Only mounted during
+          an active drag so it never affects normal interaction. */}
+      {isResizingRightPanel && (
+        <div
+          className="fixed inset-0 z-50 cursor-col-resize"
+          data-testid="overlay-resizing-right-panel"
+        />
+      )}
 
       <CalculatorSettingsDialog
         open={calcSettingsOpen}

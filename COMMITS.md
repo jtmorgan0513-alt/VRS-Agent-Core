@@ -2546,3 +2546,78 @@ Three identical `<h1>` headings on the user-facing entry points still read "VRS 
 
 ### Verification
 Live screenshot of `/tech/login` confirms the heading now renders as "VRS Express" with the Field Technician subtitle intact and all card/form styling unchanged.
+
+## 2026-04-30 — IH Service Order Number prefill: strip district prefix to keep only the 8-digit SO
+
+### Trigger
+Tyler: "I need the IH Service Order Number to only include the 8 digit Service order number on the intake form when pasted over during the ticket being worked."
+
+### Context
+Technician submissions store the service order as `DDDD-NNNNNNNN` (4-digit district + dash + 8-digit SO, e.g. `8175-12345678`) — that composite is what the tech is told to copy/paste into the technician form. The Smartsheet intake-form pre-fill we build server-side was passing this composite straight into the **IH Service Order Number** field, leaving the agent to manually delete the district prefix every ticket.
+
+The 2026-04-26 decision in this same file had explicitly chosen *not* to strip the prefix because the live form's helper text said "Copy and Paste from Service Pro or WOM". Tyler has now reversed that — the IH SO field needs ONLY the 8 digits.
+
+### Files touched
+- `server/services/smartsheet.ts` (lines 171-184 — the `serviceOrder` derivation inside `buildIntakeFormUrl`)
+
+### Change
+Replaced the unconditional pass-through with a single-line derivation that splits on `-` and keeps the trailing segment when present, otherwise falls back to the value as-is. Mirror of the pattern already in `client/src/pages/agent-dashboard.tsx:569` (the SHSAI helper) so the same SO-extraction lives in exactly one shape across the codebase. Long comment block left in place documenting the reversal so the next reader doesn't second-guess it against the prior 4/26 note.
+
+```ts
+const rawServiceOrder = submission.serviceOrder ?? "";
+const serviceOrder = rawServiceOrder.includes("-")
+  ? rawServiceOrder.split("-").pop() ?? ""
+  : rawServiceOrder;
+```
+
+`serviceOrder` continues to flow into the prefill defaults map at the same key (`"IH Service Order Number"`), so no field-mapping or column-name change is involved.
+
+### What was NOT touched
+- The Smartsheet form itself — no column adds, no field renames, no helper-text edits (Tyler's hard rule).
+- Schema — no DB shape change. The full `DDDD-NNNNNNNN` value still lives on `submissions.service_order` for analytics + ticket display + SHSAI lookups; only the pre-fill payload is sanitized.
+- `client/src/pages/tech-submit.tsx` — the technician's own `8-digit max + district auto-prefix` input pattern stays as-is, since that's how the composite is constructed in the first place.
+- Any client-side intake form code — there's no editable IH SO field on our side; the field lives inside the third-party Smartsheet iframe. Sanitization MUST be at pre-fill construction time.
+
+### Verification
+Code path is `buildIntakeFormUrl` → defaults map → `defaults["IH Service Order Number"] = serviceOrder || undefined`. With `submission.serviceOrder = "8175-12345678"`: split → `["8175","12345678"]` → `.pop() = "12345678"` → that's what the Smartsheet pre-fill URL receives. With a value already missing the dash (no district prefix), the conditional skips the split and passes through unchanged. Empty/null submission.serviceOrder → empty string → omitted from defaults via the `|| undefined` guard.
+
+## 2026-04-30 — Agent dashboard: drag-resizable right panel (SHSAI / Calculator / Intake Form)
+
+### Trigger
+Tyler: "Make the right side panel resizable horizontally so I can drag it wider when I'm working in the intake form."
+
+### Context
+The agent ticket-review screen is a 50/50 horizontal split: left half is the ticket detail ScrollArea, right half is the 3-tab panel (Service Order History, Calculator, Intake Form). The width was hard-coded `md:w-1/2` on both sides. On larger monitors the Smartsheet intake form needed more room, and on smaller monitors agents wanted to lean more heavily on the ticket detail. Tyler asked for a draggable boundary; the 50/50 default stays, but agents can now drag wider/narrower per their preference, persisted per user.
+
+### Files touched
+- `client/src/pages/agent-dashboard.tsx`
+  - state + handlers: lines 288-369 (new block right after `handleRightPanelViewChange`)
+  - parent flex container + left ScrollArea: lines 1711-1736
+  - splitter handle (new): lines 3447-3469
+  - right panel width binding: lines 3478-3482
+  - drag overlay (new): lines 3781-3792
+
+### Change
+1. **State** — `rightPanelWidthPct` (number, 25-75 clamp, default 50) + `isResizingRightPanel` (boolean for the drag overlay). Per-user persistence via `localStorage["agent:${user.id}:rightPanelWidthPct"]` mirroring the existing `rightPanel` view-tab persistence pattern.
+2. **Drag handler** — `handleSplitterMouseDown` registers document-level `mousemove` + `mouseup` listeners; computes the right-panel percentage directly from the cursor's X position relative to the parent flex container's right edge (rect-based, not delta-accumulated, so the splitter stays glued to the cursor even after clamping). On `mouseup` it removes listeners, restores `body.style.cursor` / `body.style.userSelect`, drops the overlay, and persists the final value.
+3. **Reset** — `handleSplitterDoubleClick` snaps back to the 50% default and persists.
+4. **Layout** — the parent `<div className="flex flex-1 min-h-0">` now (a) carries `ref={splitterContainerRef}` for cursor-X math and (b) exposes the live percentage as a CSS custom property `--right-panel-w` (set only when the right panel is actually rendered). The left ScrollArea switches from `md:w-1/2` to `md:flex-1 md:w-auto min-w-0` so it consumes whatever the right panel doesn't take. The right panel switches from `md:w-1/2` to `md:w-[var(--right-panel-w)] shrink-0 min-w-0` so it tracks the CSS variable.
+5. **Splitter handle** — a 6px-wide vertical bar between the two halves, `cursor-col-resize`, with `hover-elevate` / `active-elevate-2` for visual feedback and a small grip indicator in the middle. Carries proper `role="separator" aria-orientation="vertical" aria-valuemin/max/now` for accessibility. `data-testid="splitter-right-panel"`. Renders only on `md:flex` AND only when the right panel itself renders (gated on the same `isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && requestType !== "parts_nla"` predicate).
+6. **Drag overlay** — a `fixed inset-0 z-50 cursor-col-resize` div mounted only while `isResizingRightPanel` is true. Critical for not losing the drag when the cursor passes over an iframe (Smartsheet, Calculator, SHSAI markdown, etc.) — without it the iframe captures `mousemove` and the splitter stalls. `data-testid="overlay-resizing-right-panel"`.
+
+### What was NOT touched
+- The mobile/below-md stack — right panel still `hidden md:flex`, left still `w-full` below md, splitter still `hidden md:flex`. Same sub-md behavior as before.
+- The visibility predicate — same `isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && requestType !== "parts_nla"` gate on the right panel; splitter renders against the same predicate so they appear/disappear together.
+- The 3-tab internals (Service Order History / Calculator / Intake Form), the show/hide buttons, the auto-fire timer, and every existing test ID inside the panel — fully preserved.
+- shadcn `Resizable*` primitives (`react-resizable-panels`) — considered but the conditional-render + `hidden md:flex` + iframe-overlay requirements made a hand-rolled splitter cleaner than wrestling the panel-group library into a responsive/conditional shape.
+- `package.json`, schema, and Smartsheet form (Tyler's hard rules).
+
+### Verification
+- TypeScript: no new errors introduced (pre-existing `tsc` errors in unrelated files unchanged).
+- HMR: clean updates after each edit, no runtime errors in the workflow log.
+- 50/50 default unchanged on first load for existing users (no localStorage key); on subsequent loads the stored percentage is read back inside the 25-75 clamp.
+- Drag overlay only mounts mid-drag, so normal pointer interaction with iframes / forms / buttons is unaffected.
+- `data-testid="splitter-right-panel"` and `data-testid="overlay-resizing-right-panel"` added for future e2e coverage.
+
+### Addendum 2026-04-30 — IH SO sanitization tightened to exact pattern
+Architect review (PASS) flagged that the broad `includes("-")` + `split("-").pop()` would over-trim any hyphenated value (e.g. `a-b-c` → `c`). Tightened the check in `server/services/smartsheet.ts` to only strip when the value matches the exact technician-form shape `^\d{4}-\d{8}$`; anything else (already-bare 8-digit SOs, malformed imports, hypothetical future formats) now passes through untouched. Behavior unchanged for the canonical `8175-12345678` case — still yields `12345678` in the Smartsheet prefill.
