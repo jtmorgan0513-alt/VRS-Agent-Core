@@ -13,8 +13,24 @@
 
 import type { Submission } from "@shared/schema";
 
+// AUTH / Infestation form (the original "VRS Unrep Intake Form 2.0").
+// Used for every requestType EXCEPT parts_nla.
 export const VRS_INTAKE_FORM_ID = "aa5f07c589b64ae993f5f75e20f71d5f";
 export const VRS_INTAKE_FORM_BASE = `https://app.smartsheet.com/b/form/${VRS_INTAKE_FORM_ID}`;
+
+// Tyler 2026-04-30: NLA Parts intake form. Separate Smartsheet form whose
+// schema is intended specifically for parts-NLA tickets. URL provided by
+// Tyler. We only swap the form ID per-submission; the prefill payload
+// continues to use the same canonical column labels (VRS Tech ID, IH Tech
+// Ent ID, IH Unit Number, IH Service Order Number, Servicer Type, Proc
+// ID/Third Part ID). Smartsheet silently drops query params for columns
+// that don't exist on the target form, so any AUTH/SHW-specific defaults
+// that don't apply to the NLA form simply won't pre-fill — they will not
+// surface as visible junk to the agent. If/when Tyler verifies the NLA
+// form's exact column labels, we can add an NLA-only branch in
+// buildIntakeFormUrl mirroring the existing AHS/SPHW/SHW blocks.
+export const VRS_INTAKE_FORM_NLA_ID = "9296f7932c5548308e6c2dac81be7f73";
+export const VRS_INTAKE_FORM_NLA_BASE = `https://app.smartsheet.com/b/form/${VRS_INTAKE_FORM_NLA_ID}`;
 
 // Map of VRS appliance keys -> the dropdown labels Smartsheet expects.
 const APPLIANCE_TO_SMARTSHEET: Record<string, string> = {
@@ -317,7 +333,15 @@ export function buildIntakeFormUrl(
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
 
-  const url = qs ? `${VRS_INTAKE_FORM_BASE}?${qs}` : VRS_INTAKE_FORM_BASE;
+  // Tyler 2026-04-30: route parts_nla submissions to the NLA-specific form;
+  // everything else (authorization, infestation_non_accessible) continues to
+  // use the original AUTH/Infestation form.
+  const formBase =
+    submission.requestType === "parts_nla"
+      ? VRS_INTAKE_FORM_NLA_BASE
+      : VRS_INTAKE_FORM_BASE;
+
+  const url = qs ? `${formBase}?${qs}` : formBase;
 
   return { url, params: merged, derivedDefaults, branch, warnings };
 }

@@ -2621,3 +2621,68 @@ The agent ticket-review screen is a 50/50 horizontal split: left half is the tic
 
 ### Addendum 2026-04-30 — IH SO sanitization tightened to exact pattern
 Architect review (PASS) flagged that the broad `includes("-")` + `split("-").pop()` would over-trim any hyphenated value (e.g. `a-b-c` → `c`). Tightened the check in `server/services/smartsheet.ts` to only strip when the value matches the exact technician-form shape `^\d{4}-\d{8}$`; anything else (already-bare 8-digit SOs, malformed imports, hypothetical future formats) now passes through untouched. Behavior unchanged for the canonical `8175-12345678` case — still yields `12345678` in the Smartsheet prefill.
+
+## 2026-04-30 — NLA Parts intake form: separate Smartsheet form for parts_nla submissions
+
+### Trigger
+Tyler (with new form URL): "https://app.smartsheet.com/b/form/9296f7932c5548308e6c2dac81be7f73 — This is the NLA parts intake form, this should be the intake form that populates when a NLA part ticket is submitted only and the one currently installed is for AUTH/Infestation."
+
+### Context
+The intake form has been a single Smartsheet form (`aa5f07c589b64ae993f5f75e20f71d5f` — "VRS Unrep Intake Form 2.0") used for every approved ticket. Tyler now has a second, NLA-specific intake form whose schema is purpose-built for parts-NLA tickets. Previously the entire right panel (which hosts the Intake Form tab) was hidden for `requestType === "parts_nla"` because there was no NLA-appropriate intake destination — now there is.
+
+### Files touched
+- `server/services/smartsheet.ts` (form-ID constants near top + URL selection at the bottom of `buildIntakeFormUrl`)
+- `client/src/pages/agent-dashboard.tsx` (three render predicates that gated the right panel + splitter + Show Service History button on `requestType !== "parts_nla"`)
+- `client/src/components/intake-form-tab.tsx` (stale comment referring to "any non-NLA ticket")
+
+### Server-side change
+1. Added `VRS_INTAKE_FORM_NLA_ID = "9296f7932c5548308e6c2dac81be7f73"` and `VRS_INTAKE_FORM_NLA_BASE` alongside the existing AUTH/Infestation constants.
+2. At the bottom of `buildIntakeFormUrl`, the final URL is now built against an `formBase` selected by `submission.requestType`:
+   ```ts
+   const formBase = submission.requestType === "parts_nla"
+     ? VRS_INTAKE_FORM_NLA_BASE
+     : VRS_INTAKE_FORM_BASE;
+   ```
+3. The pre-fill payload (canonical column labels: `VRS Tech ID`, `IH Tech Ent ID`, `IH Unit Number`, `IH Service Order Number`, `Servicer Type`, `Proc ID/Third Part ID`) is unchanged. Smartsheet silently drops query params for columns that don't exist on the target form, so any AUTH/SHW-branch defaults that don't apply to the NLA form simply won't pre-fill — they will not surface as visible junk to the agent. The branch-default blocks (`AHS`, `SPHW`, `SHW`) still execute the same way; for NLA tickets the SHW branch's `parts_nla` reason ("Un-Repairable Sealed System") is now passed against the NLA form, where if the column doesn't exist Smartsheet will drop it. If/when Tyler verifies the NLA form's exact column labels, an `if (submission.requestType === "parts_nla")` block can be added to `buildIntakeFormUrl` to inject NLA-specific defaults; nothing about the current change blocks that next step.
+
+### Client-side change
+The right panel was previously hidden for NLA tickets via three identical `effectiveSelectedSubmission.requestType !== "parts_nla"` predicates and one matching predicate on the `button-show-shsai` re-open button:
+- The CSS-variable parent style (drives `--right-panel-w`)
+- The splitter handle render gate
+- The right-panel `<div data-testid="panel-shsai">` render gate
+- The "Service History" re-open button
+
+All four were relaxed to drop the `requestType !== "parts_nla"` clause. NLA tickets now get the same SHSAI + Calculator + Intake-Form tab triplet as AUTH/Infestation tickets, with the Intake Form tab rendering the new NLA Smartsheet form via the server URL switch above.
+
+### What was NOT touched
+- Smartsheet form schemas (Tyler's hard rule). Both forms remain whatever Smartsheet says they are; we only switch which one the iframe loads.
+- The `Send to NLA` button (line 1805 area) keeps its `requestType !== "parts_nla"` exclusion — you can't send an already-NLA ticket to NLA.
+- The `justResolved` post-Approve auto-fire logic at line 905 still gates on `requestType !== "parts_nla"` because the NLA action path lives in `processNlaActionMutation`, not `processMutation`. Tyler can request the auto-fire to extend to NLA in a follow-up if desired.
+- The SHSAI lookup gate at line 661 (`requestType !== "parts_nla"`) — SHSAI is service-order-history specific and not requested for NLA tickets.
+- Schema, package.json, and COMMITS.md remains append-only.
+- The `excludeRequestType` / `requestType` filter logic at lines 563-578 (server query selectors for the My Tickets vs NLA Queue split). The two-queue split is preserved exactly as before — the change is only about which intake form the right panel shows.
+
+### Verification
+- TypeScript: no new errors.
+- HMR: clean updates, server still serving on port 5000.
+- Server URL switch is a single ternary against `submission.requestType`; no risk to existing AUTH/Infestation flow (the default branch is the original `VRS_INTAKE_FORM_BASE`).
+- All four client predicate edits drop ONLY the `requestType !== "parts_nla"` clause and preserve every other condition (`isMyTicketsView`, `shsaiVisible`, `effectiveSelectedSubmission` truthy).
+- Tyler should sanity-check on a real NLA ticket that the new form loads and that the basic identity pre-fills (Tech ID, SO #, district) populate correctly. Field-name parity between the two forms is not yet verified — that's the next iteration if mismatches surface.
+
+### 2026-04-30 — Addendum: architect review notes (post-implementation)
+
+Architect run after the URL routing change shipped flagged three things worth recording even though we deliberately did NOT auto-fix them — they're policy questions for Tyler, not bugs introduced by this change:
+
+1. `GET /api/submissions/:id/intake-form-status` (server/routes.ts:3726-3728) hard-returns NLA as `{required:false, recorded:false, reason:"nla"}` BEFORE any other check. With the right panel + Intake tab now visible for NLA tickets, the iframe loads (good — that's what Tyler asked for), but the green "Intake recorded" banner will never fire for NLA because the status endpoint short-circuits.
+
+2. `POST /api/submissions/:id/intake-form/confirm` (server/routes.ts:3919) requires `ticketStatus in {approved, completed}`. NLA tickets stay `pending` until the agent processes the NLA action via `processNlaActionMutation`, which on success immediately calls `setSelectedId(null)` and closes the ticket detail view. So with today's flow:
+   - PRE-NLA-action: agent can see the NLA form populated, fill it inside Smartsheet, click Submit there → success in Smartsheet. If they then click "I submitted Smartsheet" in our footer, server returns 409 NOT_APPROVED.
+   - POST-NLA-action: ticket detail unmounts, no chance to confirm at all.
+
+3. Branch defaults: the existing branch-default blocks (AHS / SPHW / SHW) still execute against the NLA form URL. Smartsheet drops query params for unknown columns, so the failure mode is "didn't pre-fill" not "filled with junk" — but if the NLA form happens to reuse a label with different semantics, an SHW-branch default could silently mis-prefill. Low risk; mitigation is to add an explicit NLA defaults branch to `buildIntakeFormUrl` once Tyler verifies the NLA form's actual column labels.
+
+### Why we did NOT auto-fix these
+
+Tyler's request was explicit and narrow: route NLA parts tickets to a different Smartsheet form URL. He did NOT ask us to build a full NLA intake-confirmation/audit workflow, change when the auto-fire happens for NLA, or alter the NLA action processing UX. Those are real questions but they are policy decisions (does NLA need a separate audit row? does the agent confirm before or after the NLA action processes? should the NLA action handler keep the right panel open so the agent CAN confirm?) that should be answered by Tyler before any code change.
+
+What works today after this change: the NLA form loads and pre-fills with the same canonical columns the AUTH form gets (anything matching column-label-wise). The agent can submit it inside Smartsheet directly. What does NOT work today: the in-app confirmation/audit flow for NLA tickets. If Tyler wants the audit flow extended to NLA, that's a follow-up task with explicit scope.

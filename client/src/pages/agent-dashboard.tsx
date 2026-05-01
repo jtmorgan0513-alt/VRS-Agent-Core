@@ -1709,10 +1709,13 @@ export default function AgentDashboard() {
                   ref={splitterContainerRef}
                   className="flex flex-1 min-h-0"
                   style={
-                    isMyTicketsView &&
-                    shsaiVisible &&
-                    effectiveSelectedSubmission &&
-                    effectiveSelectedSubmission.requestType !== "parts_nla"
+                    // Tyler 2026-04-30: the right panel + splitter now also
+                    // render for parts_nla tickets (the NLA intake form is
+                    // routed to its own Smartsheet form server-side via
+                    // VRS_INTAKE_FORM_NLA_BASE). Previously NLA was excluded
+                    // entirely; agents now get the same SHSAI + Calculator +
+                    // Intake-Form tab triplet for every request type.
+                    isMyTicketsView && shsaiVisible && effectiveSelectedSubmission
                       ? ({ ["--right-panel-w" as any]: `${rightPanelWidthPct}%` } as React.CSSProperties)
                       : undefined
                   }
@@ -1788,7 +1791,11 @@ export default function AgentDashboard() {
                             {getUrgencyLevel(selectedSubmission.createdAt) === "urgent" ? "Urgent" : "Aging"}
                           </Badge>
                         )}
-                        {isMyTicketsView && !shsaiVisible && selectedSubmission?.requestType !== "parts_nla" && (
+                        {/* Tyler 2026-04-30: button-show-shsai now also renders
+                            for parts_nla tickets so the agent can re-open the
+                            right panel (which now hosts the NLA-specific
+                            intake form via VRS_INTAKE_FORM_NLA_BASE). */}
+                        {isMyTicketsView && !shsaiVisible && selectedSubmission && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -3447,7 +3454,11 @@ export default function AgentDashboard() {
                     drives the right panel's width below; this handle
                     updates that variable via rightPanelWidthPct state.
                     Double-click resets to the 50/50 default. */}
-                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && effectiveSelectedSubmission.requestType !== "parts_nla" && (
+                {/* Tyler 2026-04-30: splitter renders for ALL request types now,
+                    including parts_nla (NLA intake form is routed server-side
+                    via VRS_INTAKE_FORM_NLA_BASE). Predicate kept in sync with
+                    the right panel gate immediately below. */}
+                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && (
                   <div
                     role="separator"
                     aria-orientation="vertical"
@@ -3472,7 +3483,7 @@ export default function AgentDashboard() {
                     the entire 3-tab right panel unmounts and the auto-fire
                     timer's setRightPanelView("intake") lands on a destroyed
                     Tabs container. */}
-                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && effectiveSelectedSubmission.requestType !== "parts_nla" && (
+                {isMyTicketsView && shsaiVisible && effectiveSelectedSubmission && (
                   <div
                     className="hidden md:flex md:w-[var(--right-panel-w)] shrink-0 flex-col min-h-0 min-w-0"
                     data-testid="panel-shsai"

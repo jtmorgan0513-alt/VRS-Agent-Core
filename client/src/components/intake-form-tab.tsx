@@ -132,7 +132,10 @@ export function IntakeFormTab({
   // simply absent from the prefill payload; everything else (proc id,
   // tech ids, phone, etc.) is filled in. The earlier
   // `if (!required && !recorded) return;` early-exit gate has been
-  // removed so the preview POST always fires for any non-NLA ticket.
+  // removed so the preview POST always fires for every ticket.
+  // Tyler 2026-04-30: this includes parts_nla tickets — the server-side
+  // builder picks the NLA-specific Smartsheet form URL based on
+  // requestType, so the iframe loads the correct intake form per branch.
   useEffect(() => {
     if (!submissionId) return;
     let cancelled = false;
