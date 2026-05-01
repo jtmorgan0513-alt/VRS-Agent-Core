@@ -109,6 +109,7 @@ import { useTheme } from "@/components/theme-provider";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { SmsPreview } from "@/components/sms-preview";
 import { buildSmsPreview } from "@/lib/smsPreview";
+import { parseVideoUrls } from "@/lib/videoUrls";
 
 type SubmissionWithTech = Submission & {
   technicianName: string;
@@ -2171,16 +2172,28 @@ export default function AgentDashboard() {
                             <Video className="w-3.5 h-3.5" />
                             Video
                           </p>
-                          {selectedSubmission.videoUrl ? (
+                          {(() => {
+                            // Tyler 2026-04-30: render up to 3 video tiles. Rejection
+                            // remains category-wide (rejectedMedia.video.rejected is a
+                            // singleton on the wire), so the toggle below applies to all
+                            // tiles together.
+                            const videoList = parseVideoUrls(selectedSubmission.videoUrl);
+                            return videoList.length > 0 ? (
                             <div className="space-y-2">
-                              <div className={`rounded-md overflow-hidden bg-muted ${rejectedVideo.rejected ? "ring-2 ring-red-500" : ""}`} data-testid="media-video">
-                                <video
-                                  src={selectedSubmission.videoUrl}
-                                  controls
-                                  className={`w-full max-h-[300px] ${rejectedVideo.rejected ? "opacity-40" : ""}`}
-                                  data-testid="video-player"
-                                />
-                              </div>
+                              {videoList.map((vurl, vi) => (
+                                <div
+                                  key={`${vurl}-${vi}`}
+                                  className={`rounded-md overflow-hidden bg-muted ${rejectedVideo.rejected ? "ring-2 ring-red-500" : ""}`}
+                                  data-testid={videoList.length === 1 ? "media-video" : `media-video-${vi}`}
+                                >
+                                  <video
+                                    src={vurl}
+                                    controls
+                                    className={`w-full max-h-[300px] ${rejectedVideo.rejected ? "opacity-40" : ""}`}
+                                    data-testid={videoList.length === 1 ? "video-player" : `video-player-${vi}`}
+                                  />
+                                </div>
+                              ))}
                               {selectedAction === "reject" && (
                                 <div className="flex items-center gap-2">
                                   <button
@@ -2221,7 +2234,8 @@ export default function AgentDashboard() {
                             </div>
                           ) : (
                             <p className="text-sm text-muted-foreground" data-testid="text-no-video">No video attached</p>
-                          )}
+                          );
+                          })()}
                         </div>
                         <Separator />
                         <div>

@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth, getToken } from "@/lib/auth";
+import { MAX_VIDEOS_PER_TICKET } from "@/lib/videoUrls";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -99,7 +100,12 @@ export default function TechSubmitPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  // Tyler 2026-04-30: multi-video. Up to 3 videos per ticket, each 30 sec
+  // and 50 MB max. Uploads are sequential — only one is in-flight at a
+  // time, so the existing scalar progress/uploading/converting state still
+  // works (just gates the next "Add video" tap until the current one
+  // completes). The committed URLs accumulate in `videoUrls`.
+  const [videoUrls, setVideoUrls] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
@@ -337,6 +343,15 @@ export default function TechSubmitPage() {
     if (!file) return;
     setVideoError(null);
 
+    // Tyler 2026-04-30: cap at MAX_VIDEOS_PER_TICKET (3). The "Add video"
+    // CTA is also hidden once the cap is reached, but we double-check here
+    // because the file input element can still be triggered programmatically.
+    if (videoUrls.length >= MAX_VIDEOS_PER_TICKET) {
+      setVideoError(`Maximum ${MAX_VIDEOS_PER_TICKET} videos allowed per ticket`);
+      if (videoInputRef.current) videoInputRef.current.value = "";
+      return;
+    }
+
     if (!isVideoFile(file)) {
       setVideoError("Please select a video file");
       if (videoInputRef.current) videoInputRef.current.value = "";
@@ -430,11 +445,14 @@ export default function TechSubmitPage() {
           if (needsConversion(file)) {
             setIsUploading(false);
             const convertedPath = await convertVideo(objectPath);
-            setVideoUrl(convertedPath);
+            // Tyler 2026-04-30: append, don't replace. Each upload adds
+            // to the array; the per-slot remove button handles deletion.
+            setVideoUrls((prev) => [...prev, convertedPath]);
           } else {
             setIsUploading(false);
-            setVideoUrl(objectPath);
+            setVideoUrls((prev) => [...prev, objectPath]);
           }
+          if (videoInputRef.current) videoInputRef.current.value = "";
         } else {
           setIsUploading(false);
           toast({ title: "Upload Failed", description: "Failed to upload video to storage", variant: "destructive" });
@@ -455,8 +473,8 @@ export default function TechSubmitPage() {
     }
   }
 
-  function removeVideo() {
-    setVideoUrl(null);
+  function removeVideo(index: number) {
+    setVideoUrls((prev) => prev.filter((_, i) => i !== index));
     setUploadProgress(0);
     setVideoError(null);
     if (videoInputRef.current) videoInputRef.current.value = "";
@@ -704,7 +722,9 @@ export default function TechSubmitPage() {
       payload.originalDescription = originalBeforeAi;
       payload.aiEnhanced = true;
     }
-    if (videoUrl) payload.videoUrl = videoUrl;
+    // Tyler 2026-04-30: send the array under `videoUrls` (server prefers
+    // it over the legacy single-string `videoUrl` field).
+    if (videoUrls.length > 0) payload.videoUrls = videoUrls;
     if (voiceNoteUrl) payload.voiceNoteUrl = voiceNoteUrl;
     const phoneOverride = localStorage.getItem("vrs_phone_override");
     if (phoneOverride) payload.phoneOverride = phoneOverride;
@@ -793,7 +813,17 @@ export default function TechSubmitPage() {
     }
     if (Array.isArray(draft.estimatePhotoUrls)) setEstimatePhotoUrls(draft.estimatePhotoUrls as string[]);
     if (Array.isArray(draft.issuePhotoUrls)) setIssuePhotoUrls(draft.issuePhotoUrls as string[]);
-    if (typeof draft.videoUrl === "string") setVideoUrl(draft.videoUrl);
+    // Tyler 2026-04-30: hydrate multi-video. Prefer the new `videoUrls`
+    // array; fall back to legacy `videoUrl` string for drafts saved before
+    // this change rolled out (auto-promotes single → [single]).
+    if (Array.isArray((draft as any).videoUrls)) {
+      const arr = ((draft as any).videoUrls as unknown[]).filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      setVideoUrls(arr.slice(0, MAX_VIDEOS_PER_TICKET));
+    } else if (typeof draft.videoUrl === "string" && draft.videoUrl) {
+      setVideoUrls([draft.videoUrl]);
+    }
     if (typeof draft.voiceNoteUrl === "string") setVoiceNoteUrl(draft.voiceNoteUrl);
     if (Array.isArray(draft.partNumbers) && (draft.partNumbers as unknown[]).length) {
       setPartNumbers(draft.partNumbers as string[]);
@@ -873,7 +903,7 @@ export default function TechSubmitPage() {
         (formValues.issueDescription && formValues.issueDescription.trim().length > 0) ||
         estimatePhotoUrls.length ||
         issuePhotoUrls.length ||
-        videoUrl ||
+        videoUrls.length > 0 ||
         voiceNoteUrl ||
         partNumbers.some(p => p.trim()) ||
         availableParts.some(p => p.trim())
@@ -887,7 +917,11 @@ export default function TechSubmitPage() {
         formValues,
         estimatePhotoUrls,
         issuePhotoUrls,
-        videoUrl,
+        // Tyler 2026-04-30: drafts now persist the full array. The legacy
+        // `videoUrl` field stays out of the saved envelope (parser tolerates
+        // its absence). Old drafts already on disk still hydrate correctly
+        // via the `videoUrl` fallback in `applyDraftToForm`.
+        videoUrls,
         voiceNoteUrl,
         partNumbers,
         availableParts,
@@ -895,7 +929,7 @@ export default function TechSubmitPage() {
         originalBeforeAi,
         aiEdited,
         savedAt: new Date().toISOString(),
-      }, { id: user.id, ldapId: currentLdap });
+      } as any, { id: user.id, ldapId: currentLdap });
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
         setDraftSavedAt(draft.savedAt);
@@ -907,7 +941,7 @@ export default function TechSubmitPage() {
     watchedValues,
     estimatePhotoUrls,
     issuePhotoUrls,
-    videoUrl,
+    videoUrls,
     voiceNoteUrl,
     partNumbers,
     availableParts,
@@ -932,7 +966,7 @@ export default function TechSubmitPage() {
     setIssuePhotoUrls([]);
     setEstimatePhotoLocalPreviews({});
     setIssuePhotoLocalPreviews({});
-    setVideoUrl(null);
+    setVideoUrls([]);
     setVoiceNoteUrl(null);
     setPartNumbers([""]);
     setAvailableParts([]);
@@ -1760,7 +1794,12 @@ export default function TechSubmitPage() {
 
             <Card>
               <CardContent className="p-4 space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Video Upload</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Video Upload</p>
+                  <span className="text-xs text-muted-foreground" data-testid="text-video-count">
+                    {videoUrls.length}/{MAX_VIDEOS_PER_TICKET} videos
+                  </span>
+                </div>
                 <input
                   ref={videoInputRef}
                   type="file"
@@ -1769,15 +1808,41 @@ export default function TechSubmitPage() {
                   onChange={handleVideoSelect}
                   data-testid="input-video-file"
                 />
-                {!videoUrl && !isUploading && !isConverting && (
+                {videoUrls.length > 0 && (
+                  <div className="space-y-3">
+                    {videoUrls.map((url, idx) => (
+                      <div className="relative" key={`${url}-${idx}`} data-testid={`video-slot-${idx}`}>
+                        <video
+                          src={url}
+                          controls
+                          className="w-full rounded-md"
+                          data-testid={`video-preview-${idx}`}
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          className="absolute top-2 right-2"
+                          onClick={() => removeVideo(idx)}
+                          data-testid={`button-remove-video-${idx}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {videoUrls.length < MAX_VIDEOS_PER_TICKET && !isUploading && !isConverting && (
                   <label
                     className="border-2 border-dashed rounded-md p-6 text-center block cursor-pointer"
                     data-testid="button-add-video"
                     onClick={() => videoInputRef.current?.click()}
                   >
                     <Video className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Tap to add video</p>
-                    <p className="text-xs text-muted-foreground mt-1">Max 50MB file size</p>
+                    <p className="text-sm text-muted-foreground">
+                      {videoUrls.length === 0 ? "Tap to add video" : "Tap to add another video"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Max 50MB, 30 sec each. Up to {MAX_VIDEOS_PER_TICKET} videos.</p>
                   </label>
                 )}
                 {videoError && (
@@ -1798,26 +1863,6 @@ export default function TechSubmitPage() {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span className="text-sm text-muted-foreground">Converting video for playback...</span>
                     </div>
-                  </div>
-                )}
-                {videoUrl && !isUploading && (
-                  <div className="relative">
-                    <video
-                      src={videoUrl}
-                      controls
-                      className="w-full rounded-md"
-                      data-testid="video-preview"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="destructive"
-                      className="absolute top-2 right-2"
-                      onClick={removeVideo}
-                      data-testid="button-remove-video"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -1982,7 +2027,7 @@ export default function TechSubmitPage() {
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">Video</span>
-                    <span className="font-medium" data-testid="review-video">{videoUrl ? "Attached" : "None"}</span>
+                    <span className="font-medium" data-testid="review-video">{videoUrls.length > 0 ? `${videoUrls.length} attached` : "None"}</span>
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">Voice note</span>

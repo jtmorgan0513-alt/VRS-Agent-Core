@@ -2804,3 +2804,83 @@ The atomic-create path runs a `SELECT ... FOR UPDATE` and re-checks `ticketStatu
 - HMR: clean for client changes.
 - Sanity-tested in dev that the workflow boots and serves the login page.
 - Manual e2e on a real NLA ticket recommended before relying on it in production.
+
+---
+
+## 2026-05-01 — Allow up to 3 videos per ticket (submit + resubmit)
+
+### Tyler's hard rules respected
+- No DB schema change (`video_url varchar(500)` reused via JSON encoding — same JSON-in-text pattern as `photos`).
+- No Smartsheet form schema change (confirmed Smartsheet has no video field; nothing to map).
+- No `package.json` change.
+- COMMITS.md append-only.
+
+### Why
+Field reports kept saying one video isn't enough — techs want a quick clip of the leak, a clip of the model plate close-up, and sometimes a clip of the noise. We're letting them attach up to 3 short clips (50 MB / 30 sec each) on the initial submission and on resubmission.
+
+### Storage shape
+- Empty: `video_url = NULL` (byte-identical to historical empty rows).
+- One video: still serialized as a JSON array string `["url"]`. Reading code is backward-compatible — a legacy row whose `video_url` is a bare URL string parses to `[url]` via `parseVideoUrls`.
+- Two or three videos: JSON array string of length ≤ 3.
+- `varchar(500)` cap protected by `max(3)` in Zod and by our object-storage URL lengths (under ~80 chars each, plus brackets/quotes/commas — comfortably under 500 even at 3 videos).
+
+### Helper
+`client/src/lib/videoUrls.ts`
+- `parseVideoUrls(value: string | null | undefined): string[]`
+  - `null/""` → `[]`.
+  - JSON array of strings → that array (sliced to first 3).
+  - Anything else (including legacy bare URL strings) → `[value]` (single-URL fallback).
+- `serializeVideoUrls(arr: string[]): string | null`
+  - Empty → `null`.
+  - Otherwise → `JSON.stringify(arr.slice(0, 3))`.
+- `MAX_VIDEOS_PER_TICKET = 3`.
+
+### Server contract
+`server/routes.ts` `createSubmissionSchema` now accepts both:
+- `videoUrl: z.string().optional()` (legacy single string — kept for any older clients still in flight).
+- `videoUrls: z.array(z.string()).max(3).optional()` (new multi-video).
+
+At insert, we prefer `videoUrls` (JSON-encode if non-empty) and fall back to legacy `videoUrl` string, else null. No migration needed; the column type is unchanged.
+
+### Tech submission path
+`client/src/pages/tech-submit.tsx`
+- State changed from `videoUrl: string | null` to `videoUrls: string[]`.
+- 4th add is blocked client-side (toast: "Maximum 3 videos allowed per ticket").
+- Each upload still enforces 50 MB and 30 sec (duration probe via hidden `<video>` reading metadata before upload starts).
+- Per-slot remove buttons.
+- "Add another video" CTA only renders while `videoUrls.length < 3`.
+- Draft persistence: serializes the array into the existing draft slot; legacy drafts that hold a bare-string `videoUrl` hydrate as `[url]` so techs don't lose in-flight work.
+- Review summary shows the count.
+- Payload sends `videoUrls` (array). Server still accepts legacy `videoUrl` for safety.
+
+### Tech resubmission path
+`client/src/pages/tech-resubmit.tsx`
+- Same multi-video model as submit.
+- Tightened size cap from 100 MB → 50 MB to match submit (the old 100 MB on resubmit was an inconsistency).
+- Added 30 sec duration probe (was missing on resubmit).
+- On hydrate, `parseVideoUrls(sub.videoUrl)` handles both legacy rows (bare string) and new rows (JSON array).
+- Rejected-media handling unchanged: if the agent rejected the video category on the previous round, all videos are dropped from the resubmission staging (existing semantics preserved).
+
+### Display sites
+- `client/src/pages/agent-dashboard.tsx`: parse + render N tiles in the agent review pane. The reject toggle remains category-wide (`rejectedMedia.video.rejected` is a singleton on the wire) — rejecting "the video" rejects all videos for that ticket. This was a deliberate scope choice: per-video rejection would have required a wire-format change on `rejectedMedia` and corresponding server handling, which is out of scope for this task.
+- `client/src/pages/submission-detail.tsx`: parse + render N tiles in the tech-side detail page. Header switches from "Video Attachment" to "Video Attachments (N)" when N > 1.
+
+### Backward compatibility
+- A pre-2026-05-01 row with `video_url = "/objects/uploads/abc"` renders as one tile in both display sites.
+- A pre-2026-05-01 draft in localStorage with a bare-string `videoUrl` hydrates as `[url]`.
+- Older clients still posting `videoUrl: string` continue to work (server falls back to it when `videoUrls` is absent).
+
+### Verification
+- TypeScript: no new errors introduced. Pre-existing errors (`notes`, `ldapId`, `statusChangedAt` mismatches) untouched.
+- Server restart: clean. Port 5000 serving.
+- COMMITS.md append-only ✓.
+- DB schema, Smartsheet schema, package.json: untouched ✓.
+
+### Architect review — applied fixes (same day)
+1. **Server precedence bug**: previously, if a client sent both `videoUrls: []` AND a stale `videoUrl: "url"`, the server would fall back to the legacy string. Now the rule is: if `videoUrls` is present at all (even empty), it is authoritative. Empty cleaned array → null. Only when `videoUrls` is `undefined` do we honor legacy `videoUrl`.
+2. **Defensive 500-char guard**: added a length check in the server insert path. If the JSON-encoded array (or legacy string) exceeds 500 chars we throw a 400-style error instead of letting the DB throw. Today's object-storage paths are well under this; the guard exists in case the storage layer ever returns full signed URLs.
+3. **MIME+extension parity on resubmit**: aligned `tech-resubmit.tsx` with `tech-submit.tsx` — accepts MIME-detected video OR known video extensions (mp4/mov/m4v/webm/mkv/avi/3gp/3gpp/wmv/flv/ts/mts). Some mobile pickers ship empty `file.type`.
+
+### Deferred (not applied this round)
+- Per-video rejection in agent dashboard. Would require expanding `rejectedMedia.video` from a singleton to a per-index array, server changes for response handling, and Smartsheet-side considerations. Out of scope for this task. Filed as a follow-up.
+- Duration-probe timeout. Rare metadata hang risk. Browsers usually fail-fast within a few hundred ms; observed hangs would be a user-visible issue but not a data risk. Defer.

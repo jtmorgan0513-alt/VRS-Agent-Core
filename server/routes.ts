@@ -509,6 +509,15 @@ export async function registerRoutes(
     estimateAmount: z.string().optional(),
     partNumbers: z.string().optional(),
     photos: z.string().optional(),
+    // Tyler 2026-04-30: multi-video. Clients send `videoUrls` (array of
+    // up to 3 object-storage paths). The legacy `videoUrl` single-string
+    // field is kept for backward compatibility with any in-flight client
+    // build that hasn't picked up the new payload shape yet. Storage
+    // serializes whichever is provided into the existing `video_url`
+    // varchar(500) column as a JSON string (or single string for legacy).
+    // No DB schema change needed — same JSON-in-text pattern the `photos`
+    // field already uses.
+    videoUrls: z.array(z.string()).max(3).optional(),
     videoUrl: z.string().optional(),
     voiceNoteUrl: z.string().optional(),
     phone: z.string().min(1, "Phone number is required"),
@@ -714,7 +723,35 @@ export async function registerRoutes(
         estimateAmount: parsed.data.estimateAmount || null,
         partNumbers: parsed.data.partNumbers || null,
         photos: parsed.data.photos || null,
-        videoUrl: parsed.data.videoUrl || null,
+        // Tyler 2026-04-30: multi-video serialization. If the client sent
+        // `videoUrls` AT ALL (even empty), it is authoritative — empty
+        // array → null (not "[]") so existing "no video" reads stay
+        // byte-identical to historical rows. Only when `videoUrls` is
+        // truly absent (legacy clients) do we fall back to the single
+        // `videoUrl` string. This avoids a footgun where a client
+        // explicitly clears videos via `videoUrls: []` but still has a
+        // stale `videoUrl` field set in the same payload.
+        videoUrl: (() => {
+          const arr = parsed.data.videoUrls;
+          if (Array.isArray(arr)) {
+            const cleaned = arr.filter((u) => typeof u === "string" && u.trim().length > 0);
+            if (cleaned.length === 0) return null;
+            const encoded = JSON.stringify(cleaned);
+            // varchar(500) defensive guard. Under current object-storage
+            // path format (~80 chars each) 3 URLs land near ~260 chars
+            // including JSON overhead, but if the storage layer ever
+            // returns full signed URLs this protects us from a DB error.
+            if (encoded.length > 500) {
+              throw new Error("Combined video URLs exceed storage limit (500 chars).");
+            }
+            return encoded;
+          }
+          const legacy = parsed.data.videoUrl || null;
+          if (legacy && legacy.length > 500) {
+            throw new Error("Video URL exceeds storage limit (500 chars).");
+          }
+          return legacy;
+        })(),
         voiceNoteUrl: parsed.data.voiceNoteUrl || null,
         assignedTo: originalAgent,
         claimedAt: originalAgent ? new Date() : null,
