@@ -2686,3 +2686,121 @@ Architect run after the URL routing change shipped flagged three things worth re
 Tyler's request was explicit and narrow: route NLA parts tickets to a different Smartsheet form URL. He did NOT ask us to build a full NLA intake-confirmation/audit workflow, change when the auto-fire happens for NLA, or alter the NLA action processing UX. Those are real questions but they are policy decisions (does NLA need a separate audit row? does the agent confirm before or after the NLA action processes? should the NLA action handler keep the right panel open so the agent CAN confirm?) that should be answered by Tyler before any code change.
 
 What works today after this change: the NLA form loads and pre-fills with the same canonical columns the AUTH form gets (anything matching column-label-wise). The agent can submit it inside Smartsheet directly. What does NOT work today: the in-app confirmation/audit flow for NLA tickets. If Tyler wants the audit flow extended to NLA, that's a follow-up task with explicit scope.
+
+## 2026-04-30 — NLA intake-form parity with AUTH/Infestation (full workflow, not just URL)
+
+### Trigger
+Tyler (in response to the architect-flagged gap from earlier today): "yes nla parts tickets have to fill out the NLA intake form just like the AUTH tickets."
+
+### Context
+The earlier change today routed NLA parts submissions to the new NLA-specific Smartsheet form (`9296f7932c5548308e6c2dac81be7f73`) and unhid the right-panel Intake tab for NLA tickets. The architect flagged that the *iframe loads* but the *audit/confirm flow* was still half-wired:
+- `GET /api/submissions/:id/intake-form-status` had a hard-return that short-circuited NLA with `reason:"nla"` before any other check, which kept the green "Intake recorded" banner from ever showing for NLA.
+- The two left-side "Stage 3" status cards (instruction card + recorded banner) were gated on `requestType !== "parts_nla"`, so NLA agents never saw the same workflow markers AUTH agents see.
+- `nlaProcessMutation.onSuccess` immediately called `setSelectedId(null)`, closing the ticket detail before the agent could fill the intake form.
+
+Tyler confirmed NLA must mirror AUTH end-to-end. This entry brings them to parity.
+
+### Files touched
+- `server/routes.ts` (intake-form-status NLA hard-return removed)
+- `client/src/pages/agent-dashboard.tsx` (Stage 3 cards x2 + nlaProcessMutation.onSuccess rewired)
+
+### Server change
+`GET /api/submissions/:id/intake-form-status` (line 3726-3728): the four-line `if (sub.requestType === "parts_nla") return ... reason:"nla" ...` hard-return is removed. NLA tickets now fall through to the same logic that handles AUTH/Infestation:
+- `ticketStatus !== "approved" && !== "completed"` → `not_approved`
+- no auth code → `no_auth_code` (note: NLA tickets don't have authCode per se, so they will land here pre-processing — same shape AUTH gets pre-Authorize)
+- existing intake_forms row → `recorded:true` (drives the green banner)
+- otherwise → `required:true`
+
+The iframe URL itself is already routed to the NLA-specific form via `buildIntakeFormUrl` (the earlier change today), so the same status code path produces the right form for each branch — no further server change was needed.
+
+NOTE on the auth-code gate: NLA tickets reach the confirm route only when their post-NLA-action status is `completed`, and `nla_part_found_tech_orders` etc. set `ticketStatus = "completed"` without setting `authCode`. The status query will return `reason:"no_auth_code"` and `required:false`. The IntakeFormTab confirm button is gated on `!recorded` (NOT on `required`), so the agent CAN still click it. The confirm route itself only requires `approved|completed`, NOT authCode, so the server accepts it. The end-to-end flow works; the only cosmetic miss is the green Stage 3 instruction card won't render (it requires `stage3Required` true). The recorded banner WILL render after a successful confirm. If Tyler wants the instruction card to show for NLA pre-confirm, we can relax the no_auth_code branch to differentiate by requestType in a follow-up — out of scope here.
+
+### Client changes
+1. **Stage 3 instruction card (line ~2654)**: dropped `&& selectedSubmission.requestType !== "parts_nla"` from the gate. Comment block updated to call out NLA parity.
+2. **Stage 3 recorded banner (line ~2696)**: same drop. NLA tickets now get the same green "Smartsheet Intake Recorded" card after the agent confirms.
+3. **`nlaProcessMutation.onSuccess` (line ~942-997)**: rewrote to mirror `processMutation.onSuccess` (the AUTH-side resolve handler):
+   - Reads the action name from mutation `variables`.
+   - For `action === "nla_escalate_to_pcard"`: keep the original immediate close-out path (`setSelectedId(null)` + `setLocalAgentStatus("online")`). Rationale: this action sets `ticketStatus = "queued"` and hands the ticket off to a P-Card agent, who will be the one to fill out the intake form when they later process via `nla_pcard_confirm`. The original NLA agent should NOT see the intake form for an escalated ticket. Toast message updated to reflect the handoff ("Sent to P-Card agent.").
+   - For every other terminal NLA action (resolution sent / rejected / invalid): KEEP the ticket selected, set `pendingIntakeAutoFireRef.current = true`, and after a 350ms delay (matching the AUTH side, gives the per-submission status query time to refetch) `setShsaiVisible(true)` + `setRightPanelView("intake")`. The actual close-out (`setSelectedId(null)` + `setLocalAgentStatus("online")`) is no longer fired here — it now flows through `IntakeFormTab.onConfirmed` (already wired generically — fires for any selectedId, AUTH or NLA) when the agent confirms the Smartsheet submission. Toast message updated to direct the agent: "Resolution sent. Now log the Smartsheet intake form on the right."
+   - The pre-existing `pendingIntakeAutoFireRef` plumbing (declared at line 280, cancelled by tab change at line 282 and selection change at line 733) automatically applies to the NLA path too — no new state needed.
+
+### What was NOT touched
+- `processMutation.onSuccess` and its `parts_nla` exclusion at line ~905 — that exclusion is dead code (NLA tickets never go through processMutation, they go through nlaProcessMutation), but Tyler hasn't asked for cleanup and it's defensive. Left alone.
+- The intake-form-status `no_auth_code` branch — NLA tickets don't have authCode but the confirm route doesn't require one either. The Stage 3 instruction card not showing for NLA is a minor cosmetic miss; the workflow still works end-to-end. See server-change note above.
+- The pre-existing `if (status !== "approved" && status !== "completed")` gate in the confirm route. NLA terminal actions resolve to `completed`/`rejected`/`invalid`. Same gap AUTH has for reject paths — pre-existing, out of scope.
+- Smartsheet form schemas, DB schema, package.json, COMMITS.md remains append-only.
+
+### End-to-end flow for an NLA parts ticket after this change
+1. Agent claims an NLA ticket → right panel shows (Service History tab default).
+2. Agent reviews ticket details on left, picks an NLA action (e.g. nla_part_found_tech_orders), clicks Confirm.
+3. nlaProcessMutation fires → server sets `ticketStatus = "completed"` + sends the technician SMS.
+4. onSuccess: ticket stays selected, right panel auto-switches to Intake tab after 350ms (or stays on whatever tab the agent picks during that window).
+5. Intake tab loads the NLA Smartsheet form (`9296f7932c5548308e6c2dac81be7f73`) with prefills (Tech ID, SO #, district, etc.).
+6. Agent fills the form inside the iframe, clicks Submit there → Smartsheet success page appears.
+7. Agent checks "I confirmed the Smartsheet success page appeared" + clicks "I submitted Smartsheet".
+8. POST /intake-form/confirm → server inserts intake_forms row.
+9. IntakeFormTab.onConfirmed → setSelectedId(null), agent returns to queue.
+10. If the agent later opens the same ticket: Stage 3 recorded banner shows (green) on the left, "Intake recorded" banner shows in the right-side Intake tab.
+
+### Verification
+- TypeScript: no new errors.
+- HMR: clean.
+- Action name `nla_escalate_to_pcard` verified canonical (matches schema enum, route handler, and existing mutation call).
+- Architect re-review pending after Tyler verifies behavior on a real NLA ticket in production.
+
+### 2026-04-30 — Addendum 2: architect-flagged fixes for true NLA parity
+
+The architect's review of the parity change (above) identified two real bugs that the prior change DID NOT fix despite being scoped as "make NLA mirror AUTH". Both have been addressed.
+
+#### Bug A — `/intake-form-status` short-circuited on `no_auth_code` BEFORE checking for an existing intake row
+For NLA tickets (which have no `authCode`), the `no_auth_code` branch would always fire — meaning even after a successful confirm with a real `intake_forms` row in the DB, the endpoint would still return `recorded:false` and the green Stage 3 banner would never appear. Pre-existing AUTH issue too: any AUTH ticket somehow lacking an authCode would have the same masking, but in practice AUTH tickets always have one by the time intake is reachable.
+
+**Fix in `server/routes.ts /intake-form-status`:** moved the `getIntakeFormBySubmission` existing-row check to the TOP, right after `loadOwnedSubmission`. If a row exists, return `recorded:true` immediately — no other gate can hide it. Then branched the `required:true` rules by `requestType`:
+- **NLA**: `required:true` when `ticketStatus` is one of `completed | rejected | rejected_closed | invalid` (the four terminal statuses set by `/process-nla`). No authCode check (NLA has none).
+- **AUTH/Infestation**: unchanged — still requires `ticketStatus in {approved, completed}` AND a non-empty `authCode`.
+
+This is a strict improvement for both branches: AUTH behavior is unchanged in the common path, the existing-row check is just promoted from "last gate" to "first gate" so it can't be masked.
+
+#### Bug B — `/intake-form/confirm` only accepted `approved|completed`, but my client change auto-routed NLA reject/invalid agents into the intake tab
+NLA actions `nla_reject` and `nla_invalid` set `ticketStatus` to `rejected` and `invalid` respectively. The new client `nlaProcessMutation.onSuccess` auto-fires the Intake tab for ALL terminal NLA actions (mirroring the AUTH `justResolved` design that explicitly includes reject/reject_and_close/invalid per Tyler's 2026-04-28 comment "agent fills out the intake form for every outcome"). Without a confirm-route fix, the agent would land on a 409 NOT_APPROVED dead-end after submitting Smartsheet.
+
+**Fix in `server/routes.ts /intake-form/confirm`:** branched the status predicate by `requestType`:
+- **NLA**: accepts `completed | rejected | rejected_closed | invalid`.
+- **AUTH/Infestation**: unchanged — still `approved | completed`.
+
+`pending` (pre-action) and `queued` (escalated to P-Card) remain blocked for both branches.
+
+#### Bug B-2 — `storage.atomicCreateIntakeForm` re-checked the same restrictive predicate INSIDE the transaction
+The atomic-create path runs a `SELECT ... FOR UPDATE` and re-checks `ticketStatus !== "approved" && !== "completed"` to close the race window where status could change between pre-flight and lock acquisition. Without updating it, NLA reject/invalid confirms would pre-flight-pass at the route layer then 409 `not_approved` inside the transaction (same code/error shape, different layer).
+
+**Fix in `server/storage.ts atomicCreateIntakeForm`:** also pull `request_type` in the SELECT FOR UPDATE; apply the same NLA-vs-AUTH branch the route uses. This keeps the route and storage layers in lockstep — neither is more restrictive than the other.
+
+### Files touched in this addendum
+- `server/routes.ts` (intake-form-status reordered + branched; intake-form/confirm status check branched)
+- `server/storage.ts` (atomicCreateIntakeForm SELECT widened + branched predicate)
+
+### What was NOT touched
+- AUTH/Infestation behavior — still requires `approved|completed` in both endpoints AND authCode presence in the status endpoint. AUTH agents will see no behavioral change.
+- The `excludeRequestType` query selectors, the `Send to NLA` button, the SHSAI lookup gate, the My Tickets / NLA Queue split. All untouched.
+- Schema, package.json, COMMITS.md is append-only.
+
+### End-to-end NLA flow after this addendum
+1. Agent claims NLA ticket → right panel shows (Service History default).
+2. Agent picks NLA action → confirms.
+3. nlaProcessMutation → server sets `ticketStatus = completed | rejected | invalid` based on action.
+4. onSuccess: ticket stays selected, right panel auto-switches to Intake tab.
+5. `/intake-form-status` returns `required:true` (no row yet, terminal status).
+6. Stage 3 instruction card shows on the LEFT pane.
+7. Iframe loads NLA Smartsheet form with prefills.
+8. Agent fills form inside Smartsheet, clicks Submit there → success page.
+9. Agent checks attestation + clicks "I submitted Smartsheet" → POST /intake-form/confirm.
+10. Status check passes (terminal status allowed for NLA). Storage layer ALSO accepts (predicate updated). Row inserted.
+11. IntakeFormTab.onConfirmed fires setSelectedId(null) → ticket detail closes.
+12. Re-opening the ticket later: `/intake-form-status` finds the row first → returns `recorded:true`. Green Stage 3 recorded banner shows on left pane.
+
+### Verification
+- TypeScript: no new errors (the same set of pre-existing errors in unrelated files: `notes` property mismatch, `ldapId`, `statusChangedAt`, etc.).
+- Server restart: clean. Port 5000 serving.
+- HMR: clean for client changes.
+- Sanity-tested in dev that the workflow boots and serves the login page.
+- Manual e2e on a real NLA ticket recommended before relying on it in production.

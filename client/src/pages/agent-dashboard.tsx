@@ -944,15 +944,49 @@ export default function AgentDashboard() {
       const res = await apiRequest("PATCH", `/api/submissions/${selectedId}/process-nla`, data);
       return await res.json();
     },
-    onSuccess: () => {
+    // Tyler 2026-04-30 (NLA intake-form parity with AUTH): mirrors the
+    // post-resolve UX from processMutation.onSuccess (line ~900). For any
+    // terminal NLA action (resolution sent / rejected / invalid) we now
+    // KEEP the ticket selected, force-show the right panel, and auto-
+    // switch to the Intake Form tab so the agent fills out the NLA
+    // Smartsheet form before the ticket detail closes. The actual close-
+    // out (setSelectedId(null) + setLocalAgentStatus("online")) moves to
+    // IntakeFormTab.onConfirmed below — same handoff AUTH uses.
+    //
+    // Exception: nla_escalate_to_pcard hands the ticket off to a P-Card
+    // agent (server sets ticketStatus = "queued"), so the ORIGINAL agent
+    // should NOT see/fill the intake form — the receiving P-Card agent
+    // will when they process via nla_pcard_confirm. Keep the immediate
+    // close-out for that one case.
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string).startsWith("/api/submissions") });
       queryClient.invalidateQueries({ queryKey: ["/api/agent/stats"] });
-      setSelectedId(null);
       setNlaAction(null);
       setNlaFoundPartNumber("");
       setNlaConfirmOpen(false);
+
+      const action = (variables as { action?: string } | undefined)?.action ?? "";
+      const isEscalate = action === "nla_escalate_to_pcard";
+      if (isEscalate) {
+        setSelectedId(null);
+        setLocalAgentStatus("online");
+        toast({ title: "NLA Ticket Escalated", description: "Sent to P-Card agent." });
+        return;
+      }
+
+      // Terminal NLA action — keep ticket open, auto-fire Intake tab.
+      // The 350ms delay matches the AUTH side so the per-submission
+      // intake-form-status query has time to refetch (now returning
+      // required:true since the server hard-return for NLA was removed).
       setLocalAgentStatus("online");
-      toast({ title: "NLA Ticket Processed", description: "Resolution sent." });
+      pendingIntakeAutoFireRef.current = true;
+      window.setTimeout(() => {
+        if (!pendingIntakeAutoFireRef.current) return;
+        pendingIntakeAutoFireRef.current = false;
+        setShsaiVisible(true);
+        setRightPanelView("intake");
+      }, 350);
+      toast({ title: "NLA Ticket Processed", description: "Resolution sent. Now log the Smartsheet intake form on the right." });
     },
     onError: (error: Error) => {
       toast({ title: "Processing Failed", description: error.message, variant: "destructive" });
@@ -2646,12 +2680,16 @@ export default function AgentDashboard() {
                         resolution-panel slot AFTER Authorize & Send completes.
                         Server is the single source of truth (see
                         /api/submissions/:id/intake-form-status). The card
-                        shows when the ticket is approved + has an auth code +
-                        is non-NLA + has no intake_forms row yet. Once the
-                        agent confirms the Smartsheet submission, the same
-                        endpoint flips `recorded: true` and we render the
-                        success banner instead. */}
-                    {isMyTicketsView && stage3Required && selectedSubmission.requestType !== "parts_nla" && (
+                        shows when the ticket is approved + has no intake_forms
+                        row yet. Once the agent confirms the Smartsheet
+                        submission, the same endpoint flips `recorded: true`
+                        and we render the success banner instead.
+                        Tyler 2026-04-30: applies to NLA parts tickets too —
+                        per Tyler "NLA parts tickets have to fill out the NLA
+                        intake form just like the AUTH tickets". The previous
+                        `requestType !== "parts_nla"` exclusion is removed;
+                        the iframe + status query are now branch-agnostic. */}
+                    {isMyTicketsView && stage3Required && (
                       <Card ref={stage3CardRef} data-testid="card-stage3-intake">
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2">
@@ -2692,8 +2730,10 @@ export default function AgentDashboard() {
 
                     {/* Stage 3 success banner — shown once the agent has
                         recorded the intake row. Confirms to the agent that
-                        the gate is released. */}
-                    {isMyTicketsView && stage3Recorded && selectedSubmission.requestType !== "parts_nla" && (
+                        the gate is released. Tyler 2026-04-30: also
+                        renders for NLA parts tickets (see Stage 3 card
+                        above for rationale). */}
+                    {isMyTicketsView && stage3Recorded && (
                       <Card data-testid="card-stage3-recorded">
                         <CardHeader className="pb-3">
                           <CardTitle className="text-base flex items-center gap-2 text-green-700 dark:text-green-300">

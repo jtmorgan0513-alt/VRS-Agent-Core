@@ -3723,29 +3723,18 @@ export async function registerRoutes(
         if (!owned.ok) return res.status(owned.status).json({ error: owned.error });
 
         const sub = owned.submission;
-        if (sub.requestType === "parts_nla") {
-          return res.status(200).json({ required: false, recorded: false, reason: "nla" });
-        }
-        // Tyler 2026-04-28 (intake-tab disappearance bug):
-        // The Authorize handler at server/routes.ts:1363 writes
-        // ticketStatus = "completed" — NOT "approved". The "approved"
-        // value is in the schema enum (shared/schema.ts:113) but no
-        // code path actually writes it. Verified via SQL: zero rows
-        // have ticket_status='approved'. The pre-tab modal flow worked
-        // because the modal called /intake-form/preview directly and
-        // never consulted this endpoint. The new IntakeFormTab DOES
-        // consult it, which exposed the mismatch — every post-Authorize
-        // ticket was reporting reason="not_approved", keeping the tab
-        // permanently in its pre-auth ghost empty state.
-        // Fix is additive: keep the "approved" branch for forward-compat
-        // with any future code path that writes it; add "completed" as
-        // the actually-written post-Authorize value.
-        if (sub.ticketStatus !== "approved" && sub.ticketStatus !== "completed") {
-          return res.status(200).json({ required: false, recorded: false, reason: "not_approved" });
-        }
-        if (!sub.authCode) {
-          return res.status(200).json({ required: false, recorded: false, reason: "no_auth_code" });
-        }
+        const isNla = sub.requestType === "parts_nla";
+
+        // Tyler 2026-04-30 (architect-flagged ordering fix during NLA parity
+        // work): existing-row check now runs FIRST. Previously a downstream
+        // gate (no_auth_code or not_approved) could short-circuit before
+        // this check, which meant a confirmed intake row would still
+        // report `recorded:false` and the green banner would never render.
+        // The bug was masked on AUTH because AUTH always has both
+        // ticketStatus=completed AND authCode by the time confirm is
+        // possible — but NLA has no authCode, so the no_auth_code branch
+        // would have hidden recorded:true forever. Moving this up is a
+        // strict improvement for both branches.
         const existing = await storage.getIntakeFormBySubmission(id);
         if (existing) {
           return res.status(200).json({
@@ -3754,6 +3743,46 @@ export async function registerRoutes(
             reason: "already_recorded",
             intakeForm: existing,
           });
+        }
+
+        // Tyler 2026-04-30: NLA parts tickets must fill out the
+        // (NLA-specific) Smartsheet intake form just like AUTH tickets.
+        // Branch the "is intake required" rules by requestType:
+        //
+        //   NLA: required when ticketStatus is any post-processing terminal
+        //        state set by /process-nla — completed (most success
+        //        actions), rejected (nla_reject), invalid (nla_invalid).
+        //        NLA tickets do NOT have authCode, so the authCode gate
+        //        does not apply. queued (nla_escalate_to_pcard) hands
+        //        the ticket off to a P-Card agent and stays not_approved
+        //        from the original agent's perspective; the receiving
+        //        P-Card agent will see required:true after their own
+        //        nla_pcard_confirm sets ticketStatus=completed.
+        //
+        //   AUTH/Infestation: unchanged behavior — requires both
+        //        ticketStatus in {approved, completed} AND a non-empty
+        //        authCode. Tyler 2026-04-28 (intake-tab disappearance
+        //        bug): the Authorize handler writes ticketStatus
+        //        ="completed" — NOT "approved" (schema enum has both;
+        //        no code path actually writes "approved"). The "approved"
+        //        branch is kept for forward-compat.
+        if (isNla) {
+          const nlaTerminal =
+            sub.ticketStatus === "completed" ||
+            sub.ticketStatus === "rejected" ||
+            sub.ticketStatus === "rejected_closed" ||
+            sub.ticketStatus === "invalid";
+          if (!nlaTerminal) {
+            return res.status(200).json({ required: false, recorded: false, reason: "not_approved" });
+          }
+          return res.status(200).json({ required: true, recorded: false });
+        }
+
+        if (sub.ticketStatus !== "approved" && sub.ticketStatus !== "completed") {
+          return res.status(200).json({ required: false, recorded: false, reason: "not_approved" });
+        }
+        if (!sub.authCode) {
+          return res.status(200).json({ required: false, recorded: false, reason: "no_auth_code" });
         }
         return res.status(200).json({ required: true, recorded: false });
       } catch (error) {
@@ -3915,9 +3944,25 @@ export async function registerRoutes(
           });
         }
 
+        // Tyler 2026-04-30 (NLA parity): the original AUTH-only check
+        // accepted only `approved|completed`. NLA actions can resolve to
+        // `completed` (most success actions), `rejected` (nla_reject), or
+        // `invalid` (nla_invalid) — and Tyler's design (see
+        // processMutation.onSuccess comment) is "agent fills out intake
+        // form for every terminal outcome". Branch by requestType so AUTH
+        // behavior is unchanged but NLA can confirm intake on any
+        // terminal status. `pending` (pre-action) and `queued`
+        // (escalated to P-Card — handed off) remain blocked.
         const status = owned.submission.ticketStatus;
-        if (status !== "approved" && status !== "completed") {
-          console.warn(`${tag("not-approved")} status=fail ticketStatus=${status}`);
+        const isNla = owned.submission.requestType === "parts_nla";
+        const statusOkForConfirm = isNla
+          ? status === "completed" ||
+            status === "rejected" ||
+            status === "rejected_closed" ||
+            status === "invalid"
+          : status === "approved" || status === "completed";
+        if (!statusOkForConfirm) {
+          console.warn(`${tag("not-approved")} status=fail ticketStatus=${status} isNla=${isNla}`);
           return res.status(409).json({
             error: "This ticket has not been processed yet — finish reviewing it before recording the intake form.",
             code: "NOT_APPROVED",

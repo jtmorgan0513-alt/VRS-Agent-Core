@@ -1403,15 +1403,29 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx) => {
       // 1. Lock the parent submissions row. Any concurrent confirm against
       //    the same submission blocks here until this tx commits.
+      // Tyler 2026-04-30 (NLA parity): also pull request_type so the
+      // status predicate inside the transaction can branch the same way
+      // the route's pre-flight check does (NLA accepts completed |
+      // rejected | rejected_closed | invalid; AUTH accepts approved |
+      // completed). Without this, NLA reject/invalid confirms would
+      // pre-flight-pass at the route then 409 inside the transaction.
       const lockedRows = await tx.execute(
-        sql`SELECT id, ticket_status FROM submissions WHERE id = ${data.submissionId} FOR UPDATE`
+        sql`SELECT id, ticket_status, request_type FROM submissions WHERE id = ${data.submissionId} FOR UPDATE`
       );
       const locked = (lockedRows as any).rows?.[0] ?? (lockedRows as any[])[0];
       if (!locked) {
         return { ok: false as const, reason: "not_found" as const };
       }
-      const lockedStatus = (locked as { ticket_status: string }).ticket_status;
-      if (lockedStatus !== "approved" && lockedStatus !== "completed") {
+      const lockedRow = locked as { ticket_status: string; request_type: string };
+      const lockedStatus = lockedRow.ticket_status;
+      const lockedIsNla = lockedRow.request_type === "parts_nla";
+      const statusOk = lockedIsNla
+        ? lockedStatus === "completed" ||
+          lockedStatus === "rejected" ||
+          lockedStatus === "rejected_closed" ||
+          lockedStatus === "invalid"
+        : lockedStatus === "approved" || lockedStatus === "completed";
+      if (!statusOk) {
         return {
           ok: false as const,
           reason: "not_approved" as const,
